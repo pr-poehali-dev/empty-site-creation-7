@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Get roles (no auth)",
+      "method": "GET",
+      "path": "/roles",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get employees (no auth)",
+      "method": "GET",
+      "path": "/employees",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

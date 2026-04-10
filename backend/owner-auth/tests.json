@@ -1,0 +1,31 @@
+{
+  "tests": [
+    {
+      "name": "Register owner",
+      "method": "POST",
+      "path": "/register",
+      "body": {"email": "test@example.com", "password": "123456", "name": "Тест Владелец"},
+      "expectedStatus": 200,
+      "expectedBody": {"token": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login owner",
+      "method": "POST",
+      "path": "/login",
+      "body": {"email": "test@example.com", "password": "123456"},
+      "expectedStatus": 200,
+      "expectedBody": {"token": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login wrong password",
+      "method": "POST",
+      "path": "/login",
+      "body": {"email": "test@example.com", "password": "wrongpass"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
