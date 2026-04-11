@@ -351,6 +351,17 @@ const AdminDashboard = () => {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
+        <div className="flex gap-2 mb-5 sm:mb-6">
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/catalog")}
+          >
+            <Icon name="Package" size={20} />
+            <span className="font-medium">Каталог</span>
+          </Button>
+        </div>
+
         <div className="flex items-center justify-between mb-5 sm:mb-6">
           <h2 className="text-xl sm:text-2xl font-semibold">Управленцы</h2>
           <Button

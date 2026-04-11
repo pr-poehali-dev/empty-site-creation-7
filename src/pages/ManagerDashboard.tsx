@@ -48,10 +48,15 @@ const ManagerDashboard = () => {
           )}
         </div>
 
-        <div className="rounded-2xl border border-white/[0.08] bg-card flex flex-col items-center justify-center py-12 sm:py-16 px-4">
-          <Icon name="Construction" size={48} className="text-muted-foreground mb-4" />
-          <p className="text-lg font-medium text-muted-foreground">Раздел в разработке</p>
-          <p className="text-sm text-muted-foreground mt-1 text-center">Скоро здесь появится функционал для вашей роли</p>
+        <div className="flex gap-2 mb-5">
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/catalog")}
+          >
+            <Icon name="Package" size={20} />
+            <span className="font-medium">Каталог</span>
+          </Button>
         </div>
       </main>
     </div>

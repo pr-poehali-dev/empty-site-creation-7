@@ -1,4 +1,6 @@
 {
+  "catalog-categories": "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846",
+  "catalog-nomenclature": "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6",
   "admin-managers": "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e",
   "telegram-setup": "https://functions.poehali.dev/6db3cf7c-812a-4ed9-94a2-5df8405a458c",
   "telegram-webhook": "https://functions.poehali.dev/c5134d29-4cd5-49a8-8385-f44995f8721e",
