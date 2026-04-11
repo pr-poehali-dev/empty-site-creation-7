@@ -107,6 +107,12 @@ def handler(event: dict, context) -> dict:
             )
             images = [{'id': r[0], 'url': r[1], 'sort_order': r[2]} for r in cur.fetchall()]
 
+            cur.execute(
+                "SELECT id, barcode FROM nomenclature_barcodes WHERE nomenclature_id = %s ORDER BY id",
+                (nom_id,)
+            )
+            barcodes = [{'id': r[0], 'barcode': r[1]} for r in cur.fetchall()]
+
             item = {
                 'id': row[0], 'category_id': row[1], 'name': row[2], 'article': row[3],
                 'brand': row[4], 'supplier_code': row[5],
@@ -117,14 +123,30 @@ def handler(event: dict, context) -> dict:
                 'created_at': str(row[10]) if row[10] else None,
                 'updated_at': str(row[11]) if row[11] else None,
                 'category_name': row[12],
-                'images': images
+                'images': images,
+                'barcodes': barcodes
             }
             cur.close()
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'item': item})}
 
+        barcode = params.get('barcode', '').strip()
+        if barcode:
+            cur.execute(
+                "SELECT nomenclature_id FROM nomenclature_barcodes WHERE barcode = %s LIMIT 1",
+                (barcode,)
+            )
+            bc_row = cur.fetchone()
+            if not bc_row:
+                cur.close()
+                conn.close()
+                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}
+            params = dict(params)
+            params['id'] = str(bc_row[0])
+
         category_id = params.get('category_id')
         search = params.get('search', '').strip()
+        search_type = params.get('search_type', 'all')
         page = int(params.get('page', 1))
         per_page = int(params.get('per_page', 50))
         offset = (page - 1) * per_page
@@ -137,9 +159,16 @@ def handler(event: dict, context) -> dict:
             values.append(int(category_id))
 
         if search:
-            conditions.append("(n.name ILIKE %s OR n.article ILIKE %s OR n.brand ILIKE %s)")
             like = f"%{search}%"
-            values.extend([like, like, like])
+            if search_type == 'article':
+                conditions.append("n.article ILIKE %s")
+                values.append(like)
+            elif search_type == 'supplier_code':
+                conditions.append("n.supplier_code ILIKE %s")
+                values.append(like)
+            else:
+                conditions.append("(n.name ILIKE %s OR n.article ILIKE %s OR n.brand ILIKE %s OR n.supplier_code ILIKE %s)")
+                values.extend([like, like, like, like])
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -229,6 +258,15 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     "INSERT INTO nomenclature_images (nomenclature_id, url, sort_order) VALUES (%s, %s, %s)",
                     (nom_id, url, i)
+                )
+
+        barcodes_data = body.get('barcodes', [])
+        for bc in barcodes_data:
+            bc_val = bc.strip() if isinstance(bc, str) else str(bc).strip()
+            if bc_val:
+                cur.execute(
+                    "INSERT INTO nomenclature_barcodes (nomenclature_id, barcode) VALUES (%s, %s)",
+                    (nom_id, bc_val)
                 )
 
         conn.commit()

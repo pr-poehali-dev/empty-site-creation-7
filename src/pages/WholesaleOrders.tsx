@@ -14,7 +14,6 @@ import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
-const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
 
 interface Order {
   id: number;
@@ -24,14 +23,6 @@ interface Order {
   total_amount: number;
   created_at: string;
   created_by: string;
-}
-
-interface NomSearchItem {
-  id: number;
-  name: string;
-  article: string | null;
-  brand: string | null;
-  price_wholesale: number | null;
 }
 
 interface OrderLine {
@@ -65,25 +56,18 @@ const WholesaleOrders = () => {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [createOpen, setCreateOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [comment, setComment] = useState("");
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<NomSearchItem[]>([]);
-  const [searching, setSearching] = useState(false);
-
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       const resp = await fetch(ORDERS_URL, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok) {
-        setOrders(data.orders || []);
-      }
+      if (resp.ok) setOrders(data.orders || []);
     } catch {
       toast({ title: "Ошибка", description: "Не удалось загрузить заявки", variant: "destructive" });
     } finally {
@@ -93,58 +77,50 @@ const WholesaleOrders = () => {
 
   useEffect(() => {
     fetchOrders();
+    const saved = localStorage.getItem("draft_order_items");
+    if (saved) {
+      try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
+    }
+    const draft = localStorage.getItem("draft_order");
+    if (draft) {
+      try {
+        const d = JSON.parse(draft);
+        if (d.customerName) setCustomerName(d.customerName);
+        if (d.comment) setComment(d.comment);
+      } catch { /* ignore */ }
+    }
   }, []);
 
-  const searchNomenclature = async () => {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    try {
-      const resp = await fetch(`${NOMENCLATURE_URL}?search=${encodeURIComponent(searchQuery)}`, {
-        headers: authHeaders,
-      });
-      const data = await resp.json();
-      if (resp.ok) {
-        setSearchResults(data.items || []);
-      }
-    } catch {
-      toast({ title: "Ошибка", description: "Не удалось найти номенклатуру", variant: "destructive" });
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const addLine = (item: NomSearchItem) => {
-    if (lines.some((l) => l.nomenclature_id === item.id)) {
-      toast({ title: "Уже добавлено", variant: "destructive" });
-      return;
-    }
-    setLines((prev) => [
-      ...prev,
-      {
-        nomenclature_id: item.id,
-        name: item.name,
-        article: item.article,
-        quantity: 1,
-        price: item.price_wholesale || 0,
-      },
-    ]);
-    setSearchQuery("");
-    setSearchResults([]);
-  };
-
   const updateLineQty = (index: number, qty: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l)));
+    setLines((prev) => {
+      const next = prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l));
+      localStorage.setItem("draft_order_items", JSON.stringify(next));
+      return next;
+    });
   };
 
   const updateLinePrice = (index: number, price: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, price: Math.max(0, price) } : l)));
+    setLines((prev) => {
+      const next = prev.map((l, i) => (i === index ? { ...l, price: Math.max(0, price) } : l));
+      localStorage.setItem("draft_order_items", JSON.stringify(next));
+      return next;
+    });
   };
 
   const removeLine = (index: number) => {
-    setLines((prev) => prev.filter((_, i) => i !== index));
+    setLines((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      localStorage.setItem("draft_order_items", JSON.stringify(next));
+      return next;
+    });
   };
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
+
+  const goToList = () => {
+    localStorage.setItem("draft_order", JSON.stringify({ customerName, comment }));
+    navigate("/admin/orders/new-list");
+  };
 
   const handleCreate = async () => {
     if (!customerName.trim()) {
@@ -177,6 +153,8 @@ const WholesaleOrders = () => {
         setCustomerName("");
         setComment("");
         setLines([]);
+        localStorage.removeItem("draft_order");
+        localStorage.removeItem("draft_order_items");
         fetchOrders();
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
@@ -238,15 +216,12 @@ const WholesaleOrders = () => {
             {orders.map((order) => {
               const st = statusLabels[order.status] || statusLabels.new;
               return (
-                <div
-                  key={order.id}
-                  className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4"
-                >
+                <div key={order.id} className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-sm sm:text-base">{order.customer_name}</p>
-                        <Badge className={`${st.className} text-xs hover:${st.className}`}>{st.label}</Badge>
+                        <Badge className={`${st.className} text-xs`}>{st.label}</Badge>
                       </div>
                       {order.comment && (
                         <p className="text-xs sm:text-sm text-muted-foreground mt-1 truncate">{order.comment}</p>
@@ -266,84 +241,43 @@ const WholesaleOrders = () => {
         )}
       </main>
 
-      {/* Create order dialog */}
       <Dialog open={createOpen} onOpenChange={(open) => { if (!open) setCreateOpen(false); }}>
-        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Создать заявку</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Оптовик *</label>
-                <Input
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Имя или название компании"
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Комментарий</label>
-                <Input
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Примечание к заявке"
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Оптовик *</label>
+              <Input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Имя или название компании"
+                className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Комментарий</label>
+              <Input
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Примечание к заявке"
+                className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+              />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Добавить позицию</label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Поиск по названию, артикулу..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && searchNomenclature()}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-10 px-3 flex-shrink-0"
-                  onClick={searchNomenclature}
-                  disabled={searching}
-                >
-                  {searching ? (
-                    <Icon name="Loader2" size={16} className="animate-spin" />
-                  ) : (
-                    <Icon name="Search" size={16} />
-                  )}
-                </Button>
-              </div>
-              {searchResults.length > 0 && (
-                <div className="border border-white/[0.08] rounded-xl overflow-hidden max-h-40 overflow-y-auto">
-                  {searchResults.map((item) => (
-                    <button
-                      key={item.id}
-                      className="w-full text-left px-3 py-2 hover:bg-white/[0.06] transition-colors text-sm flex items-center justify-between"
-                      onClick={() => addLine(item)}
-                    >
-                      <div className="min-w-0">
-                        <span className="truncate block">{item.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {item.article && `${item.article} · `}{item.brand || ""}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                        {item.price_wholesale ? `${item.price_wholesale.toLocaleString()} ₽` : "—"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <Button
+              variant="outline"
+              className="w-full h-11 rounded-xl border-white/[0.08] justify-center gap-2"
+              onClick={goToList}
+            >
+              <Icon name="List" size={18} />
+              {lines.length > 0 ? `Список (${lines.length})` : "Создать список"}
+            </Button>
 
             {lines.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Позиции ({lines.length})</label>
+                <label className="text-sm font-medium text-muted-foreground">Позиции</label>
                 <div className="space-y-1.5">
                   {lines.map((line, i) => (
                     <div
@@ -388,7 +322,7 @@ const WholesaleOrders = () => {
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="outline"
-              onClick={() => { setCreateOpen(false); setCustomerName(""); setComment(""); setLines([]); setSearchResults([]); setSearchQuery(""); }}
+              onClick={() => setCreateOpen(false)}
               className="rounded-xl border-white/[0.08]"
             >
               Отмена
