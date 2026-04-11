@@ -141,8 +141,39 @@ def handler(event: dict, context) -> dict:
                 cur.close()
                 conn.close()
                 return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}
-            params = dict(params)
-            params['id'] = str(bc_row[0])
+
+            found_id = bc_row[0]
+            price_purchase_col = "n.price_purchase" if is_owner else "NULL as price_purchase"
+            cur.execute(
+                f"""SELECT n.id, n.category_id, n.name, n.article, n.brand, n.supplier_code,
+                           n.price_base, n.price_retail, n.price_wholesale, {price_purchase_col},
+                           n.created_at, c.name as category_name
+                    FROM nomenclature n
+                    JOIN categories c ON c.id = n.category_id
+                    WHERE n.id = %s""",
+                (found_id,)
+            )
+            r = cur.fetchone()
+            if not r:
+                cur.close()
+                conn.close()
+                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}
+
+            item = {
+                'id': r[0], 'category_id': r[1], 'name': r[2], 'article': r[3],
+                'brand': r[4], 'supplier_code': r[5],
+                'price_base': float(r[6]) if r[6] else None,
+                'price_retail': float(r[7]) if r[7] else None,
+                'price_wholesale': float(r[8]) if r[8] else None,
+                'price_purchase': float(r[9]) if r[9] else None,
+                'created_at': str(r[10]) if r[10] else None,
+                'category_name': r[11],
+                'images': [],
+                'barcodes': []
+            }
+            cur.close()
+            conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [item], 'total': 1, 'page': 1, 'per_page': 50})}
 
         category_id = params.get('category_id')
         search = params.get('search', '').strip()

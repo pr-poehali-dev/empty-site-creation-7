@@ -360,11 +360,16 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
             {lastScanned}
           </p>
         ) : (
-          <p className="text-white/60 text-xs">
-            {status === "photoOnly"
-              ? "Используется родная камера устройства"
-              : "Наведите на штрихкод или нажмите кнопку-затвор"}
-          </p>
+          <>
+            <p className="text-white/60 text-xs">
+              {status === "photoOnly"
+                ? "Используется родная камера устройства"
+                : "Наведите на штрихкод или нажмите кнопку-затвор"}
+            </p>
+            <p className="text-white/30 text-[10px] mt-1">
+              Поддерживается: Chrome, Edge, Samsung Internet
+            </p>
+          </>
         )}
       </div>
     </div>

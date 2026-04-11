@@ -748,9 +748,14 @@ const Catalog = () => {
       {barcodeScannerOpen && (
         <BarcodeScanner
           onScan={(code) => {
-            if (!formBarcodes.includes(code)) {
-              setFormBarcodes((prev) => [...prev, code]);
-            }
+            setFormBarcodes((prev) => {
+              if (prev.includes(code)) {
+                toast({ title: "Штрихкод уже добавлен", description: code });
+                return prev;
+              }
+              toast({ title: "Штрихкод добавлен", description: code });
+              return [...prev, code];
+            });
           }}
           onClose={() => setBarcodeScannerOpen(false)}
         />
