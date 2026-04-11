@@ -150,7 +150,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             """UPDATE managers
                SET first_name = %s, last_name = %s, role_id = %s, status = 'authorized'
-               WHERE id = %s AND status = 'pending'
+               WHERE id = %s AND status IN ('pending', 'authorized')
                RETURNING id, phone, first_name, last_name, status""",
             (first_name, last_name, role_id, manager_id)
         )
@@ -158,7 +158,7 @@ def handler(event: dict, context) -> dict:
         if not row:
             cur.close()
             conn.close()
-            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Управленец не найден или не в статусе ожидания'})}
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Управленец не найден или не в подходящем статусе'})}
 
         conn.commit()
         cur.close()
@@ -179,19 +179,27 @@ def handler(event: dict, context) -> dict:
 
     if method == 'DELETE':
         manager_id = params.get('id')
+        action = params.get('action', 'deactivate')
         if not manager_id:
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id управленца'})}
 
-        cur.execute("SELECT phone FROM managers WHERE id = %s", (int(manager_id),))
+        cur.execute("SELECT phone, status FROM managers WHERE id = %s", (int(manager_id),))
         mgr = cur.fetchone()
         if not mgr:
             cur.close()
             conn.close()
             return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Управленец не найден'})}
 
-        cur.execute("UPDATE managers SET status = 'not_authorized', telegram_chat_id = NULL, first_name = NULL, last_name = NULL, role_id = NULL WHERE id = %s", (int(manager_id),))
+        if action == 'remove':
+            phone = mgr[0]
+            cur.execute("DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE phone = %s AND role = 'manager')", (phone,))
+            cur.execute("DELETE FROM managers WHERE id = %s", (int(manager_id),))
+            cur.execute("DELETE FROM users WHERE phone = %s AND role = 'manager'", (phone,))
+        else:
+            cur.execute("UPDATE managers SET status = 'not_authorized', telegram_chat_id = NULL, first_name = NULL, last_name = NULL, role_id = NULL WHERE id = %s", (int(manager_id),))
+
         conn.commit()
         cur.close()
         conn.close()

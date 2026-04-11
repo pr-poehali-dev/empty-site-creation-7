@@ -131,7 +131,11 @@ export default function AdminLogin() {
         localStorage.setItem("auth_token", data.token);
         localStorage.setItem("auth_user", JSON.stringify(data.user));
         toast({ title: "Добро пожаловать!" });
-        navigate("/admin/dashboard");
+        if (data.user.role === "owner") {
+          navigate("/admin/dashboard");
+        } else {
+          navigate("/admin/manager");
+        }
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }

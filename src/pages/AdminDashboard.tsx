@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +12,24 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
 const MANAGERS_URL = "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e";
+
+const ROLES = [
+  { id: 1, name: "Управляющий" },
+  { id: 2, name: "Менеджер опта" },
+  { id: 3, name: "Менеджер розницы" },
+  { id: 4, name: "Продавец" },
+];
 
 interface Manager {
   id: number;
@@ -38,9 +52,16 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [deactivateManager, setDeactivateManager] = useState<Manager | null>(null);
+  const [removeManager, setRemoveManager] = useState<Manager | null>(null);
+  const [editManager, setEditManager] = useState<Manager | null>(null);
   const [newPhone, setNewPhone] = useState("+7");
   const [adding, setAdding] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editRoleId, setEditRoleId] = useState("");
+  const [editing, setEditing] = useState(false);
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -139,6 +160,67 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleRemove = async (manager: Manager) => {
+    setRemoving(true);
+    try {
+      const resp = await fetch(`${MANAGERS_URL}?id=${manager.id}&action=remove`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Управленец удалён", description: manager.phone });
+        setRemoveManager(null);
+        fetchManagers();
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось удалить", variant: "destructive" });
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const openEditDialog = (manager: Manager) => {
+    setEditManager(manager);
+    setEditFirstName(manager.first_name || "");
+    setEditLastName(manager.last_name || "");
+    setEditRoleId(manager.role ? String(manager.role.id) : "");
+  };
+
+  const handleEdit = async () => {
+    if (!editManager) return;
+    if (!editFirstName.trim() || !editLastName.trim() || !editRoleId) {
+      toast({ title: "Ошибка", description: "Заполните все поля", variant: "destructive" });
+      return;
+    }
+    setEditing(true);
+    try {
+      const resp = await fetch(`${MANAGERS_URL}?id=${editManager.id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          first_name: editFirstName.trim(),
+          last_name: editLastName.trim(),
+          role_id: Number(editRoleId),
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Данные обновлены" });
+        setEditManager(null);
+        fetchManagers();
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось обновить", variant: "destructive" });
+    } finally {
+      setEditing(false);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
@@ -195,13 +277,32 @@ const AdminDashboard = () => {
           )}
           {statusBadge(manager.status)}
           {manager.status === "authorized" && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); openEditDialog(manager); }}
+              >
+                <Icon name="Pencil" size={16} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={(e) => { e.stopPropagation(); setDeactivateManager(manager); }}
+              >
+                <Icon name="UserX" size={16} />
+              </Button>
+            </>
+          )}
+          {manager.status === "not_authorized" && (
             <Button
               variant="ghost"
               size="sm"
               className="text-destructive hover:text-destructive"
-              onClick={(e) => { e.stopPropagation(); setDeactivateManager(manager); }}
+              onClick={(e) => { e.stopPropagation(); setRemoveManager(manager); }}
             >
-              <Icon name="UserX" size={16} />
+              <Icon name="Trash2" size={16} />
             </Button>
           )}
           {manager.status === "pending" && (
@@ -338,6 +439,90 @@ const AdminDashboard = () => {
                 <Icon name="UserX" size={18} />
               )}
               <span className="ml-2">{deactivating ? "Деактивация..." : "Деактивировать"}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!removeManager} onOpenChange={(open) => !open && setRemoveManager(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Удалить управленца?</DialogTitle>
+          </DialogHeader>
+          {removeManager && (
+            <div className="py-4">
+              <p className="text-sm">
+                Номер <span className="font-medium">{removeManager.phone}</span> будет полностью удалён из системы.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Это действие необратимо. Чтобы добавить его снова, придётся ввести номер заново.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveManager(null)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => removeManager && handleRemove(removeManager)}
+              disabled={removing}
+            >
+              {removing ? (
+                <Icon name="Loader2" size={18} className="animate-spin" />
+              ) : (
+                <Icon name="Trash2" size={18} />
+              )}
+              <span className="ml-2">{removing ? "Удаление..." : "Удалить"}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editManager} onOpenChange={(open) => !open && setEditManager(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Редактировать управленца</DialogTitle>
+          </DialogHeader>
+          {editManager && (
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">{editManager.phone}</p>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Имя</label>
+                <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Фамилия</label>
+                <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Роль</label>
+                <Select value={editRoleId} onValueChange={setEditRoleId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите роль" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLES.map((role) => (
+                      <SelectItem key={role.id} value={String(role.id)}>
+                        {role.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditManager(null)}>
+              Отмена
+            </Button>
+            <Button onClick={handleEdit} disabled={editing}>
+              {editing ? (
+                <Icon name="Loader2" size={18} className="animate-spin" />
+              ) : (
+                <Icon name="Check" size={18} />
+              )}
+              <span className="ml-2">{editing ? "Сохранение..." : "Сохранить"}</span>
             </Button>
           </DialogFooter>
         </DialogContent>
