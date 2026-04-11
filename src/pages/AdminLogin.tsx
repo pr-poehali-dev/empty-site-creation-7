@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const [checkingTelegram, setCheckingTelegram] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const formatPhone = (value: string) => {
     const digits = value.replace(/\D/g, "");
@@ -110,7 +112,7 @@ export default function AdminLogin() {
         localStorage.setItem("auth_token", data.token);
         localStorage.setItem("auth_user", JSON.stringify(data.user));
         toast({ title: "Добро пожаловать!" });
-        window.location.href = "/admin/dashboard";
+        navigate("/admin/dashboard");
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
