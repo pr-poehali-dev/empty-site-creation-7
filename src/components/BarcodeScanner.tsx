@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 
@@ -262,8 +263,8 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     };
   }, []);
 
-  return (
-    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-black/80 z-10">
         <p className="text-white text-sm font-medium">
           {status === "photoOnly" ? "Сфотографируйте штрихкод" : "Сканирование"}
@@ -372,7 +373,8 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
