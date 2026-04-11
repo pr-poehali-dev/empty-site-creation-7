@@ -26,7 +26,7 @@ interface Order {
 }
 
 interface OrderLine {
-  nomenclature_id: number;
+  product_id: number;
   name: string;
   article: string | null;
   quantity: number;
@@ -140,7 +140,7 @@ const WholesaleOrders = () => {
           customer_name: customerName.trim(),
           comment: comment.trim() || null,
           items: lines.map((l) => ({
-            nomenclature_id: l.nomenclature_id,
+            product_id: l.product_id,
             quantity: l.quantity,
             price: l.price,
           })),
@@ -281,7 +281,7 @@ const WholesaleOrders = () => {
                 <div className="space-y-1.5">
                   {lines.map((line, i) => (
                     <div
-                      key={line.nomenclature_id}
+                      key={line.product_id}
                       className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5 flex items-center gap-2"
                     >
                       <div className="min-w-0 flex-1">

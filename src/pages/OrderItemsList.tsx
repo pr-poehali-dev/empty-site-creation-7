@@ -5,9 +5,9 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
-const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
+const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 
-interface NomSearchItem {
+interface ProductSearchItem {
   id: number;
   name: string;
   article: string | null;
@@ -17,7 +17,7 @@ interface NomSearchItem {
 }
 
 interface OrderLine {
-  nomenclature_id: number;
+  product_id: number;
   name: string;
   article: string | null;
   quantity: number;
@@ -45,7 +45,7 @@ const OrderItemsList = () => {
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [searchMode, setSearchMode] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<NomSearchItem[]>([]);
+  const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
@@ -80,7 +80,7 @@ const OrderItemsList = () => {
     localStorage.setItem("draft_order_items", JSON.stringify(next));
   };
 
-  const searchNomenclature = useCallback(async (query: string, mode: string) => {
+  const searchProducts = useCallback(async (query: string, mode: string) => {
     if (!query.trim() || query.trim().length < 2) {
       setSearchResults([]);
       return;
@@ -88,7 +88,7 @@ const OrderItemsList = () => {
     setSearching(true);
     try {
       const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
-      const resp = await fetch(`${NOMENCLATURE_URL}?${params}`, { headers: authHeaders });
+      const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok) setSearchResults(data.items || []);
     } catch {
@@ -102,15 +102,15 @@ const OrderItemsList = () => {
     setSearchQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      searchNomenclature(value, searchMode);
+      searchProducts(value, searchMode);
     }, 300);
   };
 
-  const addItem = (item: NomSearchItem) => {
-    const existing = lines.find((l) => l.nomenclature_id === item.id);
+  const addItem = (item: ProductSearchItem) => {
+    const existing = lines.find((l) => l.product_id === item.id);
     if (existing) {
       const next = lines.map((l) =>
-        l.nomenclature_id === item.id ? { ...l, quantity: l.quantity + 1 } : l
+        l.product_id === item.id ? { ...l, quantity: l.quantity + 1 } : l
       );
       saveLines(next);
       toast({ title: `${item.name} — ещё +1` });
@@ -118,7 +118,7 @@ const OrderItemsList = () => {
       saveLines([
         ...lines,
         {
-          nomenclature_id: item.id,
+          product_id: item.id,
           name: item.name,
           article: item.article,
           quantity: 1,
@@ -134,7 +134,7 @@ const OrderItemsList = () => {
     if (!code.trim()) return;
     setSearching(true);
     try {
-      const resp = await fetch(`${NOMENCLATURE_URL}?barcode=${encodeURIComponent(code)}`, {
+      const resp = await fetch(`${PRODUCTS_URL}?barcode=${encodeURIComponent(code)}`, {
         headers: authHeaders,
       });
       const data = await resp.json();
@@ -203,7 +203,7 @@ const OrderItemsList = () => {
               }`}
               onClick={() => {
                 setSearchMode(mode.value);
-                if (searchQuery.trim()) searchNomenclature(searchQuery, mode.value);
+                if (searchQuery.trim()) searchProducts(searchQuery, mode.value);
               }}
             >
               {mode.label}
@@ -300,7 +300,7 @@ const OrderItemsList = () => {
           <div className="space-y-1.5">
             {lines.map((line, i) => (
               <div
-                key={line.nomenclature_id}
+                key={line.product_id}
                 className="rounded-xl border border-white/[0.08] bg-card p-3 flex items-center gap-2"
               >
                 <div className="min-w-0 flex-1">

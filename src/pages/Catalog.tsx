@@ -15,7 +15,7 @@ import Icon from "@/components/ui/icon";
 import compressImage from "@/lib/compressImage";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
-const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
+const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 
 interface Category {
   id: number;
@@ -25,13 +25,13 @@ interface Category {
   keywords: string[];
 }
 
-interface NomImage {
+interface ProductImage {
   id: number;
   url: string;
   sort_order: number;
 }
 
-interface NomItem {
+interface Product {
   id: number;
   category_id: number;
   name: string;
@@ -43,7 +43,7 @@ interface NomItem {
   price_wholesale: number | null;
   price_purchase: number | null;
   category_name: string;
-  images: NomImage[];
+  images: ProductImage[];
   barcodes: string[];
 }
 
@@ -70,7 +70,7 @@ const Catalog = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
-  const [items, setItems] = useState<NomItem[]>([]);
+  const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingItems, setLoadingItems] = useState(false);
   const [search, setSearch] = useState("");
@@ -124,14 +124,14 @@ const Catalog = () => {
       const params = new URLSearchParams();
       if (categoryId) params.set("category_id", String(categoryId));
       if (searchQuery) params.set("search", searchQuery);
-      const resp = await fetch(`${NOMENCLATURE_URL}?${params}`, { headers: authHeaders });
+      const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok) {
         setItems(data.items || []);
         setTotal(data.total || 0);
       }
     } catch {
-      toast({ title: "Ошибка", description: "Не удалось загрузить номенклатуру", variant: "destructive" });
+      toast({ title: "Ошибка", description: "Не удалось загрузить товары", variant: "destructive" });
     } finally {
       setLoadingItems(false);
     }
@@ -146,7 +146,7 @@ const Catalog = () => {
   }, [selectedCategory]);
 
   useEffect(() => {
-    const draftRaw = localStorage.getItem("draft_nomenclature");
+    const draftRaw = localStorage.getItem("draft_product");
     if (draftRaw) {
       try {
         const draft = JSON.parse(draftRaw);
@@ -161,11 +161,11 @@ const Catalog = () => {
         setFormPricePurchase(draft.formPricePurchase || "");
         setFormBarcodes(Array.isArray(draft.formBarcodes) ? draft.formBarcodes : []);
         setAddOpen(true);
-        localStorage.removeItem("draft_nomenclature");
+        localStorage.removeItem("draft_product");
       } catch { /* ignore */ }
     }
 
-    const scannedRaw = localStorage.getItem("scanned_nomenclature_barcodes");
+    const scannedRaw = localStorage.getItem("scanned_product_barcodes");
     if (scannedRaw) {
       try {
         const scanned: string[] = JSON.parse(scannedRaw);
@@ -178,7 +178,7 @@ const Catalog = () => {
             return merged;
           });
         }
-        localStorage.removeItem("scanned_nomenclature_barcodes");
+        localStorage.removeItem("scanned_product_barcodes");
       } catch { /* ignore */ }
     }
   }, []);
@@ -189,9 +189,9 @@ const Catalog = () => {
       formPriceBase, formPriceRetail, formPriceWholesale, formPricePurchase,
       formBarcodes,
     };
-    localStorage.setItem("draft_nomenclature", JSON.stringify(draft));
-    localStorage.setItem("scanned_nomenclature_barcodes", JSON.stringify(formBarcodes));
-    navigate("/admin/scan?returnTo=/admin/catalog&key=scanned_nomenclature_barcodes");
+    localStorage.setItem("draft_product", JSON.stringify(draft));
+    localStorage.setItem("scanned_product_barcodes", JSON.stringify(formBarcodes));
+    navigate("/admin/scan?returnTo=/admin/catalog&key=scanned_product_barcodes");
   };
 
   const handleSearch = () => {
@@ -384,7 +384,7 @@ const Catalog = () => {
         payload.price_purchase = formPricePurchase ? Number(formPricePurchase) : null;
       }
 
-      const resp = await fetch(NOMENCLATURE_URL, {
+      const resp = await fetch(PRODUCTS_URL, {
         method: "POST",
         headers: authHeaders,
         body: JSON.stringify(payload),
@@ -579,7 +579,7 @@ const Catalog = () => {
           ) : items.length === 0 ? (
             <div className="text-center py-12">
               <Icon name="Package" size={48} className="text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">Нет номенклатуры</p>
+              <p className="text-muted-foreground">Нет товаров</p>
               <p className="text-sm text-muted-foreground mt-1">Нажмите «Добавить товар» для создания</p>
             </div>
           ) : (
@@ -642,7 +642,7 @@ const Catalog = () => {
         </main>
       </div>
 
-      {/* Add nomenclature dialog */}
+      {/* Add product dialog */}
       <Dialog open={addOpen} onOpenChange={(open) => { if (!open) { setAddOpen(false); resetForm(); } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>

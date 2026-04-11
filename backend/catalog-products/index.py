@@ -1,4 +1,4 @@
-"""CRUD номенклатуры каталога с загрузкой изображений"""
+"""CRUD товаров каталога с загрузкой изображений"""
 import json
 import os
 import base64
@@ -73,43 +73,43 @@ def handler(event: dict, context) -> dict:
     is_owner = user_role == 'owner'
 
     if method == 'GET':
-        nom_id = params.get('id')
-        if nom_id:
+        product_id = params.get('id')
+        if product_id:
             if is_owner:
                 cur.execute(
-                    """SELECT n.id, n.category_id, n.name, n.article, n.brand, n.supplier_code,
-                              n.price_base, n.price_retail, n.price_wholesale, n.price_purchase,
-                              n.created_at, n.updated_at, c.name as category_name
-                       FROM nomenclature n
-                       JOIN categories c ON c.id = n.category_id
-                       WHERE n.id = %s""",
-                    (nom_id,)
+                    """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
+                              p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
+                              p.created_at, p.updated_at, c.name as category_name
+                       FROM products p
+                       JOIN categories c ON c.id = p.category_id
+                       WHERE p.id = %s""",
+                    (product_id,)
                 )
             else:
                 cur.execute(
-                    """SELECT n.id, n.category_id, n.name, n.article, n.brand, n.supplier_code,
-                              n.price_base, n.price_retail, n.price_wholesale, NULL as price_purchase,
-                              n.created_at, n.updated_at, c.name as category_name
-                       FROM nomenclature n
-                       JOIN categories c ON c.id = n.category_id
-                       WHERE n.id = %s""",
-                    (nom_id,)
+                    """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
+                              p.price_base, p.price_retail, p.price_wholesale, NULL as price_purchase,
+                              p.created_at, p.updated_at, c.name as category_name
+                       FROM products p
+                       JOIN categories c ON c.id = p.category_id
+                       WHERE p.id = %s""",
+                    (product_id,)
                 )
             row = cur.fetchone()
             if not row:
                 cur.close()
                 conn.close()
-                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Номенклатура не найдена'})}
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Товар не найден'})}
 
             cur.execute(
-                "SELECT id, url, sort_order FROM nomenclature_images WHERE nomenclature_id = %s ORDER BY sort_order",
-                (nom_id,)
+                "SELECT id, url, sort_order FROM product_images WHERE product_id = %s ORDER BY sort_order",
+                (product_id,)
             )
             images = [{'id': r[0], 'url': r[1], 'sort_order': r[2]} for r in cur.fetchall()]
 
             cur.execute(
-                "SELECT id, barcode FROM nomenclature_barcodes WHERE nomenclature_id = %s ORDER BY id",
-                (nom_id,)
+                "SELECT id, barcode FROM product_barcodes WHERE product_id = %s ORDER BY id",
+                (product_id,)
             )
             barcodes = [{'id': r[0], 'barcode': r[1]} for r in cur.fetchall()]
 
@@ -133,7 +133,7 @@ def handler(event: dict, context) -> dict:
         barcode = params.get('barcode', '').strip()
         if barcode:
             cur.execute(
-                "SELECT nomenclature_id FROM nomenclature_barcodes WHERE barcode = %s LIMIT 1",
+                "SELECT product_id FROM product_barcodes WHERE barcode = %s LIMIT 1",
                 (barcode,)
             )
             bc_row = cur.fetchone()
@@ -143,14 +143,14 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}
 
             found_id = bc_row[0]
-            price_purchase_col = "n.price_purchase" if is_owner else "NULL as price_purchase"
+            price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
             cur.execute(
-                f"""SELECT n.id, n.category_id, n.name, n.article, n.brand, n.supplier_code,
-                           n.price_base, n.price_retail, n.price_wholesale, {price_purchase_col},
-                           n.created_at, c.name as category_name
-                    FROM nomenclature n
-                    JOIN categories c ON c.id = n.category_id
-                    WHERE n.id = %s""",
+                f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
+                           p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
+                           p.created_at, c.name as category_name
+                    FROM products p
+                    JOIN categories c ON c.id = p.category_id
+                    WHERE p.id = %s""",
                 (found_id,)
             )
             r = cur.fetchone()
@@ -186,61 +186,61 @@ def handler(event: dict, context) -> dict:
         values = []
 
         if category_id:
-            conditions.append("n.category_id = %s")
+            conditions.append("p.category_id = %s")
             values.append(int(category_id))
 
         if search:
             like = f"%{search}%"
             if search_type == 'article':
-                conditions.append("n.article ILIKE %s")
+                conditions.append("p.article ILIKE %s")
                 values.append(like)
             elif search_type == 'supplier_code':
-                conditions.append("n.supplier_code ILIKE %s")
+                conditions.append("p.supplier_code ILIKE %s")
                 values.append(like)
             else:
-                conditions.append("(n.name ILIKE %s OR n.article ILIKE %s OR n.brand ILIKE %s OR n.supplier_code ILIKE %s)")
+                conditions.append("(p.name ILIKE %s OR p.article ILIKE %s OR p.brand ILIKE %s OR p.supplier_code ILIKE %s)")
                 values.extend([like, like, like, like])
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        price_purchase_col = "n.price_purchase" if is_owner else "NULL as price_purchase"
+        price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
 
-        cur.execute(f"SELECT COUNT(*) FROM nomenclature n {where}", values)
+        cur.execute(f"SELECT COUNT(*) FROM products p {where}", values)
         total = cur.fetchone()[0]
 
         cur.execute(
-            f"""SELECT n.id, n.category_id, n.name, n.article, n.brand, n.supplier_code,
-                       n.price_base, n.price_retail, n.price_wholesale, {price_purchase_col},
-                       n.created_at, c.name as category_name
-                FROM nomenclature n
-                JOIN categories c ON c.id = n.category_id
+            f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
+                       p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
+                       p.created_at, c.name as category_name
+                FROM products p
+                JOIN categories c ON c.id = p.category_id
                 {where}
-                ORDER BY n.name
+                ORDER BY p.name
                 LIMIT %s OFFSET %s""",
             values + [per_page, offset]
         )
         rows = cur.fetchall()
 
-        nom_ids = [r[0] for r in rows]
+        product_ids = [r[0] for r in rows]
         images_map = {}
-        if nom_ids:
-            placeholders = ','.join(['%s'] * len(nom_ids))
+        if product_ids:
+            placeholders = ','.join(['%s'] * len(product_ids))
             cur.execute(
-                f"""SELECT nomenclature_id, id, url, sort_order
-                    FROM nomenclature_images
-                    WHERE nomenclature_id IN ({placeholders})
+                f"""SELECT product_id, id, url, sort_order
+                    FROM product_images
+                    WHERE product_id IN ({placeholders})
                     ORDER BY sort_order""",
-                nom_ids
+                product_ids
             )
             for img in cur.fetchall():
                 images_map.setdefault(img[0], []).append({'id': img[1], 'url': img[2], 'sort_order': img[3]})
 
         barcodes_map = {}
-        if nom_ids:
-            placeholders = ','.join(['%s'] * len(nom_ids))
+        if product_ids:
+            placeholders = ','.join(['%s'] * len(product_ids))
             cur.execute(
-                f"SELECT nomenclature_id, barcode FROM nomenclature_barcodes WHERE nomenclature_id IN ({placeholders}) ORDER BY id",
-                nom_ids
+                f"SELECT product_id, barcode FROM product_barcodes WHERE product_id IN ({placeholders}) ORDER BY id",
+                product_ids
             )
             for bc in cur.fetchall():
                 barcodes_map.setdefault(bc[0], []).append(bc[1])
@@ -294,22 +294,22 @@ def handler(event: dict, context) -> dict:
                     category_id = cur.fetchone()[0]
 
             cur.execute(
-                """INSERT INTO nomenclature (category_id, name, article, brand, supplier_code,
+                """INSERT INTO products (category_id, name, article, brand, supplier_code,
                            price_base, price_retail, price_wholesale, price_purchase)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING id""",
                 (category_id, name, article, brand, supplier_code,
                  price_base, price_retail, price_wholesale, price_purchase)
             )
-            nom_id = cur.fetchone()[0]
+            product_id = cur.fetchone()[0]
 
             if images_data:
                 s3 = get_s3()
                 for i, img in enumerate(images_data):
                     url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
                     cur.execute(
-                        "INSERT INTO nomenclature_images (nomenclature_id, url, sort_order) VALUES (%s, %s, %s)",
-                        (nom_id, url, i)
+                        "INSERT INTO product_images (product_id, url, sort_order) VALUES (%s, %s, %s)",
+                        (product_id, url, i)
                     )
 
             barcodes_data = body.get('barcodes', [])
@@ -317,14 +317,14 @@ def handler(event: dict, context) -> dict:
                 bc_val = bc.strip() if isinstance(bc, str) else str(bc).strip()
                 if bc_val:
                     cur.execute(
-                        "INSERT INTO nomenclature_barcodes (nomenclature_id, barcode) VALUES (%s, %s)",
-                        (nom_id, bc_val)
+                        "INSERT INTO product_barcodes (product_id, barcode) VALUES (%s, %s)",
+                        (product_id, bc_val)
                     )
 
             conn.commit()
             cur.close()
             conn.close()
-            return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': nom_id})}
+            return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': product_id})}
         except Exception as e:
             import traceback
             err_msg = f"{type(e).__name__}: {str(e)}"
@@ -339,11 +339,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': err_msg})}
 
     if method == 'PUT':
-        nom_id = params.get('id')
-        if not nom_id:
+        product_id = params.get('id')
+        if not product_id:
             cur.close()
             conn.close()
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id номенклатуры'})}
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id товара'})}
 
         name = (body.get('name') or '').strip()
         category_id = body.get('category_id')
@@ -363,7 +363,7 @@ def handler(event: dict, context) -> dict:
                 category_id = cur.fetchone()[0]
 
         cur.execute(
-            """UPDATE nomenclature SET
+            """UPDATE products SET
                    name = %s, category_id = %s,
                    article = %s, brand = %s, supplier_code = %s,
                    price_base = %s, price_retail = %s, price_wholesale = %s, price_purchase = %s,
@@ -375,13 +375,13 @@ def handler(event: dict, context) -> dict:
              (body.get('supplier_code') or '').strip() or None,
              body.get('price_base'), body.get('price_retail'),
              body.get('price_wholesale'), body.get('price_purchase'),
-             nom_id)
+             product_id)
         )
         row = cur.fetchone()
         if not row:
             cur.close()
             conn.close()
-            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Номенклатура не найдена'})}
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Товар не найден'})}
 
         new_images = body.get('images', [])
         if new_images:
@@ -389,16 +389,16 @@ def handler(event: dict, context) -> dict:
             for i, img in enumerate(new_images):
                 url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
                 cur.execute(
-                    "INSERT INTO nomenclature_images (nomenclature_id, url, sort_order) VALUES (%s, %s, %s)",
-                    (nom_id, url, 100 + i)
+                    "INSERT INTO product_images (product_id, url, sort_order) VALUES (%s, %s, %s)",
+                    (product_id, url, 100 + i)
                 )
 
         remove_images = body.get('remove_images', [])
         if remove_images:
             placeholders = ','.join(['%s'] * len(remove_images))
             cur.execute(
-                f"DELETE FROM nomenclature_images WHERE id IN ({placeholders}) AND nomenclature_id = %s",
-                remove_images + [nom_id]
+                f"DELETE FROM product_images WHERE id IN ({placeholders}) AND product_id = %s",
+                remove_images + [product_id]
             )
 
         conn.commit()
@@ -407,14 +407,15 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
 
     if method == 'DELETE':
-        nom_id = params.get('id')
-        if not nom_id:
+        product_id = params.get('id')
+        if not product_id:
             cur.close()
             conn.close()
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id номенклатуры'})}
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id товара'})}
 
-        cur.execute("DELETE FROM nomenclature_images WHERE nomenclature_id = %s", (nom_id,))
-        cur.execute("DELETE FROM nomenclature WHERE id = %s", (nom_id,))
+        cur.execute("DELETE FROM product_images WHERE product_id = %s", (product_id,))
+        cur.execute("DELETE FROM product_barcodes WHERE product_id = %s", (product_id,))
+        cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
         conn.commit()
         cur.close()
         conn.close()

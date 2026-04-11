@@ -133,12 +133,12 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id категории'})}
 
-        cur.execute("SELECT COUNT(*) FROM nomenclature WHERE category_id = %s", (cat_id,))
+        cur.execute("SELECT COUNT(*) FROM products WHERE category_id = %s", (cat_id,))
         count = cur.fetchone()[0]
         if count > 0:
             cur.close()
             conn.close()
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нельзя удалить категорию с номенклатурой'})}
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нельзя удалить категорию с товарами'})}
 
         cur.execute("SELECT COUNT(*) FROM categories WHERE parent_id = %s", (cat_id,))
         child_count = cur.fetchone()[0]

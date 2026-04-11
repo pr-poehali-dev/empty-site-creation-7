@@ -93,9 +93,9 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
 
             cur.execute(
-                """SELECT oi.id, oi.nomenclature_id, n.name, n.article, oi.quantity, oi.price, oi.amount
+                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount
                    FROM wholesale_order_items oi
-                   JOIN nomenclature n ON n.id = oi.nomenclature_id
+                   JOIN products p ON p.id = oi.product_id
                    WHERE oi.order_id = %s
                    ORDER BY oi.id""",
                 (order_id,)
@@ -103,7 +103,7 @@ def handler(event: dict, context) -> dict:
             items = []
             for r in cur.fetchall():
                 items.append({
-                    'id': r[0], 'nomenclature_id': r[1], 'name': r[2], 'article': r[3],
+                    'id': r[0], 'product_id': r[1], 'name': r[2], 'article': r[3],
                     'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6])
                 })
 
@@ -190,9 +190,9 @@ def handler(event: dict, context) -> dict:
             price = float(item.get('price', 0))
             amount = price * qty
             cur.execute(
-                """INSERT INTO wholesale_order_items (order_id, nomenclature_id, quantity, price, amount)
+                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount)
                    VALUES (%s, %s, %s, %s, %s)""",
-                (order_id, item['nomenclature_id'], qty, price, amount)
+                (order_id, item['product_id'], qty, price, amount)
             )
 
         conn.commit()
