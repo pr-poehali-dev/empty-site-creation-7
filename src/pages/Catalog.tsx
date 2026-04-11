@@ -255,29 +255,40 @@ const Catalog = () => {
 
           return (
             <div key={cat.id}>
-              <button
-                className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors text-left ${
+              <div
+                className={`w-full flex items-center rounded-lg text-sm transition-colors text-left ${
                   isSelected
                     ? "bg-primary/20 text-primary"
                     : "hover:bg-white/[0.06] text-foreground"
                 }`}
-                onClick={() => {
-                  setSelectedCategory(isSelected ? null : cat.id);
-                  if (hasChildren) toggleExpand(cat.id);
-                  setShowMobileCategories(false);
-                }}
               >
                 {hasChildren ? (
-                  <Icon
-                    name={isExpanded ? "ChevronDown" : "ChevronRight"}
-                    size={14}
-                    className="flex-shrink-0 text-muted-foreground"
-                  />
+                  <button
+                    className="flex items-center justify-center w-8 h-8 flex-shrink-0 rounded-lg hover:bg-white/[0.1] transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleExpand(cat.id);
+                    }}
+                  >
+                    <Icon
+                      name={isExpanded ? "ChevronDown" : "ChevronRight"}
+                      size={16}
+                      className="text-muted-foreground"
+                    />
+                  </button>
                 ) : (
-                  <span className="w-3.5" />
+                  <span className="w-8" />
                 )}
-                <span className="truncate">{cat.name}</span>
-              </button>
+                <button
+                  className="flex-1 text-left py-1.5 pr-2 truncate"
+                  onClick={() => {
+                    setSelectedCategory(isSelected ? null : cat.id);
+                    setShowMobileCategories(false);
+                  }}
+                >
+                  {cat.name}
+                </button>
+              </div>
               {hasChildren && isExpanded && renderCategoryTree(cat.id, depth + 1)}
             </div>
           );
