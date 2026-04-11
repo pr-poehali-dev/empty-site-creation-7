@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import BarcodeScanner from "@/components/BarcodeScanner";
 
 const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
 
@@ -36,7 +37,6 @@ const OrderItemsList = () => {
   const { toast } = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -50,6 +50,7 @@ const OrderItemsList = () => {
   const [searching, setSearching] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("draft_order_items");
@@ -264,21 +265,11 @@ const OrderItemsList = () => {
             {isMobile && (
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => setScannerOpen(true)}
               >
                 <Icon name="Camera" size={18} />
               </button>
             )}
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={() => {
-                toast({ title: "Сканирование", description: "Функция сканирования камерой будет добавлена позже" });
-              }}
-            />
           </div>
         )}
 
@@ -333,6 +324,13 @@ const OrderItemsList = () => {
           </div>
         )}
       </main>
+
+      {scannerOpen && (
+        <BarcodeScanner
+          onScan={(code) => searchByBarcode(code)}
+          onClose={() => setScannerOpen(false)}
+        />
+      )}
     </div>
   );
 };
