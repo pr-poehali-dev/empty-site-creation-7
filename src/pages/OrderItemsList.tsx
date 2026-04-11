@@ -60,29 +60,23 @@ const OrderItemsList = () => {
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
       try {
-        const codes: string[] = JSON.parse(scannedRaw);
+        const entries = JSON.parse(scannedRaw);
         localStorage.removeItem("scanned_order_barcodes");
-        if (Array.isArray(codes) && codes.length > 0) {
-          (async () => {
-            let current = [...initialLines];
-            for (const code of codes) {
-              if (!code.trim()) continue;
-              try {
-                const resp = await fetch(`${PRODUCTS_URL}?barcode=${encodeURIComponent(code)}`, { headers: authHeaders });
-                const data = await resp.json();
-                const found = resp.ok && data.items?.length > 0 ? data.items[0] : data.item || null;
-                if (!found) continue;
-                const existing = current.find((l) => l.product_id === found.id);
-                if (existing) {
-                  current = current.map((l) => l.product_id === found.id ? { ...l, quantity: l.quantity + 1 } : l);
-                } else {
-                  current = [...current, { product_id: found.id, name: found.name, article: found.article, quantity: 1, price: found.price_wholesale || 0 }];
-                }
-              } catch { /* ignore */ }
+        if (Array.isArray(entries) && entries.length > 0) {
+          let current = [...initialLines];
+          for (const entry of entries) {
+            const productId = entry?.product_id;
+            const name = entry?.name;
+            if (!productId) continue;
+            const existing = current.find((l) => l.product_id === productId);
+            if (existing) {
+              current = current.map((l) => l.product_id === productId ? { ...l, quantity: l.quantity + 1 } : l);
+            } else {
+              current = [...current, { product_id: productId, name: name || "Без названия", article: null, quantity: 1, price: 0 }];
             }
-            setLines(current);
-            localStorage.setItem("draft_order_items", JSON.stringify(current));
-          })();
+          }
+          setLines(current);
+          localStorage.setItem("draft_order_items", JSON.stringify(current));
         }
       } catch { /* ignore */ }
     }

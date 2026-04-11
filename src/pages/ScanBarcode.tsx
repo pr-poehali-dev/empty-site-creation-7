@@ -26,6 +26,13 @@ interface ScannedItem {
   barcode: string;
   name: string | null;
   found: boolean;
+  product_id: number | null;
+}
+
+interface CollectedEntry {
+  barcode: string;
+  product_id: number | null;
+  name: string | null;
 }
 
 const getDetectorCtor = (): BarcodeDetectorConstructor | undefined => {
@@ -49,7 +56,7 @@ const ScanBarcode = () => {
   const [status, setStatus] = useState<"initializing" | "scanning" | "unsupported">("initializing");
   const [flashCapture, setFlashCapture] = useState(false);
   const [flashError, setFlashError] = useState(false);
-  const [collected, setCollected] = useState<string[]>([]);
+  const [collected, setCollected] = useState<CollectedEntry[]>([]);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastFlash, setLastFlash] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -66,7 +73,7 @@ const ScanBarcode = () => {
     Authorization: `Bearer ${token}`,
   };
 
-  const saveCollected = (next: string[]) => {
+  const saveCollected = (next: CollectedEntry[]) => {
     setCollected(next);
     localStorage.setItem(storageKey, JSON.stringify(next));
   };
@@ -77,14 +84,12 @@ const ScanBarcode = () => {
         headers: authHeaders,
       });
       const data = await resp.json();
-      if (resp.ok && data.items && data.items.length > 0) {
-        return { id, barcode: code, name: data.items[0].name, found: true };
-      }
-      if (resp.ok && data.item) {
-        return { id, barcode: code, name: data.item.name, found: true };
+      const found = resp.ok && data.items?.length > 0 ? data.items[0] : data.item || null;
+      if (found) {
+        return { id, barcode: code, name: found.name, found: true, product_id: found.id };
       }
     } catch { /* ignore */ }
-    return { id, barcode: code, name: null, found: false };
+    return { id, barcode: code, name: null, found: false, product_id: null };
   };
 
   const processScan = async (code: string) => {
@@ -93,18 +98,16 @@ const ScanBarcode = () => {
     setTimeout(() => setLastFlash(null), 1200);
 
     const id = ++idCounterRef.current;
+    const item = await resolveBarcode(id, code);
 
+    const entry: CollectedEntry = { barcode: code, product_id: item.product_id, name: item.name };
     setCollected((prev) => {
-      const next = [...prev, code];
+      const next = [...prev, entry];
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
 
-    const item = await resolveBarcode(id, code);
-    setScannedItems((prev) => {
-      const next = [item, ...prev].slice(0, MAX_VISIBLE);
-      return next;
-    });
+    setScannedItems((prev) => [item, ...prev].slice(0, MAX_VISIBLE));
   };
 
   const applyAutoSettings = async (track: MediaStreamTrack) => {
@@ -186,7 +189,7 @@ const ScanBarcode = () => {
   const removeItem = (id: number, barcode: string) => {
     setScannedItems((prev) => prev.filter((s) => s.id !== id));
     setCollected((prev) => {
-      const idx = prev.indexOf(barcode);
+      const idx = prev.findIndex((e) => e.barcode === barcode);
       if (idx === -1) return prev;
       const next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
       localStorage.setItem(storageKey, JSON.stringify(next));
@@ -225,8 +228,16 @@ const ScanBarcode = () => {
   const selectProduct = (product: { id: number; name: string }) => {
     if (!searchItem) return;
     setScannedItems((prev) =>
-      prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true } : s)
+      prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true, product_id: product.id } : s)
     );
+    setCollected((prev) => {
+      const idx = prev.findIndex((e) => e.barcode === searchItem.barcode && !e.product_id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], product_id: product.id, name: product.name };
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
     setSearchItem(null);
   };
 
