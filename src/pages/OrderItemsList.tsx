@@ -52,20 +52,38 @@ const OrderItemsList = () => {
 
   useEffect(() => {
     const saved = localStorage.getItem("draft_order_items");
+    let initialLines: OrderLine[] = [];
     if (saved) {
-      try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
+      try { initialLines = JSON.parse(saved); setLines(initialLines); } catch { /* ignore */ }
     }
 
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
       try {
         const codes: string[] = JSON.parse(scannedRaw);
-        if (Array.isArray(codes)) {
-          codes.forEach((code) => {
-            searchByBarcode(code);
-          });
-        }
         localStorage.removeItem("scanned_order_barcodes");
+        if (Array.isArray(codes) && codes.length > 0) {
+          (async () => {
+            let current = [...initialLines];
+            for (const code of codes) {
+              if (!code.trim()) continue;
+              try {
+                const resp = await fetch(`${PRODUCTS_URL}?barcode=${encodeURIComponent(code)}`, { headers: authHeaders });
+                const data = await resp.json();
+                const found = resp.ok && data.items?.length > 0 ? data.items[0] : data.item || null;
+                if (!found) continue;
+                const existing = current.find((l) => l.product_id === found.id);
+                if (existing) {
+                  current = current.map((l) => l.product_id === found.id ? { ...l, quantity: l.quantity + 1 } : l);
+                } else {
+                  current = [...current, { product_id: found.id, name: found.name, article: found.article, quantity: 1, price: found.price_wholesale || 0 }];
+                }
+              } catch { /* ignore */ }
+            }
+            setLines(current);
+            localStorage.setItem("draft_order_items", JSON.stringify(current));
+          })();
+        }
       } catch { /* ignore */ }
     }
   }, []);
