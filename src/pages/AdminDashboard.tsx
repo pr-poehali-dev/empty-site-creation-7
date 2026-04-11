@@ -37,8 +37,10 @@ const AdminDashboard = () => {
   const [managers, setManagers] = useState<Manager[]>([]);
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [deactivateManager, setDeactivateManager] = useState<Manager | null>(null);
   const [newPhone, setNewPhone] = useState("+7");
   const [adding, setAdding] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -115,6 +117,28 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleDeactivate = async (manager: Manager) => {
+    setDeactivating(true);
+    try {
+      const resp = await fetch(`${MANAGERS_URL}?id=${manager.id}`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Управленец деактивирован", description: manager.phone });
+        setDeactivateManager(null);
+        fetchManagers();
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось деактивировать", variant: "destructive" });
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
@@ -170,6 +194,16 @@ const AdminDashboard = () => {
             <Icon name="Send" size={16} className="text-blue-500" />
           )}
           {statusBadge(manager.status)}
+          {manager.status === "authorized" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={(e) => { e.stopPropagation(); setDeactivateManager(manager); }}
+            >
+              <Icon name="UserX" size={16} />
+            </Button>
+          )}
           {manager.status === "pending" && (
             <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
           )}
@@ -268,6 +302,42 @@ const AdminDashboard = () => {
                 <Icon name="UserPlus" size={18} />
               )}
               <span className="ml-2">{adding ? "Добавление..." : "Добавить"}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deactivateManager} onOpenChange={(open) => !open && setDeactivateManager(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Деактивировать управленца?</DialogTitle>
+          </DialogHeader>
+          {deactivateManager && (
+            <div className="py-4">
+              <p className="text-sm">
+                <span className="font-medium">{deactivateManager.first_name} {deactivateManager.last_name}</span>
+                {" "}({deactivateManager.phone}) потеряет доступ к панели управления.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Управленец вернётся в список неавторизованных. Вы сможете авторизовать его повторно.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeactivateManager(null)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deactivateManager && handleDeactivate(deactivateManager)}
+              disabled={deactivating}
+            >
+              {deactivating ? (
+                <Icon name="Loader2" size={18} className="animate-spin" />
+              ) : (
+                <Icon name="UserX" size={18} />
+              )}
+              <span className="ml-2">{deactivating ? "Деактивация..." : "Деактивировать"}</span>
             </Button>
           </DialogFooter>
         </DialogContent>
