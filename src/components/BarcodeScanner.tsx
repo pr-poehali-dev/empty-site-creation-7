@@ -22,21 +22,33 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
-    const cameraConfig = {
-      facingMode: "environment",
-      advanced: [
-        { focusMode: "continuous" } as MediaTrackConstraintSet,
-        { width: { ideal: 1920 } } as MediaTrackConstraintSet,
-        { height: { ideal: 1080 } } as MediaTrackConstraintSet,
-      ],
+    const tryApplyFocus = () => {
+      try {
+        const videoElement = document.querySelector("#barcode-scanner-region video") as HTMLVideoElement | null;
+        if (!videoElement?.srcObject) return;
+        const track = (videoElement.srcObject as MediaStream).getVideoTracks()[0];
+        if (!track) return;
+        const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
+        const advanced: MediaTrackConstraintSet[] = [];
+        if (Array.isArray(caps.focusMode) && (caps.focusMode as string[]).includes("continuous")) {
+          advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
+        }
+        if (advanced.length > 0) {
+          track.applyConstraints({ advanced }).catch((e) => {
+            console.warn("applyConstraints focus failed:", e);
+          });
+        }
+      } catch (e) {
+        console.warn("focus setup error:", e);
+      }
     };
 
     scanner
       .start(
-        cameraConfig,
+        { facingMode: "environment" },
         {
-          fps: 20,
-          qrbox: { width: 320, height: 150 },
+          fps: 15,
+          qrbox: { width: 280, height: 140 },
           aspectRatio: 1.333,
           disableFlip: false,
         },
@@ -54,24 +66,19 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         () => {}
       )
       .then(() => {
-        const videoElement = document.querySelector("#barcode-scanner-region video") as HTMLVideoElement | null;
-        if (videoElement?.srcObject) {
-          const track = (videoElement.srcObject as MediaStream).getVideoTracks()[0];
-          if (track) {
-            const capabilities = track.getCapabilities?.() as MediaTrackCapabilities & { focusMode?: string[] };
-            if (capabilities?.focusMode?.includes("continuous")) {
-              track.applyConstraints({
-                advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
-              });
-            }
-          }
-        }
+        setTimeout(tryApplyFocus, 300);
       })
       .catch((err) => {
-        if (String(err).includes("NotAllowedError")) {
+        console.error("Scanner start error:", err);
+        const errStr = String(err);
+        if (errStr.includes("NotAllowedError") || errStr.includes("Permission")) {
           setError("Доступ к камере запрещён. Разрешите в настройках браузера.");
+        } else if (errStr.includes("NotFoundError")) {
+          setError("Камера не найдена на устройстве");
+        } else if (errStr.includes("NotReadableError")) {
+          setError("Камера занята другим приложением");
         } else {
-          setError("Не удалось запустить камеру");
+          setError(`Не удалось запустить камеру: ${errStr.slice(0, 100)}`);
         }
       });
 
