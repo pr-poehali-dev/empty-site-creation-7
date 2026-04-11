@@ -48,8 +48,25 @@ def handler(event: dict, context) -> dict:
 
             if user:
                 cur.execute("UPDATE users SET telegram_chat_id = %s WHERE phone = %s", (chat_id, phone))
-                conn.commit()
-                send_message(chat_id, "Telegram привязан к номеру " + phone + ". Теперь вы можете получать коды авторизации.")
+
+                cur.execute("SELECT id, status FROM managers WHERE phone = %s", (phone,))
+                mgr = cur.fetchone()
+
+                if mgr and mgr[1] == 'not_authorized':
+                    cur.execute(
+                        "UPDATE managers SET telegram_chat_id = %s, status = 'pending' WHERE phone = %s",
+                        (chat_id, phone)
+                    )
+                    conn.commit()
+                    send_message(chat_id, "Telegram привязан к номеру " + phone + ". Ожидайте авторизации владельцем.")
+                    notify_owner(cur, phone)
+                elif mgr:
+                    cur.execute("UPDATE managers SET telegram_chat_id = %s WHERE phone = %s", (chat_id, phone))
+                    conn.commit()
+                    send_message(chat_id, "Telegram привязан к номеру " + phone + ". Теперь вы можете получать коды авторизации.")
+                else:
+                    conn.commit()
+                    send_message(chat_id, "Telegram привязан к номеру " + phone + ". Теперь вы можете получать коды авторизации.")
             else:
                 send_message(chat_id, "Номер " + phone + " не найден в системе. Обратитесь к администратору.")
 
@@ -59,6 +76,15 @@ def handler(event: dict, context) -> dict:
             send_message(chat_id, "Добро пожаловать! Для привязки аккаунта используйте кнопку на сайте.")
 
     return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+def notify_owner(cur, manager_phone):
+    cur.execute("SELECT telegram_chat_id FROM users WHERE role = 'owner' AND telegram_chat_id IS NOT NULL")
+    owners = cur.fetchall()
+    for owner in owners:
+        send_message(
+            owner[0],
+            f"Управленец {manager_phone} привязал Telegram и ожидает авторизации.\n\nАвторизуйте его в панели управления."
+        )
 
 def send_message(chat_id, text):
     import urllib.request

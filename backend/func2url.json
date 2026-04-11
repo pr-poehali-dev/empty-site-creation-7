@@ -1,4 +1,5 @@
 {
+  "admin-managers": "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e",
   "telegram-setup": "https://functions.poehali.dev/6db3cf7c-812a-4ed9-94a2-5df8405a458c",
   "telegram-webhook": "https://functions.poehali.dev/c5134d29-4cd5-49a8-8385-f44995f8721e",
   "telegram-notify": "https://functions.poehali.dev/f5f8ede6-9abd-4924-a2ed-7368bb24cd32",
