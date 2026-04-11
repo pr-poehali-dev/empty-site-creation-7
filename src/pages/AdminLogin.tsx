@@ -14,6 +14,8 @@ export default function AdminLogin() {
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "telegram" | "code">("phone");
   const [loading, setLoading] = useState(false);
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [checkingLink, setCheckingLink] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -94,8 +96,8 @@ export default function AdminLogin() {
     }
   };
 
-  const checkTelegramAndSendCode = async () => {
-    setLoading(true);
+  const checkTelegramLink = async () => {
+    setCheckingLink(true);
     try {
       const resp = await fetch(`${AUTH_URL}/?action=check_telegram`, {
         method: "POST",
@@ -104,16 +106,16 @@ export default function AdminLogin() {
       });
       const data = await resp.json();
 
-      if (!data.linked) {
+      if (data.linked) {
+        setTelegramLinked(true);
+        toast({ title: "Telegram привязан", description: "Теперь отправьте код" });
+      } else {
         toast({ title: "Telegram не привязан", description: "Нажмите 'Привет Telegram' и напишите боту", variant: "destructive" });
-        setLoading(false);
-        return;
       }
-
-      await sendCode();
     } catch {
       toast({ title: "Ошибка", description: "Не удалось проверить привязку", variant: "destructive" });
-      setLoading(false);
+    } finally {
+      setCheckingLink(false);
     }
   };
 
@@ -185,7 +187,8 @@ export default function AdminLogin() {
           {step === "telegram" && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground text-center">
-                Привяжите Telegram к номеру, затем нажмите «Отправить код»
+                1. Нажмите «Привет Telegram» и напишите боту<br />
+                2. Нажмите «Я привязал» для проверки
               </p>
               <Button
                 variant="outline"
@@ -196,21 +199,34 @@ export default function AdminLogin() {
                 <span className="ml-2">Привет Telegram</span>
               </Button>
               <Button
+                variant="outline"
                 className="w-full"
-                onClick={checkTelegramAndSendCode}
-                disabled={loading}
+                onClick={checkTelegramLink}
+                disabled={checkingLink}
+              >
+                {checkingLink ? (
+                  <Icon name="Loader2" size={18} className="animate-spin" />
+                ) : (
+                  <Icon name="CheckCircle" size={18} />
+                )}
+                <span className="ml-2">{checkingLink ? "Проверка..." : "Я привязал"}</span>
+              </Button>
+              <Button
+                className="w-full"
+                onClick={sendCode}
+                disabled={!telegramLinked || loading}
               >
                 {loading ? (
                   <Icon name="Loader2" size={18} className="animate-spin" />
                 ) : (
                   <Icon name="MessageSquare" size={18} />
                 )}
-                <span className="ml-2">{loading ? "Проверка..." : "Отправить код в Telegram"}</span>
+                <span className="ml-2">{loading ? "Отправка..." : "Отправить код в Telegram"}</span>
               </Button>
               <Button
                 variant="ghost"
                 className="w-full text-muted-foreground"
-                onClick={() => { setStep("phone"); }}
+                onClick={() => { setStep("phone"); setTelegramLinked(false); }}
               >
                 Изменить номер
               </Button>
