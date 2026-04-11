@@ -22,13 +22,23 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
+    const cameraConfig = {
+      facingMode: "environment",
+      advanced: [
+        { focusMode: "continuous" } as MediaTrackConstraintSet,
+        { width: { ideal: 1920 } } as MediaTrackConstraintSet,
+        { height: { ideal: 1080 } } as MediaTrackConstraintSet,
+      ],
+    };
+
     scanner
       .start(
-        { facingMode: "environment" },
+        cameraConfig,
         {
-          fps: 15,
-          qrbox: { width: 280, height: 120 },
-          aspectRatio: 1.0,
+          fps: 20,
+          qrbox: { width: 320, height: 150 },
+          aspectRatio: 1.333,
+          disableFlip: false,
         },
         (decodedText) => {
           const now = Date.now();
@@ -43,6 +53,20 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         },
         () => {}
       )
+      .then(() => {
+        const videoElement = document.querySelector("#barcode-scanner-region video") as HTMLVideoElement | null;
+        if (videoElement?.srcObject) {
+          const track = (videoElement.srcObject as MediaStream).getVideoTracks()[0];
+          if (track) {
+            const capabilities = track.getCapabilities?.() as MediaTrackCapabilities & { focusMode?: string[] };
+            if (capabilities?.focusMode?.includes("continuous")) {
+              track.applyConstraints({
+                advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+              });
+            }
+          }
+        }
+      })
       .catch((err) => {
         if (String(err).includes("NotAllowedError")) {
           setError("Доступ к камере запрещён. Разрешите в настройках браузера.");
