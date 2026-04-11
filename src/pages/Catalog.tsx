@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import BarcodeScanner from "@/components/BarcodeScanner";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
 const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
@@ -89,6 +90,7 @@ const Catalog = () => {
   const [formBarcodes, setFormBarcodes] = useState<string[]>([]);
   const [formBarcodeInput, setFormBarcodeInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
 
@@ -620,6 +622,17 @@ const Catalog = () => {
                 >
                   <Icon name="Plus" size={16} />
                 </Button>
+                {/Mobi|Android/i.test(navigator.userAgent) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
+                    onClick={() => setBarcodeScannerOpen(true)}
+                  >
+                    <Icon name="Camera" size={16} />
+                  </Button>
+                )}
               </div>
               {formBarcodes.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -731,6 +744,17 @@ const Catalog = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {barcodeScannerOpen && (
+        <BarcodeScanner
+          onScan={(code) => {
+            if (!formBarcodes.includes(code)) {
+              setFormBarcodes((prev) => [...prev, code]);
+            }
+          }}
+          onClose={() => setBarcodeScannerOpen(false)}
+        />
+      )}
     </div>
   );
 };
