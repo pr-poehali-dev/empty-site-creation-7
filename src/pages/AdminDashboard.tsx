@@ -53,7 +53,7 @@ const AdminDashboard = () => {
   const [deactivateManager, setDeactivateManager] = useState<Manager | null>(null);
   const [removeManager, setRemoveManager] = useState<Manager | null>(null);
   const [editManager, setEditManager] = useState<Manager | null>(null);
-  const [newPhone, setNewPhone] = useState("+7");
+  const [newPhone, setNewPhone] = useState("+");
   const [adding, setAdding] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -90,27 +90,18 @@ const AdminDashboard = () => {
     fetchManagers();
   }, []);
 
-  const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, "");
-    if (digits.length <= 1) return "+7";
-    if (digits.length <= 4) return `+7 (${digits.slice(1)}`;
-    if (digits.length <= 7) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4)}`;
-    if (digits.length <= 9) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-    return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
-  };
-
-  const cleanPhone = (formatted: string) => "+" + formatted.replace(/\D/g, "");
-
   const handlePhoneInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const digits = e.target.value.replace(/\D/g, "");
-    if (digits.length <= 11) {
-      setNewPhone(formatPhone(e.target.value));
+    let value = e.target.value;
+    if (!value.startsWith("+")) value = "+" + value;
+    const cleaned = "+" + value.replace(/[^\d]/g, "");
+    if (cleaned.length <= 16) {
+      setNewPhone(cleaned);
     }
   };
 
   const addManager = async () => {
-    const clean = cleanPhone(newPhone);
-    if (clean.length < 12) {
+    const digits = newPhone.replace(/\D/g, "");
+    if (digits.length < 10) {
       toast({ title: "Ошибка", description: "Введите корректный номер", variant: "destructive" });
       return;
     }
@@ -119,13 +110,13 @@ const AdminDashboard = () => {
       const resp = await fetch(MANAGERS_URL, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ phone: clean }),
+        body: JSON.stringify({ phone: newPhone }),
       });
       const data = await resp.json();
       if (resp.ok) {
         toast({ title: "Управленец добавлен", description: `Номер ${newPhone}` });
         setAddDialogOpen(false);
-        setNewPhone("+7");
+        setNewPhone("+");
         fetchManagers();
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
@@ -407,7 +398,7 @@ const AdminDashboard = () => {
               <label className="text-sm font-medium text-muted-foreground">Номер телефона</label>
               <Input
                 type="tel"
-                placeholder="+7 (___) ___-__-__"
+                placeholder="+7XXXXXXXXXX"
                 value={newPhone}
                 onChange={handlePhoneInput}
                 className="h-11 rounded-xl bg-secondary border-white/[0.08]"

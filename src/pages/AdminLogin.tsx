@@ -9,7 +9,7 @@ const AUTH_URL = "https://functions.poehali.dev/4a2cb8d4-f9ea-4107-a828-aced0209
 const BOT_USERNAME = "mirtehniki_plus_bot";
 
 export default function AdminLogin() {
-  const [phone, setPhone] = useState("+7");
+  const [phone, setPhone] = useState("+");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"phone" | "telegram" | "code">("phone");
   const [loading, setLoading] = useState(false);
@@ -18,28 +18,17 @@ export default function AdminLogin() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, "");
-    if (digits.length <= 1) return "+7";
-    if (digits.length <= 4) return `+7 (${digits.slice(1)}`;
-    if (digits.length <= 7) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4)}`;
-    if (digits.length <= 9) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-    return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
-  };
-
-  const cleanPhone = (formatted: string) => "+" + formatted.replace(/\D/g, "");
-
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    const digits = raw.replace(/\D/g, "");
-    if (digits.length <= 11) {
-      setPhone(formatPhone(raw));
+    let value = e.target.value;
+    if (!value.startsWith("+")) value = "+" + value;
+    const cleaned = "+" + value.replace(/[^\d]/g, "");
+    if (cleaned.length <= 16) {
+      setPhone(cleaned);
     }
   };
 
   const openTelegramBot = () => {
-    const clean = cleanPhone(phone);
-    const startParam = clean.replace("+", "");
+    const startParam = phone.replace("+", "");
     window.open(`https://t.me/${BOT_USERNAME}?start=${startParam}`, "_blank");
   };
 
@@ -49,7 +38,7 @@ export default function AdminLogin() {
       const resp = await fetch(`${AUTH_URL}/?action=check_phone`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: cleanPhone(phone) }),
+        body: JSON.stringify({ phone }),
       });
       const data = await resp.json();
 
@@ -78,7 +67,7 @@ export default function AdminLogin() {
       const resp = await fetch(`${AUTH_URL}/?action=send_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: cleanPhone(phone) }),
+        body: JSON.stringify({ phone }),
       });
       const data = await resp.json();
 
@@ -101,7 +90,7 @@ export default function AdminLogin() {
       const resp = await fetch(`${AUTH_URL}/?action=check_telegram`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: cleanPhone(phone) }),
+        body: JSON.stringify({ phone }),
       });
       const data = await resp.json();
 
@@ -124,7 +113,7 @@ export default function AdminLogin() {
       const resp = await fetch(`${AUTH_URL}/?action=verify_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: cleanPhone(phone), code }),
+        body: JSON.stringify({ phone, code }),
       });
       const data = await resp.json();
 
@@ -147,8 +136,8 @@ export default function AdminLogin() {
     }
   };
 
-  const phoneDigits = cleanPhone(phone).replace("+", "");
-  const isPhoneValid = phoneDigits.length === 11;
+  const phoneDigits = phone.replace(/\D/g, "");
+  const isPhoneValid = phoneDigits.length >= 10 && phoneDigits.length <= 15;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -163,7 +152,7 @@ export default function AdminLogin() {
             <label className="text-sm font-medium text-muted-foreground">Номер телефона</label>
             <Input
               type="tel"
-              placeholder="+7 (___) ___-__-__"
+              placeholder="+7XXXXXXXXXX"
               value={phone}
               onChange={handlePhoneChange}
               disabled={step !== "phone"}
