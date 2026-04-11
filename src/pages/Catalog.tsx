@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import compressImage from "@/lib/compressImage";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
 const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
@@ -234,19 +235,17 @@ const Catalog = () => {
     return sorted.filter((c) => getCategoryPath(c.id).toLowerCase().includes(q));
   };
 
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files) return;
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(",")[1];
-        setFormImages((prev) => [
-          ...prev,
-          { data: base64, content_type: file.type, preview: reader.result as string },
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
+    for (const file of Array.from(files)) {
+      try {
+        const compressed = await compressImage(file);
+        setFormImages((prev) => [...prev, compressed]);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Не удалось обработать фото";
+        toast({ title: "Ошибка фото", description: msg, variant: "destructive" });
+      }
+    }
   };
 
   const removeImage = (index: number) => {
