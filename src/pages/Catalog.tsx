@@ -515,7 +515,13 @@ const Catalog = () => {
       </div>
 
       {/* Add nomenclature dialog */}
-      <Dialog open={addOpen} onOpenChange={(open) => { if (!open) { setAddOpen(false); resetForm(); } }}>
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (barcodeScannerOpen) return;
+          if (!open) { setAddOpen(false); resetForm(); }
+        }}
+      >
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Добавить товар</DialogTitle>
@@ -628,7 +634,11 @@ const Catalog = () => {
                     variant="outline"
                     size="sm"
                     className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
-                    onClick={() => setBarcodeScannerOpen(true)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setBarcodeScannerOpen(true);
+                    }}
                   >
                     <Icon name="Camera" size={16} />
                   </Button>
