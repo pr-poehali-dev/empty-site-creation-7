@@ -1,0 +1,205 @@
+"""CRUD оптовых заявок"""
+import json
+import os
+import psycopg2
+
+def get_db():
+    return psycopg2.connect(os.environ['DATABASE_URL'])
+
+def get_user_by_token(cur, token):
+    cur.execute(
+        """SELECT u.id, u.phone, u.role FROM users u
+           JOIN user_sessions s ON s.user_id = u.id
+           WHERE s.token = %s AND s.expires_at > NOW()""",
+        (token,)
+    )
+    return cur.fetchone()
+
+def get_manager_info(cur, phone):
+    cur.execute(
+        """SELECT m.id, m.role_id, r.name as role_name FROM managers m
+           LEFT JOIN roles r ON r.id = m.role_id
+           WHERE m.phone = %s AND m.status = 'authorized'""",
+        (phone,)
+    )
+    return cur.fetchone()
+
+ALLOWED_ROLES = ['Управляющий', 'Менеджер опта']
+CAN_CREATE_ROLES = ['Управляющий', 'Менеджер опта']
+
+def handler(event: dict, context) -> dict:
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
+                'Access-Control-Max-Age': '86400'
+            },
+            'body': ''
+        }
+
+    headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
+    method = event.get('httpMethod', 'GET')
+    params = event.get('queryStringParameters') or {}
+    body = json.loads(event.get('body') or '{}')
+
+    req_headers = event.get('headers', {})
+    auth = req_headers.get('X-Authorization', '') or req_headers.get('Authorization', '')
+    token = auth.replace('Bearer ', '').strip()
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    user = get_user_by_token(cur, token)
+    if not user:
+        cur.close()
+        conn.close()
+        return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Не авторизован'})}
+
+    user_id, user_phone, user_role = user
+    is_owner = user_role == 'owner'
+
+    manager_id = None
+    role_name = None
+    if not is_owner:
+        mgr = get_manager_info(cur, user_phone)
+        if not mgr:
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет доступа'})}
+        manager_id, _, role_name = mgr
+        if role_name not in ALLOWED_ROLES:
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет доступа к заявкам'})}
+
+    if method == 'GET':
+        order_id = params.get('id')
+        if order_id:
+            cur.execute(
+                """SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
+                          o.created_at, m.first_name, m.last_name
+                   FROM wholesale_orders o
+                   JOIN managers m ON m.id = o.created_by
+                   WHERE o.id = %s""",
+                (order_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                cur.close()
+                conn.close()
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
+
+            cur.execute(
+                """SELECT oi.id, oi.nomenclature_id, n.name, n.article, oi.quantity, oi.price, oi.amount
+                   FROM wholesale_order_items oi
+                   JOIN nomenclature n ON n.id = oi.nomenclature_id
+                   WHERE oi.order_id = %s
+                   ORDER BY oi.id""",
+                (order_id,)
+            )
+            items = []
+            for r in cur.fetchall():
+                items.append({
+                    'id': r[0], 'nomenclature_id': r[1], 'name': r[2], 'article': r[3],
+                    'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6])
+                })
+
+            order = {
+                'id': row[0], 'customer_name': row[1], 'comment': row[2],
+                'status': row[3], 'total_amount': float(row[4]),
+                'created_at': str(row[5]), 'created_by': f"{row[6]} {row[7]}",
+                'items': items
+            }
+            cur.close()
+            conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'order': order})}
+
+        status_filter = params.get('status')
+        conditions = []
+        values = []
+        if status_filter:
+            conditions.append("o.status = %s")
+            values.append(status_filter)
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        cur.execute(
+            f"""SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
+                       o.created_at, m.first_name, m.last_name
+                FROM wholesale_orders o
+                JOIN managers m ON m.id = o.created_by
+                {where}
+                ORDER BY o.created_at DESC
+                LIMIT 100""",
+            values
+        )
+        orders = []
+        for r in cur.fetchall():
+            orders.append({
+                'id': r[0], 'customer_name': r[1], 'comment': r[2],
+                'status': r[3], 'total_amount': float(r[4]),
+                'created_at': str(r[5]), 'created_by': f"{r[6]} {r[7]}"
+            })
+
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'orders': orders})}
+
+    if method == 'POST':
+        if is_owner:
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Владелец не может создавать заявки'})}
+
+        if role_name not in CAN_CREATE_ROLES:
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав на создание заявок'})}
+
+        customer_name = body.get('customer_name', '').strip()
+        comment = body.get('comment', '').strip() or None
+        items = body.get('items', [])
+
+        if not customer_name:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите имя оптовика'})}
+
+        if not items:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Добавьте хотя бы одну позицию'})}
+
+        total = 0
+        for item in items:
+            amount = float(item.get('price', 0)) * int(item.get('quantity', 0))
+            total += amount
+
+        cur.execute(
+            """INSERT INTO wholesale_orders (customer_name, comment, total_amount, created_by)
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (customer_name, comment, total, manager_id)
+        )
+        order_id = cur.fetchone()[0]
+
+        for item in items:
+            qty = int(item.get('quantity', 1))
+            price = float(item.get('price', 0))
+            amount = price * qty
+            cur.execute(
+                """INSERT INTO wholesale_order_items (order_id, nomenclature_id, quantity, price, amount)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (order_id, item['nomenclature_id'], qty, price, amount)
+            )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': order_id})}
+
+    cur.close()
+    conn.close()
+    return {'statusCode': 405, 'headers': headers, 'body': json.dumps({'error': 'Метод не поддерживается'})}

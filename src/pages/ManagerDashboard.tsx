@@ -17,6 +17,8 @@ const ManagerDashboard = () => {
     ? `${user.first_name} ${user.last_name}`
     : user.phone;
 
+  const canSeeOrders = ["Управляющий", "Менеджер опта"].includes(user.role_name);
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-white/[0.08] bg-card">
@@ -57,6 +59,16 @@ const ManagerDashboard = () => {
             <Icon name="Package" size={20} />
             <span className="font-medium">Каталог</span>
           </Button>
+          {canSeeOrders && (
+            <Button
+              variant="outline"
+              className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/orders")}
+            >
+              <Icon name="ClipboardList" size={20} />
+              <span className="font-medium">Заявки</span>
+            </Button>
+          )}
         </div>
       </main>
     </div>

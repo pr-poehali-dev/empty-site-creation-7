@@ -360,6 +360,14 @@ const AdminDashboard = () => {
             <Icon name="Package" size={20} />
             <span className="font-medium">Каталог</span>
           </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/orders")}
+          >
+            <Icon name="ClipboardList" size={20} />
+            <span className="font-medium">Заявки</span>
+          </Button>
         </div>
 
         <div className="flex items-center justify-between mb-5 sm:mb-6">
