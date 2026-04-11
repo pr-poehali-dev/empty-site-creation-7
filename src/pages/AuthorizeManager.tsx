@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -104,7 +103,7 @@ const AuthorizeManager = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center">
         <Icon name="Loader2" size={32} className="animate-spin text-muted-foreground" />
       </div>
     );
@@ -113,49 +112,60 @@ const AuthorizeManager = () => {
   if (!manager) return null;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/admin/dashboard")}>
-              <Icon name="ArrowLeft" size={18} />
-            </Button>
-            <h1 className="text-xl font-bold">Авторизация управленца</h1>
-          </div>
+    <div className="min-h-screen">
+      <header className="border-b border-white/[0.08] bg-card">
+        <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 py-3 sm:py-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 hover:bg-white/[0.06]"
+            onClick={() => navigate("/admin/dashboard")}
+          >
+            <Icon name="ArrowLeft" size={18} />
+          </Button>
+          <h1 className="text-lg sm:text-xl font-semibold">Авторизация управленца</h1>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-md">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              {manager.phone}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {manager.telegram_linked ? "Telegram привязан" : "Telegram не привязан"}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <main className="max-w-md mx-auto px-4 py-6 sm:py-8">
+        <div className="rounded-2xl border border-white/[0.08] bg-card p-5 sm:p-6">
+          <div className="mb-5">
+            <p className="text-lg font-medium">{manager.phone}</p>
+            <div className="flex items-center gap-2 mt-1">
+              {manager.telegram_linked ? (
+                <span className="text-xs text-blue-400 flex items-center gap-1">
+                  <Icon name="Send" size={12} />
+                  Telegram привязан
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Telegram не привязан</span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Имя</label>
+              <label className="text-sm font-medium text-muted-foreground">Имя</label>
               <Input
                 placeholder="Иван"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
+                className="h-11 rounded-xl bg-secondary border-white/[0.08]"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Фамилия</label>
+              <label className="text-sm font-medium text-muted-foreground">Фамилия</label>
               <Input
                 placeholder="Иванов"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
+                className="h-11 rounded-xl bg-secondary border-white/[0.08]"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Роль</label>
+              <label className="text-sm font-medium text-muted-foreground">Роль</label>
               <Select value={roleId} onValueChange={setRoleId}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl bg-secondary border-white/[0.08]">
                   <SelectValue placeholder="Выберите роль" />
                 </SelectTrigger>
                 <SelectContent>
@@ -167,7 +177,11 @@ const AuthorizeManager = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="w-full" onClick={authorize} disabled={submitting}>
+            <Button
+              className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+              onClick={authorize}
+              disabled={submitting}
+            >
               {submitting ? (
                 <Icon name="Loader2" size={18} className="animate-spin" />
               ) : (
@@ -175,8 +189,8 @@ const AuthorizeManager = () => {
               )}
               <span className="ml-2">{submitting ? "Авторизация..." : "Авторизовать управленца"}</span>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </main>
     </div>
   );

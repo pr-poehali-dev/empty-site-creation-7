@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
@@ -152,26 +151,29 @@ export default function AdminLogin() {
   const isPhoneValid = phoneDigits.length === 11;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Вход в панель управления</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-[400px] rounded-2xl border border-white/[0.08] bg-card p-6 sm:p-8">
+        <div className="text-center mb-6">
+          <h1 className="text-xl sm:text-2xl font-semibold">Вход в панель управления</h1>
+          <p className="text-sm text-muted-foreground mt-1">Мир Техники плюс</p>
+        </div>
+
+        <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Номер телефона</label>
+            <label className="text-sm font-medium text-muted-foreground">Номер телефона</label>
             <Input
               type="tel"
               placeholder="+7 (___) ___-__-__"
               value={phone}
               onChange={handlePhoneChange}
               disabled={step !== "phone"}
+              className="h-11 rounded-xl bg-secondary border-white/[0.08] text-base"
             />
           </div>
 
           {step === "phone" && (
             <Button
-              className="w-full"
+              className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
               onClick={checkPhone}
               disabled={!isPhoneValid || loading}
             >
@@ -186,13 +188,13 @@ export default function AdminLogin() {
 
           {step === "telegram" && (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground text-center">
+              <p className="text-sm text-muted-foreground text-center leading-relaxed">
                 1. Нажмите «Привет Telegram» и напишите боту<br />
                 2. Нажмите «Я привязал» для проверки
               </p>
               <Button
                 variant="outline"
-                className="w-full"
+                className="w-full h-11 rounded-xl border-white/[0.08] hover:bg-white/[0.06]"
                 onClick={openTelegramBot}
               >
                 <Icon name="Send" size={18} />
@@ -200,7 +202,7 @@ export default function AdminLogin() {
               </Button>
               <Button
                 variant="outline"
-                className="w-full"
+                className="w-full h-11 rounded-xl border-white/[0.08] hover:bg-white/[0.06]"
                 onClick={checkTelegramLink}
                 disabled={checkingLink}
               >
@@ -212,7 +214,7 @@ export default function AdminLogin() {
                 <span className="ml-2">{checkingLink ? "Проверка..." : "Я привязал"}</span>
               </Button>
               <Button
-                className="w-full"
+                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
                 onClick={sendCode}
                 disabled={!telegramLinked || loading}
               >
@@ -223,35 +225,32 @@ export default function AdminLogin() {
                 )}
                 <span className="ml-2">{loading ? "Отправка..." : "Отправить код в Telegram"}</span>
               </Button>
-              <Button
-                variant="ghost"
-                className="w-full text-muted-foreground"
+              <button
+                className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => { setStep("phone"); setTelegramLinked(false); }}
               >
                 Изменить номер
-              </Button>
+              </button>
             </div>
           )}
 
           {step === "code" && (
             <div className="space-y-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Код из Telegram</label>
+                <label className="text-sm font-medium text-muted-foreground">Код из Telegram</label>
                 <Input
                   type="text"
                   inputMode="numeric"
-                  placeholder="______"
-                  maxLength={6}
+                  placeholder="000000"
                   value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  className="text-center text-2xl tracking-widest"
-                  autoFocus
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="h-11 rounded-xl bg-secondary border-white/[0.08] text-center text-xl tracking-[0.3em] font-mono"
                 />
               </div>
               <Button
-                className="w-full"
+                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
                 onClick={verifyCode}
-                disabled={code.length !== 6 || loading}
+                disabled={code.length < 6 || loading}
               >
                 {loading ? (
                   <Icon name="Loader2" size={18} className="animate-spin" />
@@ -260,17 +259,16 @@ export default function AdminLogin() {
                 )}
                 <span className="ml-2">{loading ? "Проверка..." : "Войти"}</span>
               </Button>
-              <Button
-                variant="ghost"
-                className="w-full text-muted-foreground"
+              <button
+                className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => { setStep("phone"); setCode(""); }}
               >
                 Изменить номер
-              </Button>
+              </button>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

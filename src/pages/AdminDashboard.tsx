@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -234,64 +233,67 @@ const AdminDashboard = () => {
   const statusBadge = (status: string) => {
     switch (status) {
       case "authorized":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Авторизован</Badge>;
+        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/20">Авторизован</Badge>;
       case "pending":
-        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Ждёт авторизации</Badge>;
+        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20">Ждёт авторизации</Badge>;
       default:
-        return <Badge variant="secondary">Не авторизован</Badge>;
+        return <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] hover:bg-white/[0.06]">Не авторизован</Badge>;
     }
   };
 
   const renderManagerCard = (manager: Manager) => (
-    <Card
+    <div
       key={manager.id}
-      className={`${manager.status === "pending" ? "cursor-pointer hover:border-primary transition-colors" : ""}`}
+      className={`rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 ${
+        manager.status === "pending" ? "cursor-pointer hover:border-primary/50 transition-colors" : ""
+      }`}
       onClick={() => {
         if (manager.status === "pending") {
           navigate(`/admin/authorize/${manager.id}`);
         }
       }}
     >
-      <CardContent className="flex items-center justify-between py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-            <Icon name="User" size={20} />
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/[0.06] flex items-center justify-center flex-shrink-0">
+            <Icon name="User" size={18} className="text-muted-foreground" />
           </div>
-          <div>
-            <p className="font-medium">
+          <div className="min-w-0">
+            <p className="font-medium text-sm sm:text-base truncate">
               {manager.first_name && manager.last_name
                 ? `${manager.first_name} ${manager.last_name}`
                 : manager.phone}
             </p>
             {manager.first_name && (
-              <p className="text-sm text-muted-foreground">{manager.phone}</p>
+              <p className="text-xs sm:text-sm text-muted-foreground truncate">{manager.phone}</p>
             )}
             {manager.role && (
               <p className="text-xs text-muted-foreground">{manager.role.name}</p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           {manager.telegram_linked && (
-            <Icon name="Send" size={16} className="text-blue-500" />
+            <Icon name="Send" size={14} className="text-blue-400" />
           )}
-          {statusBadge(manager.status)}
+          <span className="hidden sm:inline-flex">{statusBadge(manager.status)}</span>
           {manager.status === "authorized" && (
             <>
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-8 w-8 p-0 hover:bg-white/[0.06]"
                 onClick={(e) => { e.stopPropagation(); openEditDialog(manager); }}
               >
-                <Icon name="Pencil" size={16} />
+                <Icon name="Pencil" size={14} />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive"
+                className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={(e) => { e.stopPropagation(); setDeactivateManager(manager); }}
               >
-                <Icon name="UserX" size={16} />
+                <Icon name="UserX" size={14} />
               </Button>
             </>
           )}
@@ -299,10 +301,10 @@ const AdminDashboard = () => {
             <Button
               variant="ghost"
               size="sm"
-              className="text-destructive hover:text-destructive"
+              className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={(e) => { e.stopPropagation(); setRemoveManager(manager); }}
             >
-              <Icon name="Trash2" size={16} />
+              <Icon name="Trash2" size={14} />
             </Button>
           )}
           {manager.status === "pending" && (
@@ -310,17 +312,17 @@ const AdminDashboard = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive"
+                className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={(e) => { e.stopPropagation(); setDeactivateManager(manager); }}
               >
-                <Icon name="X" size={16} />
+                <Icon name="X" size={14} />
               </Button>
-              <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
+              <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
             </>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 
   const renderList = (list: Manager[], emptyText: string) => {
@@ -334,43 +336,52 @@ const AdminDashboard = () => {
     if (list.length === 0) {
       return <p className="text-center text-muted-foreground py-8">{emptyText}</p>;
     }
-    return <div className="space-y-3">{list.map(renderManagerCard)}</div>;
+    return <div className="space-y-2">{list.map(renderManagerCard)}</div>;
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <h1 className="text-xl font-bold">Мир Техники плюс</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{user.phone}</span>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
+    <div className="min-h-screen">
+      <header className="border-b border-white/[0.08] bg-card">
+        <div className="max-w-3xl mx-auto flex items-center justify-between px-4 py-3 sm:py-4">
+          <h1 className="text-lg sm:text-xl font-semibold">Мир Техники плюс</h1>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <span className="text-xs sm:text-sm text-muted-foreground hidden sm:block">{user.phone}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 hover:bg-white/[0.06]"
+              onClick={handleLogout}
+            >
               <Icon name="LogOut" size={16} />
-              <span className="ml-2">Выйти</span>
+              <span className="ml-2 hidden sm:inline">Выйти</span>
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-semibold">Управленцы</h2>
-          <Button onClick={() => setAddDialogOpen(true)}>
-            <Icon name="UserPlus" size={18} />
-            <span className="ml-2">Добавить управленца</span>
+      <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
+        <div className="flex items-center justify-between mb-5 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-semibold">Управленцы</h2>
+          <Button
+            className="h-9 sm:h-10 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground"
+            onClick={() => setAddDialogOpen(true)}
+          >
+            <Icon name="UserPlus" size={16} />
+            <span className="ml-2 hidden sm:inline">Добавить управленца</span>
+            <span className="ml-1 sm:hidden">Добавить</span>
           </Button>
         </div>
 
         <Tabs defaultValue="authorized">
-          <TabsList className="w-full justify-start mb-4">
-            <TabsTrigger value="authorized">
+          <TabsList className="w-full justify-start mb-4 bg-white/[0.04] border border-white/[0.08] rounded-xl p-1 overflow-x-auto">
+            <TabsTrigger value="authorized" className="rounded-lg text-xs sm:text-sm data-[state=active]:bg-white/[0.1]">
               Авторизованные ({authorized.length})
             </TabsTrigger>
-            <TabsTrigger value="pending">
-              Ждут авторизации ({pending.length})
+            <TabsTrigger value="pending" className="rounded-lg text-xs sm:text-sm data-[state=active]:bg-white/[0.1]">
+              Ожидают ({pending.length})
             </TabsTrigger>
-            <TabsTrigger value="not_authorized">
-              Неавторизованные ({notAuthorized.length})
+            <TabsTrigger value="not_authorized" className="rounded-lg text-xs sm:text-sm data-[state=active]:bg-white/[0.1]">
+              Новые ({notAuthorized.length})
             </TabsTrigger>
           </TabsList>
 
@@ -387,26 +398,27 @@ const AdminDashboard = () => {
       </main>
 
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Добавить управленца</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Номер телефона</label>
+              <label className="text-sm font-medium text-muted-foreground">Номер телефона</label>
               <Input
                 type="tel"
                 placeholder="+7 (___) ___-__-__"
                 value={newPhone}
                 onChange={handlePhoneInput}
+                className="h-11 rounded-xl bg-secondary border-white/[0.08]"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)} className="rounded-xl border-white/[0.08]">
               Отмена
             </Button>
-            <Button onClick={addManager} disabled={adding}>
+            <Button onClick={addManager} disabled={adding} className="rounded-xl bg-primary hover:bg-primary/90">
               {adding ? (
                 <Icon name="Loader2" size={18} className="animate-spin" />
               ) : (
@@ -419,7 +431,7 @@ const AdminDashboard = () => {
       </Dialog>
 
       <Dialog open={!!deactivateManager} onOpenChange={(open) => !open && setDeactivateManager(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Деактивировать управленца?</DialogTitle>
           </DialogHeader>
@@ -440,12 +452,13 @@ const AdminDashboard = () => {
               </p>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeactivateManager(null)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeactivateManager(null)} className="rounded-xl border-white/[0.08]">
               Отмена
             </Button>
             <Button
               variant="destructive"
+              className="rounded-xl"
               onClick={() => deactivateManager && handleDeactivate(deactivateManager)}
               disabled={deactivating}
             >
@@ -461,7 +474,7 @@ const AdminDashboard = () => {
       </Dialog>
 
       <Dialog open={!!removeManager} onOpenChange={(open) => !open && setRemoveManager(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Удалить управленца?</DialogTitle>
           </DialogHeader>
@@ -475,12 +488,13 @@ const AdminDashboard = () => {
               </p>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveManager(null)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRemoveManager(null)} className="rounded-xl border-white/[0.08]">
               Отмена
             </Button>
             <Button
               variant="destructive"
+              className="rounded-xl"
               onClick={() => removeManager && handleRemove(removeManager)}
               disabled={removing}
             >
@@ -496,7 +510,7 @@ const AdminDashboard = () => {
       </Dialog>
 
       <Dialog open={!!editManager} onOpenChange={(open) => !open && setEditManager(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Редактировать управленца</DialogTitle>
           </DialogHeader>
@@ -504,17 +518,25 @@ const AdminDashboard = () => {
             <div className="space-y-4 py-4">
               <p className="text-sm text-muted-foreground">{editManager.phone}</p>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Имя</label>
-                <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
+                <label className="text-sm font-medium text-muted-foreground">Имя</label>
+                <Input
+                  value={editFirstName}
+                  onChange={(e) => setEditFirstName(e.target.value)}
+                  className="h-11 rounded-xl bg-secondary border-white/[0.08]"
+                />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Фамилия</label>
-                <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
+                <label className="text-sm font-medium text-muted-foreground">Фамилия</label>
+                <Input
+                  value={editLastName}
+                  onChange={(e) => setEditLastName(e.target.value)}
+                  className="h-11 rounded-xl bg-secondary border-white/[0.08]"
+                />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Роль</label>
+                <label className="text-sm font-medium text-muted-foreground">Роль</label>
                 <Select value={editRoleId} onValueChange={setEditRoleId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11 rounded-xl bg-secondary border-white/[0.08]">
                     <SelectValue placeholder="Выберите роль" />
                   </SelectTrigger>
                   <SelectContent>
@@ -528,11 +550,11 @@ const AdminDashboard = () => {
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditManager(null)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setEditManager(null)} className="rounded-xl border-white/[0.08]">
               Отмена
             </Button>
-            <Button onClick={handleEdit} disabled={editing}>
+            <Button onClick={handleEdit} disabled={editing} className="rounded-xl bg-primary hover:bg-primary/90">
               {editing ? (
                 <Icon name="Loader2" size={18} className="animate-spin" />
               ) : (
