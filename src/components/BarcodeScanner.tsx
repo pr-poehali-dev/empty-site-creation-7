@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
+import { Html5Qrcode } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 
@@ -12,103 +11,39 @@ interface BarcodeScannerProps {
 const SCAN_COOLDOWN = 1500;
 
 const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<IScannerControls | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanRef = useRef<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
 
-  const applyAutoSettings = async (track: MediaStreamTrack) => {
-    try {
-      const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
-      const advanced: MediaTrackConstraintSet[] = [];
-
-      const focusModes = (caps.focusMode as string[] | undefined) || [];
-      if (focusModes.includes("continuous")) {
-        advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
-      }
-
-      const exposureModes = (caps.exposureMode as string[] | undefined) || [];
-      if (exposureModes.includes("continuous")) {
-        advanced.push({ exposureMode: "continuous" } as MediaTrackConstraintSet);
-      }
-
-      const wbModes = (caps.whiteBalanceMode as string[] | undefined) || [];
-      if (wbModes.includes("continuous")) {
-        advanced.push({ whiteBalanceMode: "continuous" } as MediaTrackConstraintSet);
-      }
-
-      if (advanced.length > 0) {
-        await track.applyConstraints({ advanced });
-      }
-    } catch (e) {
-      console.warn("applyAutoSettings failed:", e);
-    }
-  };
-
   useEffect(() => {
-    const hints = new Map();
-    const formats = [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
-      BarcodeFormat.CODE_128,
-      BarcodeFormat.CODE_39,
-      BarcodeFormat.CODE_93,
-      BarcodeFormat.ITF,
-      BarcodeFormat.QR_CODE,
-      BarcodeFormat.DATA_MATRIX,
-    ];
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-    hints.set(DecodeHintType.TRY_HARDER, true);
+    const regionId = "barcode-scanner-region";
+    const scanner = new Html5Qrcode(regionId);
+    scannerRef.current = scanner;
 
-    const reader = new BrowserMultiFormatReader(hints, {
-      delayBetweenScanAttempts: 100,
-      delayBetweenScanSuccess: 500,
-    });
+    scanner
+      .start(
+        { facingMode: "environment" },
+        {
+          fps: 15,
+          qrbox: { width: 280, height: 140 },
+          aspectRatio: 1.333,
+          disableFlip: false,
+        },
+        (decodedText) => {
+          const now = Date.now();
+          if (now - lastScanRef.current < SCAN_COOLDOWN) return;
+          lastScanRef.current = now;
 
-    const startScanner = async () => {
-      try {
-        if (!videoRef.current) return;
+          if (navigator.vibrate) navigator.vibrate(100);
+          setLastScanned(decodedText);
+          onScan(decodedText);
 
-        const controls = await reader.decodeFromConstraints(
-          {
-            video: {
-              facingMode: "environment",
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-          },
-          videoRef.current,
-          (result) => {
-            if (result) {
-              const text = result.getText();
-              const now = Date.now();
-              if (now - lastScanRef.current < SCAN_COOLDOWN) return;
-              lastScanRef.current = now;
-
-              if (navigator.vibrate) navigator.vibrate(100);
-              setLastScanned(text);
-              onScan(text);
-
-              setTimeout(() => setLastScanned(null), 1200);
-            }
-          }
-        );
-        controlsRef.current = controls;
-
-        setTimeout(() => {
-          const video = videoRef.current;
-          if (video?.srcObject) {
-            const track = (video.srcObject as MediaStream).getVideoTracks()[0];
-            if (track) {
-              console.log("Camera capabilities:", track.getCapabilities?.());
-              applyAutoSettings(track);
-            }
-          }
-        }, 500);
-      } catch (err) {
+          setTimeout(() => setLastScanned(null), 1200);
+        },
+        () => {}
+      )
+      .catch((err) => {
         console.error("Scanner start error:", err);
         const errStr = String(err);
         if (errStr.includes("NotAllowedError") || errStr.includes("Permission")) {
@@ -120,17 +55,15 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         } else {
           setError(`Не удалось запустить камеру: ${errStr.slice(0, 100)}`);
         }
-      }
-    };
-
-    startScanner();
+      });
 
     return () => {
-      try {
-        controlsRef.current?.stop();
-      } catch {
-        /* ignore */
-      }
+      scanner
+        .stop()
+        .catch(() => {})
+        .finally(() => {
+          scanner.clear();
+        });
     };
   }, []);
 
@@ -149,21 +82,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
       </div>
 
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
-        <video
-          ref={videoRef}
-          className="w-full h-full object-cover"
-          playsInline
-          muted
-        />
-
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-[85%] max-w-sm h-32 border-2 border-white/60 rounded-2xl relative">
-            <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-orange-500 rounded-tl-2xl" />
-            <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-orange-500 rounded-tr-2xl" />
-            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-orange-500 rounded-bl-2xl" />
-            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-orange-500 rounded-br-2xl" />
-          </div>
-        </div>
+        <div id="barcode-scanner-region" className="w-full h-full" />
 
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/90 px-6">
