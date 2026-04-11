@@ -50,7 +50,7 @@ def handler(event: dict, context) -> dict:
 
     if method == 'GET':
         cur.execute(
-            "SELECT id, parent_id, name, sort_order FROM categories ORDER BY sort_order, name"
+            "SELECT id, parent_id, name, sort_order, keywords FROM categories ORDER BY sort_order, name"
         )
         rows = cur.fetchall()
         categories = []
@@ -59,7 +59,8 @@ def handler(event: dict, context) -> dict:
                 'id': r[0],
                 'parent_id': r[1],
                 'name': r[2],
-                'sort_order': r[3]
+                'sort_order': r[3],
+                'keywords': r[4] or []
             })
         cur.close()
         conn.close()

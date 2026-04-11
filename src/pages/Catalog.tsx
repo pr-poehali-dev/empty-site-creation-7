@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ interface Category {
   parent_id: number | null;
   name: string;
   sort_order: number;
+  keywords: string[];
 }
 
 interface NomImage {
@@ -92,6 +93,14 @@ const Catalog = () => {
   const [saving, setSaving] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardCategoryId, setWizardCategoryId] = useState("");
+  const [wizardArticle, setWizardArticle] = useState("");
+  const [wizardChars, setWizardChars] = useState<{ key: string; value: string }[]>([]);
+  const [wizardCatDropdownOpen, setWizardCatDropdownOpen] = useState(false);
+  const [wizardCatSearch, setWizardCatSearch] = useState("");
+  const [wizardArticleDuplicate, setWizardArticleDuplicate] = useState<string | null>(null);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -233,6 +242,79 @@ const Catalog = () => {
     if (!categorySearch.trim()) return sorted;
     const q = categorySearch.toLowerCase();
     return sorted.filter((c) => getCategoryPath(c.id).toLowerCase().includes(q));
+  };
+
+  const suggestedCategory = useMemo(() => {
+    const name = formName.toLowerCase().trim();
+    if (!name || formCategoryId) return null;
+    let best: { category: Category; keyword: string } | null = null;
+    for (const cat of categories) {
+      if (!cat.keywords || cat.keywords.length === 0) continue;
+      for (const kw of cat.keywords) {
+        if (name.includes(kw.toLowerCase()) && (!best || kw.length > best.keyword.length)) {
+          best = { category: cat, keyword: kw };
+        }
+      }
+    }
+    return best;
+  }, [formName, formCategoryId, categories]);
+
+  const WIZARD_PRESETS = [
+    { key: "Мощность, Вт", label: "Мощность" },
+    { key: "Объём, л", label: "Объём" },
+    { key: "Цвет", label: "Цвет" },
+    { key: "Вес, кг", label: "Вес" },
+    { key: "Напряжение, В", label: "Напряжение" },
+  ];
+
+  const getWizardLeafCategories = () => {
+    const leaves = getSortedLeafCategories().filter((c) => c.keywords && c.keywords.length > 0);
+    if (!wizardCatSearch.trim()) return leaves;
+    const q = wizardCatSearch.toLowerCase();
+    return leaves.filter((c) => getCategoryPath(c.id).toLowerCase().includes(q));
+  };
+
+  const generateWizardName = () => {
+    const cat = categories.find((c) => c.id === Number(wizardCategoryId));
+    if (!cat || !cat.keywords || cat.keywords.length === 0) return "";
+    const base = cat.keywords[0].charAt(0).toUpperCase() + cat.keywords[0].slice(1);
+    let result = base;
+    if (wizardArticle.trim()) result += " " + wizardArticle.trim();
+    for (const ch of wizardChars) {
+      if (!ch.value.trim()) continue;
+      const parts = ch.key.split(",");
+      const unit = parts.length > 1 ? parts[1].trim() : "";
+      result += ", " + ch.value.trim() + (unit ? " " + unit : "");
+    }
+    return result;
+  };
+
+  const handleWizardArticleBlur = () => {
+    const art = wizardArticle.trim();
+    if (!art) { setWizardArticleDuplicate(null); return; }
+    const dup = items.find((i) => i.article && i.article.toLowerCase() === art.toLowerCase());
+    setWizardArticleDuplicate(dup ? dup.name : null);
+  };
+
+  const openWizard = () => {
+    const lastCat = localStorage.getItem("wizard_last_category_id") || "";
+    setWizardCategoryId(lastCat);
+    setWizardArticle("");
+    setWizardChars([]);
+    setWizardCatSearch("");
+    setWizardCatDropdownOpen(false);
+    setWizardArticleDuplicate(null);
+    setWizardOpen(true);
+  };
+
+  const handleWizardApply = () => {
+    const name = generateWizardName();
+    if (!name) return;
+    setFormName(name);
+    setFormCategoryId(wizardCategoryId);
+    if (wizardArticle.trim()) setFormArticle(wizardArticle.trim());
+    if (wizardCategoryId) localStorage.setItem("wizard_last_category_id", wizardCategoryId);
+    setWizardOpen(false);
   };
 
   const handleFileSelect = async (files: FileList | null) => {
@@ -568,13 +650,36 @@ const Catalog = () => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Название *</label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-muted-foreground">Название *</label>
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  onClick={openWizard}
+                >
+                  <Icon name="Wand2" size={14} />
+                  Создать наименование
+                </button>
+              </div>
               <Input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="Холодильник Samsung RB37"
                 className="h-10 rounded-xl bg-secondary border-white/[0.08]"
               />
+              {suggestedCategory && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/10 text-xs">
+                  <Icon name="Lightbulb" size={14} className="text-primary shrink-0" />
+                  <span className="truncate">{getCategoryPath(suggestedCategory.category.id)}</span>
+                  <button
+                    type="button"
+                    className="ml-auto shrink-0 text-primary font-medium hover:underline"
+                    onClick={() => setFormCategoryId(String(suggestedCategory.category.id))}
+                  >
+                    Применить
+                  </button>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
@@ -788,6 +893,149 @@ const Catalog = () => {
                 <Icon name="Check" size={18} />
               )}
               <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="Wand2" size={18} />
+              Создать наименование
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Категория</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
+                  onClick={() => setWizardCatDropdownOpen(!wizardCatDropdownOpen)}
+                >
+                  {wizardCategoryId
+                    ? getCategoryPath(Number(wizardCategoryId))
+                    : <span className="text-muted-foreground">Выберите категорию</span>}
+                </button>
+                {wizardCatDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden shadow-lg">
+                    <div className="p-2">
+                      <Input
+                        placeholder="Поиск категории..."
+                        value={wizardCatSearch}
+                        onChange={(e) => setWizardCatSearch(e.target.value)}
+                        className="h-8 rounded-lg bg-secondary border-white/[0.08] text-xs"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {getWizardLeafCategories().map((cat) => (
+                        <button
+                          key={cat.id}
+                          className={`w-full text-left px-3 py-2 text-xs hover:bg-white/[0.06] transition-colors ${
+                            wizardCategoryId === String(cat.id) ? "bg-primary/20 text-primary" : ""
+                          }`}
+                          onClick={() => {
+                            setWizardCategoryId(String(cat.id));
+                            setWizardCatDropdownOpen(false);
+                            setWizardCatSearch("");
+                          }}
+                        >
+                          {getCategoryPath(cat.id)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Артикул</label>
+              <Input
+                value={wizardArticle}
+                onChange={(e) => { setWizardArticle(e.target.value); setWizardArticleDuplicate(null); }}
+                onBlur={handleWizardArticleBlur}
+                placeholder="КТ-7213"
+                className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+              />
+              {wizardArticleDuplicate && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-yellow-500/10 text-xs text-yellow-400">
+                  <Icon name="AlertTriangle" size={14} className="shrink-0" />
+                  <span>Товар с таким артикулом уже есть: {wizardArticleDuplicate}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Характеристики</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {WIZARD_PRESETS.map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-xs transition-colors"
+                    onClick={() => {
+                      if (!wizardChars.some((c) => c.key === preset.key)) {
+                        setWizardChars((prev) => [...prev, { key: preset.key, value: "" }]);
+                      }
+                    }}
+                  >
+                    + {preset.label}
+                  </button>
+                ))}
+              </div>
+              {wizardChars.map((ch, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={ch.key}
+                    onChange={(e) => setWizardChars((prev) => prev.map((c, j) => j === i ? { ...c, key: e.target.value } : c))}
+                    placeholder="Параметр"
+                    className="h-9 rounded-lg bg-secondary border-white/[0.08] text-xs flex-1"
+                  />
+                  <Input
+                    value={ch.value}
+                    onChange={(e) => setWizardChars((prev) => prev.map((c, j) => j === i ? { ...c, value: e.target.value } : c))}
+                    placeholder="Значение"
+                    className="h-9 rounded-lg bg-secondary border-white/[0.08] text-xs flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setWizardChars((prev) => prev.filter((_, j) => j !== i))}
+                    className="p-1.5 rounded-lg hover:bg-white/[0.06] text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <Icon name="X" size={14} />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                onClick={() => setWizardChars((prev) => [...prev, { key: "", value: "" }])}
+              >
+                <Icon name="Plus" size={14} />
+                Добавить характеристику
+              </button>
+            </div>
+
+            {generateWizardName() && (
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-muted-foreground">Результат</label>
+                <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-sm font-medium">
+                  {generateWizardName()}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setWizardOpen(false)} className="rounded-xl border-white/[0.08]">
+              Отмена
+            </Button>
+            <Button onClick={handleWizardApply} disabled={!generateWizardName()} className="rounded-xl">
+              <Icon name="Check" size={18} />
+              <span className="ml-2">Применить</span>
             </Button>
           </DialogFooter>
         </DialogContent>
