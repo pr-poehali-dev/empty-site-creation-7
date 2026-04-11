@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 
@@ -11,26 +12,14 @@ interface BarcodeScannerProps {
 const SCAN_COOLDOWN = 1500;
 
 const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const lastScanRef = useRef<number>(0);
-  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
-  const [capsInfo, setCapsInfo] = useState<string>("");
 
-  const [zoomSupported, setZoomSupported] = useState(false);
-  const [zoomMin, setZoomMin] = useState(1);
-  const [zoomMax, setZoomMax] = useState(1);
-  const [zoomStep, setZoomStep] = useState(0.1);
-  const [zoom, setZoom] = useState(1);
-
-  const getVideoTrack = (): MediaStreamTrack | null => {
-    const videoElement = document.querySelector("#barcode-scanner-region video") as HTMLVideoElement | null;
-    if (!videoElement?.srcObject) return null;
-    return (videoElement.srcObject as MediaStream).getVideoTracks()[0] || null;
-  };
-
-  const applyAllConstraints = async (track: MediaStreamTrack) => {
+  const applyAutoSettings = async (track: MediaStreamTrack) => {
     try {
       const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
       const advanced: MediaTrackConstraintSet[] = [];
@@ -54,77 +43,69 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         await track.applyConstraints({ advanced });
       }
     } catch (e) {
-      console.warn("applyAllConstraints failed:", e);
-    }
-  };
-
-  const handleZoomChange = async (value: number) => {
-    setZoom(value);
-    const track = videoTrackRef.current;
-    if (!track) return;
-    try {
-      await track.applyConstraints({
-        advanced: [{ zoom: value } as unknown as MediaTrackConstraintSet],
-      });
-    } catch (e) {
-      console.warn("zoom failed:", e);
+      console.warn("applyAutoSettings failed:", e);
     }
   };
 
   useEffect(() => {
-    const regionId = "barcode-scanner-region";
-    const scanner = new Html5Qrcode(regionId);
-    scannerRef.current = scanner;
+    const hints = new Map();
+    const formats = [
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.ITF,
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.DATA_MATRIX,
+    ];
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+    hints.set(DecodeHintType.TRY_HARDER, true);
 
-    scanner
-      .start(
-        { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 280, height: 140 },
-          aspectRatio: 1.333,
-          disableFlip: false,
-        },
-        (decodedText) => {
-          const now = Date.now();
-          if (now - lastScanRef.current < SCAN_COOLDOWN) return;
-          lastScanRef.current = now;
+    const reader = new BrowserMultiFormatReader(hints, {
+      delayBetweenScanAttempts: 100,
+      delayBetweenScanSuccess: 500,
+    });
+    readerRef.current = reader;
 
-          if (navigator.vibrate) navigator.vibrate(100);
-          setLastScanned(decodedText);
-          onScan(decodedText);
+    const startScanner = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        });
+        streamRef.current = stream;
 
-          setTimeout(() => setLastScanned(null), 1200);
-        },
-        () => {}
-      )
-      .then(() => {
-        setTimeout(async () => {
-          const track = getVideoTrack();
-          if (!track) return;
-          videoTrackRef.current = track;
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          await applyAutoSettings(track);
+          console.log("Camera capabilities:", track.getCapabilities?.());
+        }
 
-          const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
-          console.log("Camera capabilities:", caps);
+        if (!videoRef.current) return;
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
 
-          const capKeys = Object.keys(caps).join(", ");
-          setCapsInfo(capKeys || "нет данных");
+        reader.decodeFromVideoElement(videoRef.current, (result) => {
+          if (result) {
+            const text = result.getText();
+            const now = Date.now();
+            if (now - lastScanRef.current < SCAN_COOLDOWN) return;
+            lastScanRef.current = now;
 
-          if (typeof caps.zoom === "object" && caps.zoom !== null) {
-            const z = caps.zoom as { min?: number; max?: number; step?: number };
-            if (z.min !== undefined && z.max !== undefined && z.max > z.min) {
-              setZoomSupported(true);
-              setZoomMin(z.min);
-              setZoomMax(z.max);
-              setZoomStep(z.step || 0.1);
-              setZoom(z.min);
-            }
+            if (navigator.vibrate) navigator.vibrate(100);
+            setLastScanned(text);
+            onScan(text);
+
+            setTimeout(() => setLastScanned(null), 1200);
           }
-
-          await applyAllConstraints(track);
-        }, 500);
-      })
-      .catch((err) => {
+        });
+      } catch (err) {
         console.error("Scanner start error:", err);
         const errStr = String(err);
         if (errStr.includes("NotAllowedError") || errStr.includes("Permission")) {
@@ -136,15 +117,18 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         } else {
           setError(`Не удалось запустить камеру: ${errStr.slice(0, 100)}`);
         }
-      });
+      }
+    };
+
+    startScanner();
 
     return () => {
-      scanner
-        .stop()
-        .catch(() => {})
-        .finally(() => {
-          scanner.clear();
-        });
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     };
   }, []);
 
@@ -162,8 +146,22 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         </Button>
       </div>
 
-      <div className="flex-1 flex items-center justify-center relative">
-        <div id="barcode-scanner-region" className="w-full h-full" />
+      <div className="flex-1 flex items-center justify-center relative overflow-hidden">
+        <video
+          ref={videoRef}
+          className="w-full h-full object-cover"
+          playsInline
+          muted
+        />
+
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-[85%] max-w-sm h-32 border-2 border-white/60 rounded-2xl relative">
+            <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-orange-500 rounded-tl-2xl" />
+            <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-orange-500 rounded-tr-2xl" />
+            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-orange-500 rounded-bl-2xl" />
+            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-orange-500 rounded-br-2xl" />
+          </div>
+        </div>
 
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/90 px-6">
@@ -182,23 +180,6 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         )}
       </div>
 
-      {zoomSupported && (
-        <div className="px-4 py-2 bg-black/80 flex items-center gap-3">
-          <Icon name="ZoomOut" size={16} className="text-white/60" />
-          <input
-            type="range"
-            min={zoomMin}
-            max={zoomMax}
-            step={zoomStep}
-            value={zoom}
-            onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
-            className="flex-1 accent-orange-500"
-          />
-          <Icon name="ZoomIn" size={16} className="text-white/60" />
-          <span className="text-white/60 text-xs w-10 text-right">{zoom.toFixed(1)}×</span>
-        </div>
-      )}
-
       <div className="px-4 py-3 bg-black/80 text-center">
         {lastScanned ? (
           <p className="text-green-400 text-sm font-medium flex items-center justify-center gap-2">
@@ -206,14 +187,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
             {lastScanned}
           </p>
         ) : (
-          <>
-            <p className="text-white/60 text-xs">
-              {zoomSupported ? "Используйте зум для чёткости" : "Поднесите камеру ближе к штрихкоду"}
-            </p>
-            {capsInfo && (
-              <p className="text-white/30 text-[10px] mt-0.5">Capabilities: {capsInfo}</p>
-            )}
-          </>
+          <p className="text-white/60 text-sm">Наведите камеру на штрихкод</p>
         )}
       </div>
     </div>
