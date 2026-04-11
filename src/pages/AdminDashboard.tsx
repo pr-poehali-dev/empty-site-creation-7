@@ -306,7 +306,17 @@ const AdminDashboard = () => {
             </Button>
           )}
           {manager.status === "pending" && (
-            <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={(e) => { e.stopPropagation(); setDeactivateManager(manager); }}
+              >
+                <Icon name="X" size={16} />
+              </Button>
+              <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
+            </>
           )}
         </div>
       </CardContent>
@@ -416,8 +426,14 @@ const AdminDashboard = () => {
           {deactivateManager && (
             <div className="py-4">
               <p className="text-sm">
-                <span className="font-medium">{deactivateManager.first_name} {deactivateManager.last_name}</span>
-                {" "}({deactivateManager.phone}) потеряет доступ к панели управления.
+                {deactivateManager.first_name && deactivateManager.last_name ? (
+                  <><span className="font-medium">{deactivateManager.first_name} {deactivateManager.last_name}</span>{" "}({deactivateManager.phone})</>
+                ) : (
+                  <span className="font-medium">{deactivateManager.phone}</span>
+                )}
+                {deactivateManager.status === "pending"
+                  ? " будет отклонён и переведён в неавторизованные."
+                  : " потеряет доступ к панели управления."}
               </p>
               <p className="text-sm text-muted-foreground mt-2">
                 Управленец вернётся в список неавторизованных. Вы сможете авторизовать его повторно.
