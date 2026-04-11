@@ -120,7 +120,7 @@ export default function AdminLogin() {
       if (resp.ok) {
         localStorage.setItem("auth_token", data.token);
         localStorage.setItem("auth_user", JSON.stringify(data.user));
-        toast({ title: "Добро пожаловать!" });
+        toast({ title: "Karibu!" });
         if (data.user.role === "owner") {
           navigate("/admin/dashboard");
         } else {
