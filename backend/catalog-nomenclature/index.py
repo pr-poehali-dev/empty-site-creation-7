@@ -268,11 +268,11 @@ def handler(event: dict, context) -> dict:
 
     if method == 'POST':
         try:
-            name = body.get('name', '').strip()
+            name = (body.get('name') or '').strip()
             category_id = body.get('category_id')
-            article = body.get('article', '').strip() or None
-            brand = body.get('brand', '').strip() or None
-            supplier_code = body.get('supplier_code', '').strip() or None
+            article = (body.get('article') or '').strip() or None
+            brand = (body.get('brand') or '').strip() or None
+            supplier_code = (body.get('supplier_code') or '').strip() or None
             price_base = body.get('price_base')
             price_retail = body.get('price_retail')
             price_wholesale = body.get('price_wholesale')
@@ -336,7 +336,7 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id номенклатуры'})}
 
-        name = body.get('name', '').strip()
+        name = (body.get('name') or '').strip()
         category_id = body.get('category_id')
 
         if not name or not category_id:
@@ -352,9 +352,9 @@ def handler(event: dict, context) -> dict:
                    updated_at = NOW()
                WHERE id = %s RETURNING id""",
             (name, category_id,
-             body.get('article', '').strip() or None,
-             body.get('brand', '').strip() or None,
-             body.get('supplier_code', '').strip() or None,
+             (body.get('article') or '').strip() or None,
+             (body.get('brand') or '').strip() or None,
+             (body.get('supplier_code') or '').strip() or None,
              body.get('price_base'), body.get('price_retail'),
              body.get('price_wholesale'), body.get('price_purchase'),
              nom_id)
