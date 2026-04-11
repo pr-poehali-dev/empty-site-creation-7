@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
@@ -13,8 +13,7 @@ const SCAN_COOLDOWN = 1500;
 
 const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
   const lastScanRef = useRef<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
@@ -68,43 +67,47 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
       delayBetweenScanAttempts: 100,
       delayBetweenScanSuccess: 500,
     });
-    readerRef.current = reader;
 
     const startScanner = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-        });
-        streamRef.current = stream;
-
-        const track = stream.getVideoTracks()[0];
-        if (track) {
-          await applyAutoSettings(track);
-          console.log("Camera capabilities:", track.getCapabilities?.());
-        }
-
         if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
 
-        reader.decodeFromVideoElement(videoRef.current, (result) => {
-          if (result) {
-            const text = result.getText();
-            const now = Date.now();
-            if (now - lastScanRef.current < SCAN_COOLDOWN) return;
-            lastScanRef.current = now;
+        const controls = await reader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: "environment",
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+          },
+          videoRef.current,
+          (result) => {
+            if (result) {
+              const text = result.getText();
+              const now = Date.now();
+              if (now - lastScanRef.current < SCAN_COOLDOWN) return;
+              lastScanRef.current = now;
 
-            if (navigator.vibrate) navigator.vibrate(100);
-            setLastScanned(text);
-            onScan(text);
+              if (navigator.vibrate) navigator.vibrate(100);
+              setLastScanned(text);
+              onScan(text);
 
-            setTimeout(() => setLastScanned(null), 1200);
+              setTimeout(() => setLastScanned(null), 1200);
+            }
           }
-        });
+        );
+        controlsRef.current = controls;
+
+        setTimeout(() => {
+          const video = videoRef.current;
+          if (video?.srcObject) {
+            const track = (video.srcObject as MediaStream).getVideoTracks()[0];
+            if (track) {
+              console.log("Camera capabilities:", track.getCapabilities?.());
+              applyAutoSettings(track);
+            }
+          }
+        }, 500);
       } catch (err) {
         console.error("Scanner start error:", err);
         const errStr = String(err);
@@ -123,11 +126,10 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     startScanner();
 
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      try {
+        controlsRef.current?.stop();
+      } catch {
+        /* ignore */
       }
     };
   }, []);
