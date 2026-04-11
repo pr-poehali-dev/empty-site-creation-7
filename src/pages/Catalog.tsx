@@ -10,13 +10,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
@@ -92,7 +85,11 @@ const Catalog = () => {
   const [formPriceWholesale, setFormPriceWholesale] = useState("");
   const [formPricePurchase, setFormPricePurchase] = useState("");
   const [formImages, setFormImages] = useState<PendingImage[]>([]);
+  const [formBarcodes, setFormBarcodes] = useState<string[]>([]);
+  const [formBarcodeInput, setFormBarcodeInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -156,6 +153,37 @@ const Catalog = () => {
   const getLeafCategories = (): Category[] =>
     categories.filter((c) => !categories.some((ch) => ch.parent_id === c.id));
 
+  const getCategoryPath = (catId: number): string => {
+    const parts: string[] = [];
+    let current = categories.find((c) => c.id === catId);
+    while (current) {
+      parts.unshift(current.name);
+      current = current.parent_id ? categories.find((c) => c.id === current!.parent_id) : undefined;
+    }
+    return parts.join(" → ");
+  };
+
+  const getSortedLeafCategories = () => {
+    const buildOrder = (parentId: number | null): Category[] => {
+      const children = categories.filter((c) => c.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order);
+      const result: Category[] = [];
+      for (const child of children) {
+        const isLeaf = !categories.some((c) => c.parent_id === child.id);
+        if (isLeaf) result.push(child);
+        else result.push(...buildOrder(child.id));
+      }
+      return result;
+    };
+    return buildOrder(null);
+  };
+
+  const getFilteredCategories = () => {
+    const sorted = getSortedLeafCategories();
+    if (!categorySearch.trim()) return sorted;
+    const q = categorySearch.toLowerCase();
+    return sorted.filter((c) => getCategoryPath(c.id).toLowerCase().includes(q));
+  };
+
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return;
     Array.from(files).forEach((file) => {
@@ -186,6 +214,20 @@ const Catalog = () => {
     setFormPriceWholesale("");
     setFormPricePurchase("");
     setFormImages([]);
+    setFormBarcodes([]);
+    setFormBarcodeInput("");
+    setCategorySearch("");
+  };
+
+  const addBarcode = () => {
+    const val = formBarcodeInput.trim();
+    if (!val) return;
+    if (formBarcodes.includes(val)) {
+      toast({ title: "Этот штрихкод уже добавлен", variant: "destructive" });
+      return;
+    }
+    setFormBarcodes((prev) => [...prev, val]);
+    setFormBarcodeInput("");
   };
 
   const handleSave = async () => {
@@ -205,6 +247,7 @@ const Catalog = () => {
         price_retail: formPriceRetail ? Number(formPriceRetail) : null,
         price_wholesale: formPriceWholesale ? Number(formPriceWholesale) : null,
         images: formImages.map((img) => ({ data: img.data, content_type: img.content_type })),
+        barcodes: formBarcodes,
       };
       if (isOwner) {
         payload.price_purchase = formPricePurchase ? Number(formPricePurchase) : null;
@@ -508,19 +551,82 @@ const Catalog = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Категория *</label>
-                <Select value={formCategoryId} onValueChange={setFormCategoryId}>
-                  <SelectTrigger className="h-10 rounded-xl bg-secondary border-white/[0.08]">
-                    <SelectValue placeholder="Выберите" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getLeafCategories().map((cat) => (
-                      <SelectItem key={cat.id} value={String(cat.id)}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
+                    onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                  >
+                    {formCategoryId
+                      ? getCategoryPath(Number(formCategoryId))
+                      : <span className="text-muted-foreground">Выберите</span>}
+                  </button>
+                  {categoryDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden shadow-lg">
+                      <div className="p-2">
+                        <Input
+                          placeholder="Поиск категории..."
+                          value={categorySearch}
+                          onChange={(e) => setCategorySearch(e.target.value)}
+                          className="h-8 rounded-lg bg-secondary border-white/[0.08] text-xs"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {getFilteredCategories().map((cat) => (
+                          <button
+                            key={cat.id}
+                            className={`w-full text-left px-3 py-2 text-xs hover:bg-white/[0.06] transition-colors ${
+                              formCategoryId === String(cat.id) ? "bg-primary/20 text-primary" : ""
+                            }`}
+                            onClick={() => {
+                              setFormCategoryId(String(cat.id));
+                              setCategoryDropdownOpen(false);
+                              setCategorySearch("");
+                            }}
+                          >
+                            {getCategoryPath(cat.id)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Штрихкоды</label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Введите штрихкод"
+                  value={formBarcodeInput}
+                  onChange={(e) => setFormBarcodeInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addBarcode(); } }}
+                  className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
+                  onClick={addBarcode}
+                >
+                  <Icon name="Plus" size={16} />
+                </Button>
+              </div>
+              {formBarcodes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {formBarcodes.map((bc, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.06] text-xs">
+                      {bc}
+                      <button onClick={() => setFormBarcodes((prev) => prev.filter((_, idx) => idx !== i))}>
+                        <Icon name="X" size={12} className="text-muted-foreground hover:text-destructive" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
