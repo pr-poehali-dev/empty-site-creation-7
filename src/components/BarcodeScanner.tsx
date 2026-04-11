@@ -10,30 +10,31 @@ interface BarcodeScannerProps {
 
 const SCAN_COOLDOWN = 1500;
 
-type DetectedBarcode = {
+interface DetectedBarcode {
   rawValue: string;
   format: string;
-};
-
-type BarcodeDetectorType = {
-  detect: (source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) => Promise<DetectedBarcode[]>;
-};
-
-declare global {
-  interface Window {
-    BarcodeDetector?: {
-      new (options?: { formats?: string[] }): BarcodeDetectorType;
-      getSupportedFormats?: () => Promise<string[]>;
-    };
-  }
 }
+
+interface BarcodeDetectorInstance {
+  detect: (source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) => Promise<DetectedBarcode[]>;
+}
+
+interface BarcodeDetectorConstructor {
+  new (options?: { formats?: string[] }): BarcodeDetectorInstance;
+  getSupportedFormats?: () => Promise<string[]>;
+}
+
+const getDetectorCtor = (): BarcodeDetectorConstructor | undefined => {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
+};
 
 const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const detectorRef = useRef<BarcodeDetectorType | null>(null);
+  const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
   const lastScanRef = useRef<number>(0);
   const scanningRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,7 +58,6 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
   const applyAutoSettings = async (track: MediaStreamTrack) => {
     try {
       const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
-      console.log("Camera capabilities:", caps);
       const advanced: MediaTrackConstraintSet[] = [];
 
       const focusModes = (caps.focusMode as string[] | undefined) || [];
@@ -85,9 +85,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter((d) => d.kind === "videoinput");
-      const back = videoDevices.find((d) =>
-        /back|rear|environment/i.test(d.label)
-      );
+      const back = videoDevices.find((d) => /back|rear|environment/i.test(d.label));
       return back?.deviceId;
     } catch {
       return undefined;
@@ -128,8 +126,6 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
       const results = await detectorRef.current.detect(canvas);
       if (results && results.length > 0) {
         processScan(results[0].rawValue);
-      } else {
-        setLastScanned(null);
       }
     } catch (e) {
       console.warn("photo scan error:", e);
@@ -148,8 +144,9 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         img.onerror = reject;
       });
 
-      if (window.BarcodeDetector) {
-        const detector = new window.BarcodeDetector({
+      const DetectorCtor = getDetectorCtor();
+      if (DetectorCtor) {
+        const detector = new DetectorCtor({
           formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"],
         });
         const results = await detector.detect(img);
@@ -168,9 +165,9 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
   };
 
   useEffect(() => {
-    const hasDetector = typeof window !== "undefined" && "BarcodeDetector" in window;
+    const DetectorCtor = getDetectorCtor();
 
-    if (!hasDetector) {
+    if (!DetectorCtor) {
       setStatus("photoOnly");
       return;
     }
@@ -178,7 +175,6 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     const start = async () => {
       try {
         const backDeviceId = await pickBackCamera();
-
         const videoConstraints: MediaTrackConstraints = backDeviceId
           ? {
               deviceId: { exact: backDeviceId },
@@ -191,15 +187,11 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
               height: { ideal: 1080 },
             };
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraints,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
         streamRef.current = stream;
 
         const track = stream.getVideoTracks()[0];
-        if (track) {
-          await applyAutoSettings(track);
-        }
+        if (track) await applyAutoSettings(track);
 
         if (!videoRef.current) return;
         videoRef.current.srcObject = stream;
@@ -209,7 +201,6 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
           console.warn("video.play error:", playErr);
         }
 
-        const DetectorCtor = window.BarcodeDetector!;
         let supportedFormats: string[] = [];
         try {
           supportedFormats = (await DetectorCtor.getSupportedFormats?.()) || [];
@@ -218,16 +209,9 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         }
 
         const desired = [
-          "ean_13",
-          "ean_8",
-          "upc_a",
-          "upc_e",
-          "code_128",
-          "code_39",
-          "code_93",
-          "itf",
-          "qr_code",
-          "data_matrix",
+          "ean_13", "ean_8", "upc_a", "upc_e",
+          "code_128", "code_39", "code_93", "itf",
+          "qr_code", "data_matrix",
         ].filter((f) => supportedFormats.length === 0 || supportedFormats.includes(f));
 
         detectorRef.current = new DetectorCtor({ formats: desired });
@@ -263,7 +247,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     };
   }, []);
 
-  return createPortal(
+  const content = (
     <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 bg-black/80 z-10">
         <p className="text-white text-sm font-medium">
@@ -284,7 +268,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
           <div className="text-center max-w-sm">
             <Icon name="Camera" size={56} className="text-white/60 mx-auto mb-4" />
             <p className="text-white text-sm mb-5">
-              Непрерывное сканирование недоступно на этом устройстве. Сфотографируйте штрихкод — система распознает его.
+              Непрерывное сканирование недоступно на этом устройстве. Сфотографируйте штрихкод.
             </p>
             <input
               ref={fileInputRef}
@@ -294,10 +278,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
               className="hidden"
               onChange={handleFileCapture}
             />
-            <Button
-              className="rounded-xl h-12 px-6"
-              onClick={() => fileInputRef.current?.click()}
-            >
+            <Button className="rounded-xl h-12 px-6" onClick={() => fileInputRef.current?.click()}>
               <Icon name="Camera" size={18} />
               <span className="ml-2">Сфотографировать</span>
             </Button>
@@ -373,9 +354,11 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
           </>
         )}
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  if (typeof document === "undefined") return content;
+  return createPortal(content, document.body);
 };
 
 export default BarcodeScanner;
