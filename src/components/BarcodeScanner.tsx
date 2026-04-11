@@ -14,11 +14,15 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanRef = useRef<number>(0);
   const videoTrackRef = useRef<MediaStreamTrack | null>(null);
-  const reapplyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
-  const [focusHint, setFocusHint] = useState<{ x: number; y: number } | null>(null);
-  const [capabilities, setCapabilities] = useState<string>("");
+  const [capsInfo, setCapsInfo] = useState<string>("");
+
+  const [zoomSupported, setZoomSupported] = useState(false);
+  const [zoomMin, setZoomMin] = useState(1);
+  const [zoomMax, setZoomMax] = useState(1);
+  const [zoomStep, setZoomStep] = useState(0.1);
+  const [zoom, setZoom] = useState(1);
 
   const getVideoTrack = (): MediaStreamTrack | null => {
     const videoElement = document.querySelector("#barcode-scanner-region video") as HTMLVideoElement | null;
@@ -26,63 +30,44 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
     return (videoElement.srcObject as MediaStream).getVideoTracks()[0] || null;
   };
 
-  const applyContinuousFocus = () => {
-    const track = videoTrackRef.current || getVideoTrack();
-    if (!track) return;
-    videoTrackRef.current = track;
+  const applyAllConstraints = async (track: MediaStreamTrack) => {
     try {
       const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
       const advanced: MediaTrackConstraintSet[] = [];
-      const focusModes = (caps.focusMode as string[] | undefined) || [];
 
+      const focusModes = (caps.focusMode as string[] | undefined) || [];
       if (focusModes.includes("continuous")) {
         advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
-      } else if (focusModes.includes("single-shot")) {
-        advanced.push({ focusMode: "single-shot" } as MediaTrackConstraintSet);
       }
 
-      if (advanced.length > 0) {
-        track.applyConstraints({ advanced }).catch((e) => {
-          console.warn("applyContinuousFocus failed:", e);
-        });
+      const exposureModes = (caps.exposureMode as string[] | undefined) || [];
+      if (exposureModes.includes("continuous")) {
+        advanced.push({ exposureMode: "continuous" } as MediaTrackConstraintSet);
       }
-    } catch (e) {
-      console.warn("applyContinuousFocus error:", e);
-    }
-  };
 
-  const handleTapFocus = async (e: React.MouseEvent<HTMLDivElement>) => {
-    const track = videoTrackRef.current || getVideoTrack();
-    if (!track) return;
-    videoTrackRef.current = track;
-
-    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width;
-    const relY = (e.clientY - rect.top) / rect.height;
-    setFocusHint({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-    setTimeout(() => setFocusHint(null), 800);
-
-    try {
-      const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
-      const focusModes = (caps.focusMode as string[] | undefined) || [];
-      const advanced: MediaTrackConstraintSet[] = [];
-
-      if (focusModes.includes("manual")) {
-        advanced.push({
-          focusMode: "manual",
-          pointsOfInterest: [{ x: relX, y: relY }],
-        } as unknown as MediaTrackConstraintSet);
-      } else if (focusModes.includes("single-shot")) {
-        advanced.push({ focusMode: "single-shot" } as MediaTrackConstraintSet);
-      } else if (focusModes.includes("continuous")) {
-        advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
+      const wbModes = (caps.whiteBalanceMode as string[] | undefined) || [];
+      if (wbModes.includes("continuous")) {
+        advanced.push({ whiteBalanceMode: "continuous" } as MediaTrackConstraintSet);
       }
 
       if (advanced.length > 0) {
         await track.applyConstraints({ advanced });
       }
-    } catch (err) {
-      console.warn("tap-to-focus failed:", err);
+    } catch (e) {
+      console.warn("applyAllConstraints failed:", e);
+    }
+  };
+
+  const handleZoomChange = async (value: number) => {
+    setZoom(value);
+    const track = videoTrackRef.current;
+    if (!track) return;
+    try {
+      await track.applyConstraints({
+        advanced: [{ zoom: value } as unknown as MediaTrackConstraintSet],
+      });
+    } catch (e) {
+      console.warn("zoom failed:", e);
     }
   };
 
@@ -95,7 +80,7 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
       .start(
         { facingMode: "environment" },
         {
-          fps: 15,
+          fps: 10,
           qrbox: { width: 280, height: 140 },
           aspectRatio: 1.333,
           disableFlip: false,
@@ -114,18 +99,30 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         () => {}
       )
       .then(() => {
-        setTimeout(() => {
+        setTimeout(async () => {
           const track = getVideoTrack();
-          if (track) {
-            videoTrackRef.current = track;
-            const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
-            const modes = (caps.focusMode as string[] | undefined)?.join(",") || "нет";
-            setCapabilities(modes);
-            console.log("Camera capabilities:", caps);
+          if (!track) return;
+          videoTrackRef.current = track;
+
+          const caps = (track.getCapabilities?.() || {}) as Record<string, unknown>;
+          console.log("Camera capabilities:", caps);
+
+          const capKeys = Object.keys(caps).join(", ");
+          setCapsInfo(capKeys || "нет данных");
+
+          if (typeof caps.zoom === "object" && caps.zoom !== null) {
+            const z = caps.zoom as { min?: number; max?: number; step?: number };
+            if (z.min !== undefined && z.max !== undefined && z.max > z.min) {
+              setZoomSupported(true);
+              setZoomMin(z.min);
+              setZoomMax(z.max);
+              setZoomStep(z.step || 0.1);
+              setZoom(z.min);
+            }
           }
-          applyContinuousFocus();
-          reapplyIntervalRef.current = setInterval(applyContinuousFocus, 2000);
-        }, 300);
+
+          await applyAllConstraints(track);
+        }, 500);
       })
       .catch((err) => {
         console.error("Scanner start error:", err);
@@ -142,9 +139,6 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
       });
 
     return () => {
-      if (reapplyIntervalRef.current) {
-        clearInterval(reapplyIntervalRef.current);
-      }
       scanner
         .stop()
         .catch(() => {})
@@ -168,18 +162,8 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         </Button>
       </div>
 
-      <div
-        className="flex-1 flex items-center justify-center relative cursor-pointer"
-        onClick={handleTapFocus}
-      >
+      <div className="flex-1 flex items-center justify-center relative">
         <div id="barcode-scanner-region" className="w-full h-full" />
-
-        {focusHint && (
-          <div
-            className="absolute w-16 h-16 border-2 border-yellow-400 rounded-full pointer-events-none animate-ping"
-            style={{ left: focusHint.x - 32, top: focusHint.y - 32 }}
-          />
-        )}
 
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/90 px-6">
@@ -198,6 +182,23 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
         )}
       </div>
 
+      {zoomSupported && (
+        <div className="px-4 py-2 bg-black/80 flex items-center gap-3">
+          <Icon name="ZoomOut" size={16} className="text-white/60" />
+          <input
+            type="range"
+            min={zoomMin}
+            max={zoomMax}
+            step={zoomStep}
+            value={zoom}
+            onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+            className="flex-1 accent-orange-500"
+          />
+          <Icon name="ZoomIn" size={16} className="text-white/60" />
+          <span className="text-white/60 text-xs w-10 text-right">{zoom.toFixed(1)}×</span>
+        </div>
+      )}
+
       <div className="px-4 py-3 bg-black/80 text-center">
         {lastScanned ? (
           <p className="text-green-400 text-sm font-medium flex items-center justify-center gap-2">
@@ -206,9 +207,11 @@ const BarcodeScanner = ({ onScan, onClose }: BarcodeScannerProps) => {
           </p>
         ) : (
           <>
-            <p className="text-white/60 text-xs">Коснитесь экрана для фокусировки</p>
-            {capabilities && (
-              <p className="text-white/30 text-[10px] mt-0.5">Режимы фокуса: {capabilities}</p>
+            <p className="text-white/60 text-xs">
+              {zoomSupported ? "Используйте зум для чёткости" : "Поднесите камеру ближе к штрихкоду"}
+            </p>
+            {capsInfo && (
+              <p className="text-white/30 text-[10px] mt-0.5">Capabilities: {capsInfo}</p>
             )}
           </>
         )}
