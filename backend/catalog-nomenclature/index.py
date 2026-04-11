@@ -267,54 +267,67 @@ def handler(event: dict, context) -> dict:
         })}
 
     if method == 'POST':
-        name = body.get('name', '').strip()
-        category_id = body.get('category_id')
-        article = body.get('article', '').strip() or None
-        brand = body.get('brand', '').strip() or None
-        supplier_code = body.get('supplier_code', '').strip() or None
-        price_base = body.get('price_base')
-        price_retail = body.get('price_retail')
-        price_wholesale = body.get('price_wholesale')
-        price_purchase = body.get('price_purchase')
-        images_data = body.get('images', [])
+        try:
+            name = body.get('name', '').strip()
+            category_id = body.get('category_id')
+            article = body.get('article', '').strip() or None
+            brand = body.get('brand', '').strip() or None
+            supplier_code = body.get('supplier_code', '').strip() or None
+            price_base = body.get('price_base')
+            price_retail = body.get('price_retail')
+            price_wholesale = body.get('price_wholesale')
+            price_purchase = body.get('price_purchase')
+            images_data = body.get('images', [])
 
-        if not name or not category_id:
+            if not name or not category_id:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите название и категорию'})}
+
+            cur.execute(
+                """INSERT INTO nomenclature (category_id, name, article, brand, supplier_code,
+                           price_base, price_retail, price_wholesale, price_purchase)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (category_id, name, article, brand, supplier_code,
+                 price_base, price_retail, price_wholesale, price_purchase)
+            )
+            nom_id = cur.fetchone()[0]
+
+            if images_data:
+                s3 = get_s3()
+                for i, img in enumerate(images_data):
+                    url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
+                    cur.execute(
+                        "INSERT INTO nomenclature_images (nomenclature_id, url, sort_order) VALUES (%s, %s, %s)",
+                        (nom_id, url, i)
+                    )
+
+            barcodes_data = body.get('barcodes', [])
+            for bc in barcodes_data:
+                bc_val = bc.strip() if isinstance(bc, str) else str(bc).strip()
+                if bc_val:
+                    cur.execute(
+                        "INSERT INTO nomenclature_barcodes (nomenclature_id, barcode) VALUES (%s, %s)",
+                        (nom_id, bc_val)
+                    )
+
+            conn.commit()
             cur.close()
             conn.close()
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите название и категорию'})}
-
-        cur.execute(
-            """INSERT INTO nomenclature (category_id, name, article, brand, supplier_code,
-                       price_base, price_retail, price_wholesale, price_purchase)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-               RETURNING id""",
-            (category_id, name, article, brand, supplier_code,
-             price_base, price_retail, price_wholesale, price_purchase)
-        )
-        nom_id = cur.fetchone()[0]
-
-        if images_data:
-            s3 = get_s3()
-            for i, img in enumerate(images_data):
-                url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
-                cur.execute(
-                    "INSERT INTO nomenclature_images (nomenclature_id, url, sort_order) VALUES (%s, %s, %s)",
-                    (nom_id, url, i)
-                )
-
-        barcodes_data = body.get('barcodes', [])
-        for bc in barcodes_data:
-            bc_val = bc.strip() if isinstance(bc, str) else str(bc).strip()
-            if bc_val:
-                cur.execute(
-                    "INSERT INTO nomenclature_barcodes (nomenclature_id, barcode) VALUES (%s, %s)",
-                    (nom_id, bc_val)
-                )
-
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': nom_id})}
+            return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': nom_id})}
+        except Exception as e:
+            import traceback
+            err_msg = f"{type(e).__name__}: {str(e)}"
+            print(f"POST error: {err_msg}")
+            print(traceback.format_exc())
+            try:
+                conn.rollback()
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': err_msg})}
 
     if method == 'PUT':
         nom_id = params.get('id')
