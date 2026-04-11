@@ -308,7 +308,7 @@ const ScanBarcode = () => {
         </div>
       ) : (
         <>
-          <div className="relative overflow-hidden" style={{ height: "60%" }}>
+          <div className="relative overflow-hidden" style={{ height: "40%" }}>
             <video
               ref={videoRef}
               className="w-full h-full object-cover"
@@ -321,7 +321,7 @@ const ScanBarcode = () => {
             {flashCapture && <div className="absolute inset-0 bg-white/60 pointer-events-none" />}
 
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-[85%] max-w-sm h-28 relative">
+              <div className="w-[80%] max-w-xs h-20 relative">
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-orange-500 rounded-tl-2xl" />
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-orange-500 rounded-tr-2xl" />
                 <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-orange-500 rounded-bl-2xl" />
@@ -347,11 +347,11 @@ const ScanBarcode = () => {
 
             {status === "scanning" && !error && (
               <button
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 w-11 h-11 rounded-full bg-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
                 onClick={takePhoto}
                 aria-label="Сделать фото"
               >
-                <div className="w-12 h-12 rounded-full border-4 border-black" />
+                <div className="w-9 h-9 rounded-full border-[3px] border-black" />
               </button>
             )}
 
