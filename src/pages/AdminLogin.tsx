@@ -12,9 +12,8 @@ const BOT_USERNAME = "mirtehniki_plus_bot";
 export default function AdminLogin() {
   const [phone, setPhone] = useState("+7");
   const [code, setCode] = useState("");
-  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [step, setStep] = useState<"phone" | "telegram" | "code">("phone");
   const [loading, setLoading] = useState(false);
-  const [checkingTelegram, setCheckingTelegram] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -27,9 +26,7 @@ export default function AdminLogin() {
     return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
   };
 
-  const cleanPhone = (formatted: string) => {
-    return "+" + formatted.replace(/\D/g, "");
-  };
+  const cleanPhone = (formatted: string) => "+" + formatted.replace(/\D/g, "");
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
@@ -45,39 +42,38 @@ export default function AdminLogin() {
     window.open(`https://t.me/${BOT_USERNAME}?start=${startParam}`, "_blank");
   };
 
-  const checkTelegramLinked = async () => {
-    setCheckingTelegram(true);
+  const checkPhone = async () => {
+    setLoading(true);
     try {
-      const resp = await fetch(`${AUTH_URL}/?action=check_telegram`, {
+      const resp = await fetch(`${AUTH_URL}/?action=check_phone`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: cleanPhone(phone) }),
       });
       const data = await resp.json();
-      if (data.linked) {
-        toast({ title: "Telegram привязан", description: "Теперь можно отправить код" });
-        return true;
-      } else {
-        toast({ title: "Telegram не привязан", description: "Нажмите 'Привет Telegram' и напишите боту", variant: "destructive" });
-        return false;
+
+      if (!data.allowed) {
+        toast({ title: "Доступ запрещён", description: data.error, variant: "destructive" });
+        return;
       }
+
+      if (data.need_telegram) {
+        setStep("telegram");
+        toast({ title: "Привяжите Telegram", description: "Нажмите кнопку ниже и напишите боту" });
+        return;
+      }
+
+      await sendCode();
     } catch {
-      toast({ title: "Ошибка", description: "Не удалось проверить привязку", variant: "destructive" });
-      return false;
+      toast({ title: "Ошибка", description: "Не удалось проверить номер", variant: "destructive" });
     } finally {
-      setCheckingTelegram(false);
+      setLoading(false);
     }
   };
 
   const sendCode = async () => {
     setLoading(true);
     try {
-      const linked = await checkTelegramLinked();
-      if (!linked) {
-        setLoading(false);
-        return;
-      }
-
       const resp = await fetch(`${AUTH_URL}/?action=send_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -94,6 +90,29 @@ export default function AdminLogin() {
     } catch {
       toast({ title: "Ошибка", description: "Не удалось отправить код", variant: "destructive" });
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkTelegramAndSendCode = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${AUTH_URL}/?action=check_telegram`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: cleanPhone(phone) }),
+      });
+      const data = await resp.json();
+
+      if (!data.linked) {
+        toast({ title: "Telegram не привязан", description: "Нажмите 'Привет Telegram' и напишите боту", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      await sendCode();
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось проверить привязку", variant: "destructive" });
       setLoading(false);
     }
   };
@@ -140,35 +159,56 @@ export default function AdminLogin() {
               placeholder="+7 (___) ___-__-__"
               value={phone}
               onChange={handlePhoneChange}
-              disabled={step === "code"}
+              disabled={step !== "phone"}
             />
           </div>
 
           {step === "phone" && (
+            <Button
+              className="w-full"
+              onClick={checkPhone}
+              disabled={!isPhoneValid || loading}
+            >
+              {loading ? (
+                <Icon name="Loader2" size={18} className="animate-spin" />
+              ) : (
+                <Icon name="ArrowRight" size={18} />
+              )}
+              <span className="ml-2">{loading ? "Проверка..." : "Продолжить"}</span>
+            </Button>
+          )}
+
+          {step === "telegram" && (
             <div className="space-y-3">
+              <p className="text-sm text-muted-foreground text-center">
+                Привяжите Telegram к номеру, затем нажмите «Отправить код»
+              </p>
               <Button
                 variant="outline"
                 className="w-full"
                 onClick={openTelegramBot}
-                disabled={!isPhoneValid}
               >
                 <Icon name="Send" size={18} />
                 <span className="ml-2">Привет Telegram</span>
               </Button>
-
               <Button
                 className="w-full"
-                onClick={sendCode}
-                disabled={!isPhoneValid || loading}
+                onClick={checkTelegramAndSendCode}
+                disabled={loading}
               >
                 {loading ? (
                   <Icon name="Loader2" size={18} className="animate-spin" />
                 ) : (
                   <Icon name="MessageSquare" size={18} />
                 )}
-                <span className="ml-2">
-                  {loading ? "Отправка..." : "Отправить код в Telegram"}
-                </span>
+                <span className="ml-2">{loading ? "Проверка..." : "Отправить код в Telegram"}</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full text-muted-foreground"
+                onClick={() => { setStep("phone"); }}
+              >
+                Изменить номер
               </Button>
             </div>
           )}
@@ -188,7 +228,6 @@ export default function AdminLogin() {
                   autoFocus
                 />
               </div>
-
               <Button
                 className="w-full"
                 onClick={verifyCode}
@@ -201,7 +240,6 @@ export default function AdminLogin() {
                 )}
                 <span className="ml-2">{loading ? "Проверка..." : "Войти"}</span>
               </Button>
-
               <Button
                 variant="ghost"
                 className="w-full text-muted-foreground"
@@ -211,10 +249,6 @@ export default function AdminLogin() {
               </Button>
             </div>
           )}
-
-          <p className="text-xs text-muted-foreground text-center">
-            Если Telegram не привязан — нажмите «Привет Telegram», напишите боту, затем отправьте код
-          </p>
         </CardContent>
       </Card>
     </div>
