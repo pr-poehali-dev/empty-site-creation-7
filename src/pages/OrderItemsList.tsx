@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
-import BarcodeScanner from "@/components/BarcodeScanner";
 
 const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
 
@@ -50,14 +49,31 @@ const OrderItemsList = () => {
   const [searching, setSearching] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
-  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("draft_order_items");
     if (saved) {
       try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
     }
+
+    const scannedRaw = localStorage.getItem("scanned_order_barcodes");
+    if (scannedRaw) {
+      try {
+        const codes: string[] = JSON.parse(scannedRaw);
+        if (Array.isArray(codes)) {
+          codes.forEach((code) => {
+            searchByBarcode(code);
+          });
+        }
+        localStorage.removeItem("scanned_order_barcodes");
+      } catch { /* ignore */ }
+    }
   }, []);
+
+  const openScanner = () => {
+    localStorage.setItem("scanned_order_barcodes", JSON.stringify([]));
+    navigate("/admin/scan?returnTo=/admin/orders/new-list&key=scanned_order_barcodes");
+  };
 
   const saveLines = (next: OrderLine[]) => {
     setLines(next);
@@ -265,7 +281,7 @@ const OrderItemsList = () => {
             {isMobile && (
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
-                onClick={() => setScannerOpen(true)}
+                onClick={openScanner}
               >
                 <Icon name="Camera" size={18} />
               </button>
@@ -325,12 +341,6 @@ const OrderItemsList = () => {
         )}
       </main>
 
-      {scannerOpen && (
-        <BarcodeScanner
-          onScan={(code) => searchByBarcode(code)}
-          onClose={() => setScannerOpen(false)}
-        />
-      )}
     </div>
   );
 };

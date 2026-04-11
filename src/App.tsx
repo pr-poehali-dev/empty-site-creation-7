@@ -12,6 +12,7 @@ import ManagerDashboard from "./pages/ManagerDashboard";
 import Catalog from "./pages/Catalog";
 import WholesaleOrders from "./pages/WholesaleOrders";
 import OrderItemsList from "./pages/OrderItemsList";
+import ScanBarcode from "./pages/ScanBarcode";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/admin/catalog" element={<ProtectedRoute><Catalog /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute><WholesaleOrders /></ProtectedRoute>} />
           <Route path="/admin/orders/new-list" element={<ProtectedRoute><OrderItemsList /></ProtectedRoute>} />
+          <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

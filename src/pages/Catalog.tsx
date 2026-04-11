@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
-import BarcodeScanner from "@/components/BarcodeScanner";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
 const NOMENCLATURE_URL = "https://functions.poehali.dev/b9921fd5-1333-471a-9ee5-86e701e904c6";
@@ -90,7 +89,6 @@ const Catalog = () => {
   const [formBarcodes, setFormBarcodes] = useState<string[]>([]);
   const [formBarcodeInput, setFormBarcodeInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
 
@@ -136,6 +134,55 @@ const Catalog = () => {
   useEffect(() => {
     fetchItems(selectedCategory, search);
   }, [selectedCategory]);
+
+  useEffect(() => {
+    const draftRaw = localStorage.getItem("draft_nomenclature");
+    if (draftRaw) {
+      try {
+        const draft = JSON.parse(draftRaw);
+        setFormName(draft.formName || "");
+        setFormArticle(draft.formArticle || "");
+        setFormBrand(draft.formBrand || "");
+        setFormSupplierCode(draft.formSupplierCode || "");
+        setFormCategoryId(draft.formCategoryId || "");
+        setFormPriceBase(draft.formPriceBase || "");
+        setFormPriceRetail(draft.formPriceRetail || "");
+        setFormPriceWholesale(draft.formPriceWholesale || "");
+        setFormPricePurchase(draft.formPricePurchase || "");
+        setFormBarcodes(Array.isArray(draft.formBarcodes) ? draft.formBarcodes : []);
+        setAddOpen(true);
+        localStorage.removeItem("draft_nomenclature");
+      } catch { /* ignore */ }
+    }
+
+    const scannedRaw = localStorage.getItem("scanned_nomenclature_barcodes");
+    if (scannedRaw) {
+      try {
+        const scanned: string[] = JSON.parse(scannedRaw);
+        if (Array.isArray(scanned) && scanned.length > 0) {
+          setFormBarcodes((prev) => {
+            const merged = [...prev];
+            for (const code of scanned) {
+              if (!merged.includes(code)) merged.push(code);
+            }
+            return merged;
+          });
+        }
+        localStorage.removeItem("scanned_nomenclature_barcodes");
+      } catch { /* ignore */ }
+    }
+  }, []);
+
+  const openBarcodeScanner = () => {
+    const draft = {
+      formName, formArticle, formBrand, formSupplierCode, formCategoryId,
+      formPriceBase, formPriceRetail, formPriceWholesale, formPricePurchase,
+      formBarcodes,
+    };
+    localStorage.setItem("draft_nomenclature", JSON.stringify(draft));
+    localStorage.setItem("scanned_nomenclature_barcodes", JSON.stringify(formBarcodes));
+    navigate("/admin/scan?returnTo=/admin/catalog&key=scanned_nomenclature_barcodes");
+  };
 
   const handleSearch = () => {
     fetchItems(selectedCategory, search);
@@ -515,13 +562,7 @@ const Catalog = () => {
       </div>
 
       {/* Add nomenclature dialog */}
-      <Dialog
-        open={addOpen}
-        onOpenChange={(open) => {
-          if (barcodeScannerOpen) return;
-          if (!open) { setAddOpen(false); resetForm(); }
-        }}
-      >
+      <Dialog open={addOpen} onOpenChange={(open) => { if (!open) { setAddOpen(false); resetForm(); } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Добавить товар</DialogTitle>
@@ -628,21 +669,19 @@ const Catalog = () => {
                 >
                   <Icon name="Plus" size={16} />
                 </Button>
-                {/Mobi|Android/i.test(navigator.userAgent) && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setBarcodeScannerOpen(true);
-                    }}
-                  >
-                    <Icon name="Camera" size={16} />
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openBarcodeScanner();
+                  }}
+                >
+                  <Icon name="Camera" size={16} />
+                </Button>
               </div>
               {formBarcodes.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -754,22 +793,6 @@ const Catalog = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {barcodeScannerOpen && (
-        <BarcodeScanner
-          onScan={(code) => {
-            setFormBarcodes((prev) => {
-              if (prev.includes(code)) {
-                toast({ title: "Штрихкод уже добавлен", description: code });
-                return prev;
-              }
-              toast({ title: "Штрихкод добавлен", description: code });
-              return [...prev, code];
-            });
-          }}
-          onClose={() => setBarcodeScannerOpen(false)}
-        />
-      )}
     </div>
   );
 };
