@@ -42,6 +42,7 @@ interface NomItem {
   price_purchase: number | null;
   category_name: string;
   images: NomImage[];
+  barcodes: string[];
 }
 
 interface PendingImage {
@@ -484,6 +485,11 @@ const Catalog = () => {
                       )}
                       <span className="text-xs text-muted-foreground">{item.category_name}</span>
                     </div>
+                    {item.barcodes && item.barcodes.length > 0 && (
+                      <p className="text-xs text-muted-foreground italic mt-0.5 truncate">
+                        {item.barcodes.join(", ")}
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-3 mt-2 text-xs">
                       {item.price_base != null && (
                         <span>Базовая: <span className="text-foreground font-medium">{item.price_base.toLocaleString()} ₽</span></span>

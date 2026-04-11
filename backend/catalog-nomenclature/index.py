@@ -204,6 +204,16 @@ def handler(event: dict, context) -> dict:
             for img in cur.fetchall():
                 images_map.setdefault(img[0], []).append({'id': img[1], 'url': img[2], 'sort_order': img[3]})
 
+        barcodes_map = {}
+        if nom_ids:
+            placeholders = ','.join(['%s'] * len(nom_ids))
+            cur.execute(
+                f"SELECT nomenclature_id, barcode FROM nomenclature_barcodes WHERE nomenclature_id IN ({placeholders}) ORDER BY id",
+                nom_ids
+            )
+            for bc in cur.fetchall():
+                barcodes_map.setdefault(bc[0], []).append(bc[1])
+
         items = []
         for r in rows:
             items.append({
@@ -215,7 +225,8 @@ def handler(event: dict, context) -> dict:
                 'price_purchase': float(r[9]) if r[9] else None,
                 'created_at': str(r[10]) if r[10] else None,
                 'category_name': r[11],
-                'images': images_map.get(r[0], [])
+                'images': images_map.get(r[0], []),
+                'barcodes': barcodes_map.get(r[0], [])
             })
 
         cur.close()
