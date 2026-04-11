@@ -1,0 +1,22 @@
+{
+  "tests": [
+    {
+      "name": "Webhook receives update",
+      "method": "POST",
+      "path": "/",
+      "body": {"message": {"text": "/start", "chat": {"id": 123}}},
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Empty body",
+      "method": "POST",
+      "path": "/",
+      "body": {},
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

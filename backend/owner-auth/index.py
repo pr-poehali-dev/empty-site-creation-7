@@ -1,24 +1,21 @@
 import json
 import os
-import hashlib
 import secrets
+import urllib.request
 from datetime import datetime, timedelta
 import psycopg2
 
 def get_db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
 def handler(event: dict, context) -> dict:
-    """Авторизация и регистрация владельца сайта"""
+    """Авторизация по номеру телефона: отправка кода в Telegram и проверка"""
     if event.get('httpMethod') == 'OPTIONS':
         return {
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type, X-Authorization',
                 'Access-Control-Max-Age': '86400'
             },
@@ -26,40 +23,90 @@ def handler(event: dict, context) -> dict:
         }
 
     headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
-    path = event.get('path', '/')
     method = event.get('httpMethod', 'GET')
+    params = event.get('queryStringParameters') or {}
+    action = params.get('action', '')
     body = json.loads(event.get('body') or '{}')
 
-    conn = get_db()
-    cur = conn.cursor()
+    if method == 'POST' and action == 'send_code':
+        phone = body.get('phone', '').strip()
+        if not phone:
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите номер телефона'})}
 
-    # POST /register
-    if method == 'POST' and path.endswith('/register'):
-        email = body.get('email', '').strip().lower()
-        password = body.get('password', '')
-        name = body.get('name', '').strip()
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, telegram_chat_id FROM users WHERE phone = %s", (phone,))
+        user = cur.fetchone()
 
-        if not email or not password or not name:
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Заполните все поля'})}
+        if not user:
+            cur.close()
+            conn.close()
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Пользователь не найден'})}
 
-        if len(password) < 6:
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Пароль должен быть не менее 6 символов'})}
+        if not user[1]:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Telegram не привязан. Нажмите кнопку "Привет Telegram" для привязки'})}
 
-        cur.execute('SELECT id FROM owners WHERE email = %s', (email,))
-        if cur.fetchone():
-            return {'statusCode': 409, 'headers': headers, 'body': json.dumps({'error': 'Владелец с таким email уже существует'})}
+        code = str(secrets.randbelow(900000) + 100000)
+        expires_at = datetime.now() + timedelta(minutes=5)
 
-        pw_hash = hash_password(password)
+        cur.execute("DELETE FROM login_codes WHERE phone = %s", (phone,))
         cur.execute(
-            'INSERT INTO owners (email, password_hash, name) VALUES (%s, %s, %s) RETURNING id, name, email',
-            (email, pw_hash, name)
+            "INSERT INTO login_codes (phone, code, expires_at) VALUES (%s, %s, %s)",
+            (phone, code, expires_at)
         )
-        owner = cur.fetchone()
+        conn.commit()
+
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+        if bot_token:
+            url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+            payload = json.dumps({
+                'chat_id': user[1],
+                'text': f'Ваш код авторизации: {code}\n\nКод действителен 5 минут.',
+                'parse_mode': 'HTML'
+            }).encode()
+            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(req, timeout=10)
+            except Exception:
+                cur.close()
+                conn.close()
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Не удалось отправить код в Telegram'})}
+
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'success': True, 'message': 'Код отправлен в Telegram'})}
+
+    if method == 'POST' and action == 'verify_code':
+        phone = body.get('phone', '').strip()
+        code = body.get('code', '').strip()
+
+        if not phone or not code:
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите номер телефона и код'})}
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM login_codes WHERE phone = %s AND code = %s AND expires_at > NOW()",
+            (phone, code)
+        )
+        login_code = cur.fetchone()
+
+        if not login_code:
+            cur.close()
+            conn.close()
+            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Неверный или просроченный код'})}
+
+        cur.execute("DELETE FROM login_codes WHERE phone = %s", (phone,))
+        cur.execute("SELECT id, phone, role FROM users WHERE phone = %s", (phone,))
+        user = cur.fetchone()
+
         token = secrets.token_hex(32)
         expires_at = datetime.now() + timedelta(days=30)
         cur.execute(
-            'INSERT INTO owner_sessions (owner_id, token, expires_at) VALUES (%s, %s, %s)',
-            (owner[0], token, expires_at)
+            "INSERT INTO owner_sessions (owner_id, token, expires_at) VALUES (%s, %s, %s)",
+            (user[0], token, expires_at)
         )
         conn.commit()
         cur.close()
@@ -68,66 +115,55 @@ def handler(event: dict, context) -> dict:
         return {
             'statusCode': 200,
             'headers': headers,
-            'body': json.dumps({'token': token, 'owner': {'id': owner[0], 'name': owner[1], 'email': owner[2]}})
+            'body': json.dumps({
+                'token': token,
+                'user': {'id': user[0], 'phone': user[1], 'role': user[2]}
+            })
         }
 
-    # POST /login
-    if method == 'POST' and path.endswith('/login'):
-        email = body.get('email', '').strip().lower()
-        password = body.get('password', '')
-
-        if not email or not password:
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Заполните все поля'})}
-
-        pw_hash = hash_password(password)
-        cur.execute('SELECT id, name, email FROM owners WHERE email = %s AND password_hash = %s', (email, pw_hash))
-        owner = cur.fetchone()
-
-        if not owner:
-            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Неверный email или пароль'})}
-
-        token = secrets.token_hex(32)
-        expires_at = datetime.now() + timedelta(days=30)
-        cur.execute(
-            'INSERT INTO owner_sessions (owner_id, token, expires_at) VALUES (%s, %s, %s)',
-            (owner[0], token, expires_at)
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': json.dumps({'token': token, 'owner': {'id': owner[0], 'name': owner[1], 'email': owner[2]}})
-        }
-
-    # GET /me
-    if method == 'GET' and path.endswith('/me'):
+    if method == 'GET' and action == 'me':
         auth = event.get('headers', {}).get('X-Authorization', '')
         token = auth.replace('Bearer ', '').strip()
         if not token:
             return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Не авторизован'})}
 
+        conn = get_db()
+        cur = conn.cursor()
         cur.execute(
-            '''SELECT o.id, o.name, o.email FROM owners o
-               JOIN owner_sessions s ON s.owner_id = o.id
-               WHERE s.token = %s AND s.expires_at > NOW()''',
+            """SELECT u.id, u.phone, u.role FROM users u
+               JOIN owner_sessions s ON s.owner_id = u.id
+               WHERE s.token = %s AND s.expires_at > NOW()""",
             (token,)
         )
-        owner = cur.fetchone()
+        user = cur.fetchone()
         cur.close()
         conn.close()
 
-        if not owner:
+        if not user:
             return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Сессия истекла'})}
 
         return {
             'statusCode': 200,
             'headers': headers,
-            'body': json.dumps({'owner': {'id': owner[0], 'name': owner[1], 'email': owner[2]}})
+            'body': json.dumps({'user': {'id': user[0], 'phone': user[1], 'role': user[2]}})
         }
 
-    cur.close()
-    conn.close()
+    if method == 'POST' and action == 'check_telegram':
+        phone = body.get('phone', '').strip()
+        if not phone:
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите номер телефона'})}
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT telegram_chat_id FROM users WHERE phone = %s", (phone,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not user:
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'linked': False, 'error': 'Пользователь не найден'})}
+
+        linked = user[0] is not None
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'linked': linked})}
+
     return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Not found'})}

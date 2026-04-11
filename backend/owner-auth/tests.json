@@ -1,28 +1,36 @@
 {
   "tests": [
     {
-      "name": "Register owner",
+      "name": "Send code without phone",
       "method": "POST",
-      "path": "/register",
-      "body": {"email": "test@example.com", "password": "123456", "name": "Тест Владелец"},
-      "expectedStatus": 200,
-      "expectedBody": {"token": "string"},
+      "path": "/?action=send_code",
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Login owner",
+      "name": "Verify code without params",
       "method": "POST",
-      "path": "/login",
-      "body": {"email": "test@example.com", "password": "123456"},
-      "expectedStatus": 200,
-      "expectedBody": {"token": "string"},
+      "path": "/?action=verify_code",
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Login wrong password",
+      "name": "Check telegram without phone",
       "method": "POST",
-      "path": "/login",
-      "body": {"email": "test@example.com", "password": "wrongpass"},
+      "path": "/?action=check_telegram",
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get me without token",
+      "method": "GET",
+      "path": "/?action=me",
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"

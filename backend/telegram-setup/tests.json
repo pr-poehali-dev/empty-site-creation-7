@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Get bot info",
+      "method": "GET",
+      "path": "/?action=info",
+      "expectedStatus": 200,
+      "expectedBody": {"bot": {"username": "string"}},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
