@@ -10,6 +10,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import compressImage from "@/lib/compressImage";
@@ -59,6 +69,7 @@ const Catalog = () => {
   const token = localStorage.getItem("auth_token") || "";
   const { toast } = useToast();
   const isOwner = user.role === "owner";
+  const canEdit = isOwner || user.role_name === "Управляющий";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -78,6 +89,11 @@ const Catalog = () => {
   const [showMobileCategories, setShowMobileCategories] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [existingImages, setExistingImages] = useState<ProductImage[]>([]);
+  const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
+  const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null);
+  const [deleteImageTarget, setDeleteImageTarget] = useState<ProductImage | null>(null);
   const [formName, setFormName] = useState("");
   const [formArticle, setFormArticle] = useState("");
   const [formBrand, setFormBrand] = useState("");
@@ -348,6 +364,56 @@ const Catalog = () => {
     setFormBarcodes([]);
     setFormBarcodeInput("");
     setCategorySearch("");
+    setEditingProduct(null);
+    setExistingImages([]);
+    setRemovedImageIds([]);
+  };
+
+  const handleEdit = (product: Product) => {
+    setEditingProduct(product);
+    setFormName(product.name);
+    setFormArticle(product.article || "");
+    setFormBrand(product.brand || "");
+    setFormSupplierCode(product.supplier_code || "");
+    setFormCategoryId(String(product.category_id));
+    setFormPriceBase(product.price_base != null ? String(product.price_base) : "");
+    setFormPriceRetail(product.price_retail != null ? String(product.price_retail) : "");
+    setFormPriceWholesale(product.price_wholesale != null ? String(product.price_wholesale) : "");
+    setFormPricePurchase(product.price_purchase != null ? String(product.price_purchase) : "");
+    setFormBarcodes(Array.isArray(product.barcodes) ? [...product.barcodes] : []);
+    setFormImages([]);
+    setExistingImages([...product.images]);
+    setRemovedImageIds([]);
+    setAddOpen(true);
+  };
+
+  const confirmRemoveImage = () => {
+    if (!deleteImageTarget) return;
+    setRemovedImageIds((prev) => [...prev, deleteImageTarget.id]);
+    setExistingImages((prev) => prev.filter((img) => img.id !== deleteImageTarget.id));
+    setDeleteImageTarget(null);
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!deleteProductTarget) return;
+    const id = deleteProductTarget.id;
+    const name = deleteProductTarget.name;
+    setDeleteProductTarget(null);
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?id=${id}`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Товар удалён", description: name });
+        fetchItems(selectedCategory, search);
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось удалить товар", variant: "destructive" });
+    }
   };
 
   const addBarcode = () => {
@@ -384,14 +450,24 @@ const Catalog = () => {
         payload.price_purchase = formPricePurchase ? Number(formPricePurchase) : null;
       }
 
-      const resp = await fetch(PRODUCTS_URL, {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify(payload),
-      });
+      let resp: Response;
+      if (editingProduct) {
+        payload.remove_images = removedImageIds;
+        resp = await fetch(`${PRODUCTS_URL}?id=${editingProduct.id}`, {
+          method: "PUT",
+          headers: authHeaders,
+          body: JSON.stringify(payload),
+        });
+      } else {
+        resp = await fetch(PRODUCTS_URL, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify(payload),
+        });
+      }
       const data = await resp.json();
       if (resp.ok) {
-        toast({ title: "Товар добавлен" });
+        toast({ title: editingProduct ? "Товар обновлён" : "Товар добавлен" });
         setAddOpen(false);
         resetForm();
         fetchItems(selectedCategory, search);
@@ -494,17 +570,20 @@ const Catalog = () => {
             <h1 className="text-lg font-semibold">Каталог</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              className="h-9"
-              onClick={() => {
-                if (selectedCategory) setFormCategoryId(String(selectedCategory));
-                setAddOpen(true);
-              }}
-            >
-              <Icon name="Plus" size={16} />
-              <span className="ml-1 hidden sm:inline">Добавить товар</span>
-              <span className="ml-1 sm:hidden">Добавить</span>
-            </Button>
+            {canEdit && (
+              <Button
+                className="h-9"
+                onClick={() => {
+                  resetForm();
+                  if (selectedCategory) setFormCategoryId(String(selectedCategory));
+                  setAddOpen(true);
+                }}
+              >
+                <Icon name="Plus" size={16} />
+                <span className="ml-1 hidden sm:inline">Добавить товар</span>
+                <span className="ml-1 sm:hidden">Добавить</span>
+              </Button>
+            )}
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleLogout}>
               <Icon name="LogOut" size={16} />
             </Button>
@@ -635,6 +714,24 @@ const Catalog = () => {
                       )}
                     </div>
                   </div>
+                  {canEdit && (
+                    <div className="flex flex-col gap-1 flex-shrink-0">
+                      <button
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground"
+                        onClick={() => handleEdit(item)}
+                        title="Редактировать"
+                      >
+                        <Icon name="Pencil" size={14} />
+                      </button>
+                      <button
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteProductTarget(item)}
+                        title="Удалить"
+                      >
+                        <Icon name="Trash2" size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -642,11 +739,11 @@ const Catalog = () => {
         </main>
       </div>
 
-      {/* Add product dialog */}
+      {/* Add/edit product dialog */}
       <Dialog open={addOpen} onOpenChange={(open) => { if (!open) { setAddOpen(false); resetForm(); } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Добавить товар</DialogTitle>
+            <DialogTitle>{editingProduct ? "Редактировать товар" : "Добавить товар"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
@@ -837,8 +934,29 @@ const Catalog = () => {
               </div>
             </div>
 
+            {editingProduct && existingImages.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Текущие фото</label>
+                <div className="flex gap-2 flex-wrap">
+                  {existingImages.map((img) => (
+                    <div key={img.id} className="relative w-16 h-16">
+                      <img src={img.url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                      <button
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive flex items-center justify-center"
+                        onClick={() => setDeleteImageTarget(img)}
+                      >
+                        <Icon name="X" size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Фотографии</label>
+              <label className="text-sm font-medium text-muted-foreground">
+                {editingProduct ? "Добавить фото" : "Фотографии"}
+              </label>
               <div className="flex gap-2 flex-wrap">
                 {formImages.map((img, i) => (
                   <div key={i} className="relative w-16 h-16">
@@ -892,7 +1010,7 @@ const Catalog = () => {
               ) : (
                 <Icon name="Check" size={18} />
               )}
-              <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
+              <span className="ml-2">{saving ? "Сохранение..." : editingProduct ? "Сохранить" : "Добавить"}</span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1040,6 +1158,46 @@ const Catalog = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteProductTarget} onOpenChange={(open) => { if (!open) setDeleteProductTarget(null); }}>
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить товар?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteProductTarget?.name} будет удалён безвозвратно. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProduct}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteImageTarget} onOpenChange={(open) => { if (!open) setDeleteImageTarget(null); }}>
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить фото?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Фотография будет удалена из товара после сохранения изменений.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRemoveImage}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -18,6 +18,23 @@ def get_user_by_token(cur, token):
     )
     return cur.fetchone()
 
+def get_manager_role_name(cur, phone):
+    cur.execute(
+        """SELECT r.name FROM managers m
+           LEFT JOIN roles r ON r.id = m.role_id
+           WHERE m.phone = %s AND m.status = 'authorized'""",
+        (phone,)
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+def can_edit_products(cur, user):
+    user_role = user[2]
+    if user_role == 'owner':
+        return True
+    role_name = get_manager_role_name(cur, user[1])
+    return role_name == 'Управляющий'
+
 def get_s3():
     return boto3.client(
         's3',
@@ -267,6 +284,10 @@ def handler(event: dict, context) -> dict:
         })}
 
     if method == 'POST':
+        if not can_edit_products(cur, user):
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав для добавления товара'})}
         try:
             name = (body.get('name') or '').strip()
             category_id = body.get('category_id')
@@ -339,6 +360,10 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': err_msg})}
 
     if method == 'PUT':
+        if not can_edit_products(cur, user):
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав для редактирования товара'})}
         product_id = params.get('id')
         if not product_id:
             cur.close()
@@ -407,6 +432,10 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
 
     if method == 'DELETE':
+        if not can_edit_products(cur, user):
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав для удаления товара'})}
         product_id = params.get('id')
         if not product_id:
             cur.close()
