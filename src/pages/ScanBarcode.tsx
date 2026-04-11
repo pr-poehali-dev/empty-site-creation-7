@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 
-const SCAN_COOLDOWN = 1500;
 const MAX_VISIBLE = 5;
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 
@@ -22,6 +21,7 @@ interface BarcodeDetectorConstructor {
 }
 
 interface ScannedItem {
+  id: number;
   barcode: string;
   name: string | null;
   found: boolean;
@@ -41,17 +41,17 @@ const ScanBarcode = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
-  const lastScanRef = useRef<number>(0);
-  const scanningRef = useRef<boolean>(false);
+  const idCounterRef = useRef<number>(0);
 
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<"initializing" | "scanning" | "unsupported">("initializing");
   const [flashCapture, setFlashCapture] = useState(false);
+  const [flashError, setFlashError] = useState(false);
   const [collected, setCollected] = useState<string[]>([]);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastFlash, setLastFlash] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const token = localStorage.getItem("auth_token") || "";
   const authHeaders = {
@@ -64,42 +64,38 @@ const ScanBarcode = () => {
     localStorage.setItem(storageKey, JSON.stringify(next));
   };
 
-  const resolveBarcode = async (code: string): Promise<ScannedItem> => {
+  const resolveBarcode = async (id: number, code: string): Promise<ScannedItem> => {
     try {
       const resp = await fetch(`${PRODUCTS_URL}?barcode=${encodeURIComponent(code)}`, {
         headers: authHeaders,
       });
       const data = await resp.json();
       if (resp.ok && data.items && data.items.length > 0) {
-        return { barcode: code, name: data.items[0].name, found: true };
+        return { id, barcode: code, name: data.items[0].name, found: true };
       }
       if (resp.ok && data.item) {
-        return { barcode: code, name: data.item.name, found: true };
+        return { id, barcode: code, name: data.item.name, found: true };
       }
     } catch { /* ignore */ }
-    return { barcode: code, name: null, found: false };
+    return { id, barcode: code, name: null, found: false };
   };
 
   const processScan = async (code: string) => {
-    const now = Date.now();
-    if (now - lastScanRef.current < SCAN_COOLDOWN) return;
-    lastScanRef.current = now;
-
     if (navigator.vibrate) navigator.vibrate(100);
     setLastFlash(code);
     setTimeout(() => setLastFlash(null), 1200);
 
+    const id = ++idCounterRef.current;
+
     setCollected((prev) => {
-      if (prev.includes(code)) return prev;
       const next = [...prev, code];
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
 
-    const item = await resolveBarcode(code);
+    const item = await resolveBarcode(id, code);
     setScannedItems((prev) => {
-      const filtered = prev.filter((s) => s.barcode !== code);
-      const next = [item, ...filtered].slice(0, MAX_VISIBLE);
+      const next = [item, ...prev].slice(0, MAX_VISIBLE);
       return next;
     });
   };
@@ -139,27 +135,18 @@ const ScanBarcode = () => {
     }
   };
 
-  const scanLoop = async () => {
-    if (!scanningRef.current || !videoRef.current || !detectorRef.current) return;
-    try {
-      if (videoRef.current.readyState >= 2) {
-        const results = await detectorRef.current.detect(videoRef.current);
-        if (results && results.length > 0) {
-          processScan(results[0].rawValue);
-        }
-      }
-    } catch (e) {
-      console.warn("scan error:", e);
-    }
-    if (scanningRef.current) {
-      timerRef.current = setTimeout(scanLoop, 120);
-    }
+  const showError = (msg: string) => {
+    if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+    setErrorMsg(msg);
+    setFlashError(true);
+    setTimeout(() => setFlashError(false), 300);
+    setTimeout(() => setErrorMsg(null), 1500);
   };
 
   const takePhoto = async () => {
     if (!videoRef.current || !canvasRef.current || !detectorRef.current) return;
     setFlashCapture(true);
-    setTimeout(() => setFlashCapture(false), 200);
+    setTimeout(() => setFlashCapture(false), 150);
 
     try {
       const video = videoRef.current;
@@ -167,15 +154,21 @@ const ScanBarcode = () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+      if (!ctx) {
+        showError("Ошибка камеры");
+        return;
+      }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const results = await detectorRef.current.detect(canvas);
       if (results && results.length > 0) {
         processScan(results[0].rawValue);
+      } else {
+        showError("Штрихкод не распознан");
       }
     } catch (e) {
       console.warn("photo scan error:", e);
+      showError("Ошибка распознавания");
     }
   };
 
@@ -183,10 +176,15 @@ const ScanBarcode = () => {
     navigate(returnTo);
   };
 
-  const removeItem = (barcode: string) => {
-    setScannedItems((prev) => prev.filter((s) => s.barcode !== barcode));
-    const next = collected.filter((c) => c !== barcode);
-    saveCollected(next);
+  const removeItem = (id: number, barcode: string) => {
+    setScannedItems((prev) => prev.filter((s) => s.id !== id));
+    setCollected((prev) => {
+      const idx = prev.indexOf(barcode);
+      if (idx === -1) return prev;
+      const next = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -238,9 +236,7 @@ const ScanBarcode = () => {
         ].filter((f) => supportedFormats.length === 0 || supportedFormats.includes(f));
 
         detectorRef.current = new DetectorCtor({ formats: desired });
-        scanningRef.current = true;
         setStatus("scanning");
-        scanLoop();
       } catch (err) {
         console.error("Scanner start error:", err);
         const errStr = String(err);
@@ -257,8 +253,6 @@ const ScanBarcode = () => {
     start();
 
     return () => {
-      scanningRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -345,30 +339,29 @@ const ScanBarcode = () => {
               </div>
             )}
 
-            {status === "scanning" && !error && (
-              <button
-                className="absolute bottom-2 left-1/2 -translate-x-1/2 w-11 h-11 rounded-full bg-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-                onClick={takePhoto}
-                aria-label="Сделать фото"
-              >
-                <div className="w-9 h-9 rounded-full border-[3px] border-black" />
-              </button>
-            )}
-
             {lastFlash && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-green-500/90 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-green-500/90 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 z-10">
                 <Icon name="Check" size={14} />
                 {lastFlash}
               </div>
             )}
+
+            {errorMsg && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-red-500/90 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 z-10">
+                <Icon name="AlertCircle" size={14} />
+                {errorMsg}
+              </div>
+            )}
+
+            {flashError && <div className="absolute inset-0 bg-red-500/40 pointer-events-none" />}
           </div>
 
           <div className="flex-1 bg-black/95 flex flex-col min-h-0">
             <div className="px-4 py-2.5 border-b border-white/10 flex-shrink-0">
               <p className="text-white/50 text-xs font-medium">
-                {scannedItems.length > 0
+                {collected.length > 0
                   ? `Распознано: ${collected.length}`
-                  : "Наведите на штрихкод или нажмите затвор"}
+                  : "Наведите на штрихкод и нажмите «Сканировать»"}
               </p>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-2">
@@ -383,7 +376,7 @@ const ScanBarcode = () => {
                 <div className="space-y-1.5">
                   {scannedItems.map((item, i) => (
                     <div
-                      key={item.barcode}
+                      key={item.id}
                       className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
                         i === 0 ? "bg-green-500/15" : "bg-white/[0.04]"
                       }`}
@@ -405,7 +398,7 @@ const ScanBarcode = () => {
                       </div>
                       <button
                         className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10 flex-shrink-0"
-                        onClick={() => removeItem(item.barcode)}
+                        onClick={() => removeItem(item.id, item.barcode)}
                       >
                         <Icon name="X" size={12} className="text-white/40" />
                       </button>
@@ -414,6 +407,16 @@ const ScanBarcode = () => {
                 </div>
               )}
             </div>
+
+            {status === "scanning" && !error && (
+              <button
+                className="w-full h-12 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-semibold flex items-center justify-center gap-2 transition-colors flex-shrink-0"
+                onClick={takePhoto}
+              >
+                <Icon name="ScanBarcode" size={20} />
+                Сканировать
+              </button>
+            )}
           </div>
         </>
       )}
