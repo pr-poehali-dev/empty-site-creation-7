@@ -279,10 +279,19 @@ def handler(event: dict, context) -> dict:
             price_purchase = body.get('price_purchase')
             images_data = body.get('images', [])
 
-            if not name or not category_id:
+            if not name:
                 cur.close()
                 conn.close()
-                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите название и категорию'})}
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите название'})}
+
+            if not category_id:
+                cur.execute("SELECT id FROM categories WHERE name = 'Без категории' AND parent_id IS NULL LIMIT 1")
+                row = cur.fetchone()
+                if row:
+                    category_id = row[0]
+                else:
+                    cur.execute("INSERT INTO categories (parent_id, name, sort_order) VALUES (NULL, 'Без категории', 9999) RETURNING id")
+                    category_id = cur.fetchone()[0]
 
             cur.execute(
                 """INSERT INTO nomenclature (category_id, name, article, brand, supplier_code,
@@ -339,10 +348,19 @@ def handler(event: dict, context) -> dict:
         name = (body.get('name') or '').strip()
         category_id = body.get('category_id')
 
-        if not name or not category_id:
+        if not name:
             cur.close()
             conn.close()
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите название и категорию'})}
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите название'})}
+
+        if not category_id:
+            cur.execute("SELECT id FROM categories WHERE name = 'Без категории' AND parent_id IS NULL LIMIT 1")
+            row_uncat = cur.fetchone()
+            if row_uncat:
+                category_id = row_uncat[0]
+            else:
+                cur.execute("INSERT INTO categories (parent_id, name, sort_order) VALUES (NULL, 'Без категории', 9999) RETURNING id")
+                category_id = cur.fetchone()[0]
 
         cur.execute(
             """UPDATE nomenclature SET

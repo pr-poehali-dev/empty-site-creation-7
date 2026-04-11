@@ -280,15 +280,15 @@ const Catalog = () => {
   };
 
   const handleSave = async () => {
-    if (!formName.trim() || !formCategoryId) {
-      toast({ title: "Ошибка", description: "Укажите название и категорию", variant: "destructive" });
+    if (!formName.trim()) {
+      toast({ title: "Ошибка", description: "Укажите название", variant: "destructive" });
       return;
     }
     setSaving(true);
     try {
       const payload: Record<string, unknown> = {
         name: formName.trim(),
-        category_id: Number(formCategoryId),
+        category_id: formCategoryId ? Number(formCategoryId) : null,
         article: formArticle.trim() || null,
         brand: formBrand.trim() || null,
         supplier_code: formSupplierCode.trim() || null,
@@ -604,7 +604,7 @@ const Catalog = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Категория *</label>
+                <label className="text-sm font-medium text-muted-foreground">Категория</label>
                 <div className="relative">
                   <button
                     type="button"
@@ -613,7 +613,7 @@ const Catalog = () => {
                   >
                     {formCategoryId
                       ? getCategoryPath(Number(formCategoryId))
-                      : <span className="text-muted-foreground">Выберите</span>}
+                      : <span className="text-muted-foreground">Без категории</span>}
                   </button>
                   {categoryDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden shadow-lg">
