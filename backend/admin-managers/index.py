@@ -22,7 +22,7 @@ def handler(event: dict, context) -> dict:
             'headers': {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, X-Authorization',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
                 'Access-Control-Max-Age': '86400'
             },
             'body': ''
@@ -33,7 +33,8 @@ def handler(event: dict, context) -> dict:
     params = event.get('queryStringParameters') or {}
     body = json.loads(event.get('body') or '{}')
 
-    auth = event.get('headers', {}).get('X-Authorization', '')
+    req_headers = event.get('headers', {})
+    auth = req_headers.get('X-Authorization', '') or req_headers.get('Authorization', '')
     token = auth.replace('Bearer ', '').strip()
 
     conn = get_db()
@@ -96,34 +97,41 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 409, 'headers': headers, 'body': json.dumps({'error': 'Управленец с таким номером уже существует'})}
 
-        cur.execute("SELECT id FROM users WHERE phone = %s", (phone,))
-        existing_user = cur.fetchone()
-        if not existing_user:
+        try:
+            cur.execute("SELECT id FROM users WHERE phone = %s", (phone,))
+            existing_user = cur.fetchone()
+            if not existing_user:
+                cur.execute(
+                    "INSERT INTO users (phone, role) VALUES (%s, 'manager')",
+                    (phone,)
+                )
+
             cur.execute(
-                "INSERT INTO users (phone, role) VALUES (%s, 'manager')",
+                "INSERT INTO managers (phone, status) VALUES (%s, 'not_authorized') RETURNING id, phone, status, created_at",
                 (phone,)
             )
-
-        cur.execute(
-            "INSERT INTO managers (phone, status) VALUES (%s, 'not_authorized') RETURNING id, phone, status, created_at",
-            (phone,)
-        )
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': json.dumps({
-                'manager': {
-                    'id': row[0],
-                    'phone': row[1],
-                    'status': row[2],
-                    'created_at': row[3].isoformat() if row[3] else None
-                }
-            })
-        }
+            row = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps({
+                    'manager': {
+                        'id': row[0],
+                        'phone': row[1],
+                        'status': row[2],
+                        'created_at': row[3].isoformat() if row[3] else None
+                    }
+                })
+            }
+        except Exception as e:
+            print(f"POST error: {e}")
+            conn.rollback()
+            cur.close()
+            conn.close()
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
 
     if method == 'PUT':
         manager_id = params.get('id')
