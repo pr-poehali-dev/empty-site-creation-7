@@ -105,7 +105,7 @@ def handler(event: dict, context) -> dict:
         token = secrets.token_hex(32)
         expires_at = datetime.now() + timedelta(days=30)
         cur.execute(
-            "INSERT INTO owner_sessions (owner_id, token, expires_at) VALUES (%s, %s, %s)",
+            "INSERT INTO user_sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
             (user[0], token, expires_at)
         )
         conn.commit()
@@ -131,7 +131,7 @@ def handler(event: dict, context) -> dict:
         cur = conn.cursor()
         cur.execute(
             """SELECT u.id, u.phone, u.role FROM users u
-               JOIN owner_sessions s ON s.owner_id = u.id
+               JOIN user_sessions s ON s.user_id = u.id
                WHERE s.token = %s AND s.expires_at > NOW()""",
             (token,)
         )
