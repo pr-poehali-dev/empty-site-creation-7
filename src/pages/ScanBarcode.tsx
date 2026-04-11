@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 
 const MAX_VISIBLE = 5;
@@ -52,6 +53,12 @@ const ScanBarcode = () => {
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastFlash, setLastFlash] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [searchItem, setSearchItem] = useState<ScannedItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<"all" | "article">("all");
+  const [searchResults, setSearchResults] = useState<{ id: number; name: string; article: string | null; brand: string | null }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const token = localStorage.getItem("auth_token") || "";
   const authHeaders = {
@@ -185,6 +192,42 @@ const ScanBarcode = () => {
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
+  };
+
+  const openSearch = (item: ScannedItem) => {
+    setSearchItem(item);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchMode("all");
+  };
+
+  const doSearch = useCallback(async (query: string, mode: "all" | "article") => {
+    if (!query.trim() || query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
+      const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setSearchResults(data.items || []);
+    } catch { /* ignore */ }
+    setSearching(false);
+  }, [token]);
+
+  const handleSearchInput = (value: string) => {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => doSearch(value, searchMode), 300);
+  };
+
+  const selectProduct = (product: { id: number; name: string }) => {
+    if (!searchItem) return;
+    setScannedItems((prev) =>
+      prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true } : s)
+    );
+    setSearchItem(null);
   };
 
   useEffect(() => {
@@ -378,27 +421,32 @@ const ScanBarcode = () => {
                     <div
                       key={item.id}
                       className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
-                        i === 0 ? "bg-green-500/15" : "bg-white/[0.04]"
+                        !item.found
+                          ? "bg-orange-500/25 border border-orange-500/40 cursor-pointer"
+                          : i === 0
+                            ? "bg-green-500/15"
+                            : "bg-white/[0.04]"
                       }`}
+                      onClick={!item.found ? () => openSearch(item) : undefined}
                     >
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        item.found ? "bg-green-500/20" : "bg-yellow-500/20"
+                        item.found ? "bg-green-500/20" : "bg-orange-500/30"
                       }`}>
                         <Icon
-                          name={item.found ? "Package" : "HelpCircle"}
+                          name={item.found ? "Package" : "AlertCircle"}
                           size={14}
-                          className={item.found ? "text-green-400" : "text-yellow-400"}
+                          className={item.found ? "text-green-400" : "text-orange-400"}
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className={`text-sm truncate ${item.found ? "text-white" : "text-white/60"}`}>
-                          {item.found ? item.name : "Товар не найден"}
+                        <p className={`text-sm truncate ${item.found ? "text-white" : "text-orange-300"}`}>
+                          {item.found ? item.name : "Нажмите, чтобы найти товар"}
                         </p>
                         <p className="text-[10px] text-white/30">{item.barcode}</p>
                       </div>
                       <button
                         className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10 flex-shrink-0"
-                        onClick={() => removeItem(item.id, item.barcode)}
+                        onClick={(e) => { e.stopPropagation(); removeItem(item.id, item.barcode); }}
                       >
                         <Icon name="X" size={12} className="text-white/40" />
                       </button>
@@ -419,6 +467,76 @@ const ScanBarcode = () => {
             )}
           </div>
         </>
+      )}
+
+      {searchItem && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+            <button className="text-white/60 text-sm" onClick={() => setSearchItem(null)}>
+              <Icon name="ArrowLeft" size={18} />
+            </button>
+            <p className="text-white text-sm font-medium truncate mx-3">
+              Найти товар для {searchItem.barcode}
+            </p>
+            <div className="w-[18px]" />
+          </div>
+
+          <div className="px-4 pt-3 pb-2 flex-shrink-0">
+            <div className="flex gap-1.5 mb-2">
+              <button
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  searchMode === "all" ? "bg-primary/20 text-primary" : "bg-white/[0.06] text-white/50"
+                }`}
+                onClick={() => { setSearchMode("all"); if (searchQuery.trim()) doSearch(searchQuery, "all"); }}
+              >
+                Все поля
+              </button>
+              <button
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  searchMode === "article" ? "bg-primary/20 text-primary" : "bg-white/[0.06] text-white/50"
+                }`}
+                onClick={() => { setSearchMode("article"); if (searchQuery.trim()) doSearch(searchQuery, "article"); }}
+              >
+                Артикул
+              </button>
+            </div>
+            <div className="relative">
+              <Input
+                placeholder={searchMode === "article" ? "Введите артикул..." : "Название, артикул, бренд..."}
+                value={searchQuery}
+                onChange={(e) => handleSearchInput(e.target.value)}
+                className="h-10 rounded-xl bg-white/[0.08] border-white/[0.12] text-white text-sm pr-8"
+                autoFocus
+              />
+              {searching && (
+                <Icon name="Loader2" size={14} className="absolute right-3 top-3 animate-spin text-white/40" />
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            {searchResults.length === 0 && searchQuery.trim().length >= 2 && !searching ? (
+              <p className="text-white/30 text-xs text-center mt-8">Ничего не найдено</p>
+            ) : (
+              <div className="space-y-1">
+                {searchResults.map((p) => (
+                  <button
+                    key={p.id}
+                    className="w-full text-left px-3 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+                    onClick={() => selectProduct(p)}
+                  >
+                    <p className="text-white text-sm truncate">{p.name}</p>
+                    <p className="text-white/40 text-xs">
+                      {p.article && p.article}
+                      {p.article && p.brand && " · "}
+                      {p.brand || ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
