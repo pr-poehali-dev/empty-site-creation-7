@@ -87,12 +87,14 @@ const Catalog = () => {
   const [search, setSearch] = useState("");
   const [total, setTotal] = useState(0);
   const [showMobileCategories, setShowMobileCategories] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [existingImages, setExistingImages] = useState<ProductImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<number[]>([]);
   const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Product | null>(null);
   const [deleteImageTarget, setDeleteImageTarget] = useState<ProductImage | null>(null);
   const [formName, setFormName] = useState("");
   const [formArticle, setFormArticle] = useState("");
@@ -134,12 +136,13 @@ const Catalog = () => {
     }
   }, [token]);
 
-  const fetchItems = useCallback(async (categoryId: number | null, searchQuery?: string) => {
+  const fetchItems = useCallback(async (categoryId: number | null, searchQuery?: string, archived?: boolean) => {
     setLoadingItems(true);
     try {
       const params = new URLSearchParams();
       if (categoryId) params.set("category_id", String(categoryId));
       if (searchQuery) params.set("search", searchQuery);
+      if (archived) params.set("archived", "true");
       const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok) {
@@ -158,8 +161,8 @@ const Catalog = () => {
   }, []);
 
   useEffect(() => {
-    fetchItems(selectedCategory, search);
-  }, [selectedCategory]);
+    fetchItems(selectedCategory, search, showArchive);
+  }, [selectedCategory, showArchive]);
 
   useEffect(() => {
     const draftRaw = localStorage.getItem("draft_product");
@@ -211,7 +214,7 @@ const Catalog = () => {
   };
 
   const handleSearch = () => {
-    fetchItems(selectedCategory, search);
+    fetchItems(selectedCategory, search, showArchive);
   };
 
   const toggleExpand = (id: number) => {
@@ -394,7 +397,7 @@ const Catalog = () => {
     setDeleteImageTarget(null);
   };
 
-  const confirmDeleteProduct = async () => {
+  const confirmArchiveProduct = async () => {
     if (!deleteProductTarget) return;
     const id = deleteProductTarget.id;
     const name = deleteProductTarget.name;
@@ -406,8 +409,44 @@ const Catalog = () => {
       });
       const data = await resp.json();
       if (resp.ok) {
-        toast({ title: "Товар удалён", description: name });
-        fetchItems(selectedCategory, search);
+        toast({ title: "Товар в архиве", description: name });
+        fetchItems(selectedCategory, search, showArchive);
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось архивировать товар", variant: "destructive" });
+    }
+  };
+
+  const handleRestore = async (product: Product) => {
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?id=${product.id}&action=restore`, {
+        method: "PATCH",
+        headers: authHeaders,
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Товар восстановлен", description: product.name });
+        fetchItems(selectedCategory, search, showArchive);
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось восстановить товар", variant: "destructive" });
+    }
+  };
+
+  const handlePermanentDelete = async (product: Product) => {
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?id=${product.id}&permanent=true`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Товар удалён навсегда", description: product.name });
+        fetchItems(selectedCategory, search, showArchive);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -470,7 +509,7 @@ const Catalog = () => {
         toast({ title: editingProduct ? "Товар обновлён" : "Товар добавлен" });
         setAddOpen(false);
         resetForm();
-        fetchItems(selectedCategory, search);
+        fetchItems(selectedCategory, search, showArchive);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -567,10 +606,10 @@ const Catalog = () => {
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={goBack}>
               <Icon name="ArrowLeft" size={18} />
             </Button>
-            <h1 className="text-lg font-semibold">Каталог</h1>
+            <h1 className="text-lg font-semibold">{showArchive ? "Архив товаров" : "Каталог"}</h1>
           </div>
           <div className="flex items-center gap-2">
-            {canEdit && (
+            {canEdit && !showArchive && (
               <Button
                 className="h-9"
                 onClick={() => {
@@ -582,6 +621,17 @@ const Catalog = () => {
                 <Icon name="Plus" size={16} />
                 <span className="ml-1 hidden sm:inline">Добавить товар</span>
                 <span className="ml-1 sm:hidden">Добавить</span>
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant={showArchive ? "default" : "outline"}
+                size="sm"
+                className={`h-9 ${showArchive ? "" : "border-white/[0.08]"}`}
+                onClick={() => setShowArchive(!showArchive)}
+              >
+                <Icon name="Archive" size={16} />
+                <span className="ml-1 hidden sm:inline">{showArchive ? "Каталог" : "Архив"}</span>
               </Button>
             )}
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleLogout}>
@@ -657,9 +707,11 @@ const Catalog = () => {
             </div>
           ) : items.length === 0 ? (
             <div className="text-center py-12">
-              <Icon name="Package" size={48} className="text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">Нет товаров</p>
-              <p className="text-sm text-muted-foreground mt-1">Нажмите «Добавить товар» для создания</p>
+              <Icon name={showArchive ? "Archive" : "Package"} size={48} className="text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">{showArchive ? "Архив пуст" : "Нет товаров"}</p>
+              {!showArchive && (
+                <p className="text-sm text-muted-foreground mt-1">Нажмите «Добавить товар» для создания</p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -714,7 +766,7 @@ const Catalog = () => {
                       )}
                     </div>
                   </div>
-                  {canEdit && (
+                  {canEdit && !showArchive && (
                     <div className="flex flex-col gap-1 flex-shrink-0">
                       <button
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground"
@@ -724,9 +776,27 @@ const Catalog = () => {
                         <Icon name="Pencil" size={14} />
                       </button>
                       <button
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-yellow-500/20 transition-colors text-muted-foreground hover:text-yellow-400"
                         onClick={() => setDeleteProductTarget(item)}
-                        title="Удалить"
+                        title="В архив"
+                      >
+                        <Icon name="Archive" size={14} />
+                      </button>
+                    </div>
+                  )}
+                  {canEdit && showArchive && (
+                    <div className="flex flex-col gap-1 flex-shrink-0">
+                      <button
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-green-500/20 transition-colors text-muted-foreground hover:text-green-400"
+                        onClick={() => handleRestore(item)}
+                        title="Восстановить"
+                      >
+                        <Icon name="ArchiveRestore" size={14} />
+                      </button>
+                      <button
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"
+                        onClick={() => setPermanentDeleteTarget(item)}
+                        title="Удалить навсегда"
                       >
                         <Icon name="Trash2" size={14} />
                       </button>
@@ -1162,18 +1232,38 @@ const Catalog = () => {
       <AlertDialog open={!!deleteProductTarget} onOpenChange={(open) => { if (!open) setDeleteProductTarget(null); }}>
         <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить товар?</AlertDialogTitle>
+            <AlertDialogTitle>Отправить в архив?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteProductTarget?.name} будет удалён безвозвратно. Это действие нельзя отменить.
+              «{deleteProductTarget?.name}» будет скрыт из каталога и поиска. Товар можно будет восстановить из архива.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmDeleteProduct}
+              onClick={confirmArchiveProduct}
+              className="rounded-xl bg-yellow-600 text-white hover:bg-yellow-700"
+            >
+              В архив
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!permanentDeleteTarget} onOpenChange={(open) => { if (!open) setPermanentDeleteTarget(null); }}>
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить навсегда?</AlertDialogTitle>
+            <AlertDialogDescription>
+              «{permanentDeleteTarget?.name}» будет удалён безвозвратно вместе со всеми фото и штрихкодами. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { if (permanentDeleteTarget) { handlePermanentDelete(permanentDeleteTarget); setPermanentDeleteTarget(null); } }}
               className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Удалить
+              Удалить навсегда
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

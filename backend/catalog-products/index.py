@@ -61,7 +61,7 @@ def handler(event: dict, context) -> dict:
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
                 'Access-Control-Max-Age': '86400'
             },
@@ -199,8 +199,12 @@ def handler(event: dict, context) -> dict:
         per_page = int(params.get('per_page', 50))
         offset = (page - 1) * per_page
 
+        show_archived = params.get('archived', 'false') == 'true'
         conditions = []
         values = []
+
+        conditions.append("p.is_archived = %s")
+        values.append(show_archived)
 
         if category_id:
             conditions.append("p.category_id = %s")
@@ -442,9 +446,42 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id товара'})}
 
-        cur.execute("DELETE FROM product_images WHERE product_id = %s", (product_id,))
-        cur.execute("DELETE FROM product_barcodes WHERE product_id = %s", (product_id,))
-        cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
+        permanent = params.get('permanent', 'false') == 'true'
+        if permanent:
+            cur.execute("SELECT COUNT(*) FROM wholesale_order_items WHERE product_id = %s", (product_id,))
+            order_count = cur.fetchone()[0]
+            if order_count > 0:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': f'Нельзя удалить — товар используется в {order_count} заявках. Можно только архивировать.'})}
+            cur.execute("DELETE FROM product_images WHERE product_id = %s", (product_id,))
+            cur.execute("DELETE FROM product_barcodes WHERE product_id = %s", (product_id,))
+            cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
+        else:
+            cur.execute("UPDATE products SET is_archived = true, updated_at = NOW() WHERE id = %s", (product_id,))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+    if method == 'PATCH':
+        if not can_edit_products(cur, user):
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав'})}
+        product_id = params.get('id')
+        action = params.get('action')
+        if not product_id or action != 'restore':
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите id и action=restore'})}
+        cur.execute("UPDATE products SET is_archived = false, updated_at = NOW() WHERE id = %s RETURNING id", (product_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Товар не найден'})}
         conn.commit()
         cur.close()
         conn.close()
