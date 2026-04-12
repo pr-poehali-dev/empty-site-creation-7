@@ -620,10 +620,10 @@ const WholesaleOrders = () => {
                   </Button>
                 </div>
               )}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {viewOrder.status === "archived" && isOwner && (
                   <Button
-                    className="rounded-xl flex-1"
+                    className="rounded-xl"
                     disabled={statusUpdating}
                     onClick={() => updateOrderStatus("restore")}
                   >
@@ -638,7 +638,7 @@ const WholesaleOrders = () => {
                 {viewOrder.status === "confirmed" && (
                   <Button
                     variant="outline"
-                    className="rounded-xl border-white/[0.08] flex-1"
+                    className="rounded-xl border-white/[0.08]"
                     disabled={statusUpdating}
                     onClick={() => updateOrderStatus("new")}
                   >
@@ -649,7 +649,7 @@ const WholesaleOrders = () => {
                 {viewOrder.status === "shipped" && (
                   <Button
                     variant="outline"
-                    className="rounded-xl border-white/[0.08] flex-1"
+                    className="rounded-xl border-white/[0.08]"
                     disabled={statusUpdating}
                     onClick={() => updateOrderStatus("confirmed")}
                   >
