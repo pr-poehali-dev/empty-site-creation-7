@@ -87,6 +87,7 @@ const WholesaleOrders = () => {
         const d = JSON.parse(draft);
         if (d.customerName) setCustomerName(d.customerName);
         if (d.comment) setComment(d.comment);
+        setCreateOpen(true);
       } catch { /* ignore */ }
     }
   }, []);
