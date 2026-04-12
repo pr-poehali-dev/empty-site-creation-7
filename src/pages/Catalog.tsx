@@ -1383,6 +1383,11 @@ const Catalog = () => {
                       Код: {viewProduct.supplier_code}
                     </Badge>
                   )}
+                  {viewProduct.product_group && (
+                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
+                      Группа: {viewProduct.product_group}
+                    </Badge>
+                  )}
                   <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
                     {viewProduct.category_name}
                   </Badge>
