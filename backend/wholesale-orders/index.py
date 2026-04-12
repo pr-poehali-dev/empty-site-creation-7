@@ -291,6 +291,7 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не указан id заявки'})}
 
+        cur.execute("DELETE FROM order_payments WHERE order_id = %s", (order_id,))
         cur.execute("DELETE FROM wholesale_order_items WHERE order_id = %s", (order_id,))
         cur.execute("DELETE FROM wholesale_orders WHERE id = %s", (order_id,))
         conn.commit()
