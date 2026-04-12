@@ -215,6 +215,29 @@ def handle_export_products(conn, params):
     cur.close()
     return resp(200, {"products": items, "total": len(items)})
 
+def handle_link_products(conn, body):
+    links = body.get("links", [])
+    if not links:
+        return resp(400, {"error": "Пустой массив связок"})
+    cur = conn.cursor()
+    linked = 0
+    errors = []
+    for item in links:
+        product_id = item.get("id")
+        ext_id = item.get("external_id")
+        if not product_id or not ext_id:
+            errors.append({"id": product_id, "error": "Нет id или external_id"})
+            continue
+        cur.execute("SELECT id FROM products WHERE id = %s", (product_id,))
+        if not cur.fetchone():
+            errors.append({"id": product_id, "error": "Товар не найден"})
+            continue
+        cur.execute("UPDATE products SET external_id = %s, updated_at = NOW() WHERE id = %s", (ext_id, product_id))
+        linked += 1
+    conn.commit()
+    cur.close()
+    return resp(200, {"linked": linked, "errors": errors})
+
 def handler(event: dict, context) -> dict:
     """Обмен данными с 1С: управление ключом, схема, импорт и экспорт товаров"""
     if event.get('httpMethod') == 'OPTIONS':
@@ -263,7 +286,10 @@ def handler(event: dict, context) -> dict:
         elif method == 'POST' and action == 'products':
             body = json.loads(event.get('body') or '{}')
             return handle_import_products(conn, body)
+        elif method == 'POST' and action == 'link_products':
+            body = json.loads(event.get('body') or '{}')
+            return handle_link_products(conn, body)
         else:
-            return resp(400, {"error": "Неизвестное действие. Используйте ?action=schema|products"})
+            return resp(400, {"error": "Неизвестное действие. Используйте ?action=schema|products|link_products"})
     finally:
         conn.close()
