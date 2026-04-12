@@ -1,0 +1,1 @@
+ALTER TABLE products ADD COLUMN product_group VARCHAR(200);

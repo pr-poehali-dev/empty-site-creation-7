@@ -96,7 +96,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                               p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
-                              p.created_at, p.updated_at, c.name as category_name
+                              p.created_at, p.updated_at, c.name as category_name, p.product_group
                        FROM products p
                        JOIN categories c ON c.id = p.category_id
                        WHERE p.id = %s""",
@@ -106,7 +106,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                               p.price_base, p.price_retail, p.price_wholesale, NULL as price_purchase,
-                              p.created_at, p.updated_at, c.name as category_name
+                              p.created_at, p.updated_at, c.name as category_name, p.product_group
                        FROM products p
                        JOIN categories c ON c.id = p.category_id
                        WHERE p.id = %s""",
@@ -140,6 +140,7 @@ def handler(event: dict, context) -> dict:
                 'created_at': str(row[10]) if row[10] else None,
                 'updated_at': str(row[11]) if row[11] else None,
                 'category_name': row[12],
+                'product_group': row[13],
                 'images': images,
                 'barcodes': barcodes
             }
@@ -164,7 +165,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                            p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
-                           p.created_at, c.name as category_name
+                           p.created_at, c.name as category_name, p.product_group
                     FROM products p
                     JOIN categories c ON c.id = p.category_id
                     WHERE p.id = %s""",
@@ -185,6 +186,7 @@ def handler(event: dict, context) -> dict:
                 'price_purchase': float(r[9]) if r[9] else None,
                 'created_at': str(r[10]) if r[10] else None,
                 'category_name': r[11],
+                'product_group': r[12],
                 'images': [],
                 'barcodes': []
             }
@@ -219,8 +221,8 @@ def handler(event: dict, context) -> dict:
                 conditions.append("p.supplier_code ILIKE %s")
                 values.append(like)
             else:
-                conditions.append("(p.name ILIKE %s OR p.article ILIKE %s OR p.brand ILIKE %s OR p.supplier_code ILIKE %s)")
-                values.extend([like, like, like, like])
+                conditions.append("(p.name ILIKE %s OR p.article ILIKE %s OR p.brand ILIKE %s OR p.supplier_code ILIKE %s OR p.product_group ILIKE %s)")
+                values.extend([like, like, like, like, like])
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -232,7 +234,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                        p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
-                       p.created_at, c.name as category_name
+                       p.created_at, c.name as category_name, p.product_group
                 FROM products p
                 JOIN categories c ON c.id = p.category_id
                 {where}
@@ -277,6 +279,7 @@ def handler(event: dict, context) -> dict:
                 'price_purchase': float(r[9]) if r[9] else None,
                 'created_at': str(r[10]) if r[10] else None,
                 'category_name': r[11],
+                'product_group': r[12],
                 'images': images_map.get(r[0], []),
                 'barcodes': barcodes_map.get(r[0], [])
             })
@@ -298,6 +301,7 @@ def handler(event: dict, context) -> dict:
             article = (body.get('article') or '').strip() or None
             brand = (body.get('brand') or '').strip() or None
             supplier_code = (body.get('supplier_code') or '').strip() or None
+            product_group = (body.get('product_group') or '').strip() or None
             price_base = body.get('price_base')
             price_retail = body.get('price_retail')
             price_wholesale = body.get('price_wholesale')
@@ -320,11 +324,11 @@ def handler(event: dict, context) -> dict:
 
             cur.execute(
                 """INSERT INTO products (category_id, name, article, brand, supplier_code,
-                           price_base, price_retail, price_wholesale, price_purchase)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           price_base, price_retail, price_wholesale, price_purchase, product_group)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING id""",
                 (category_id, name, article, brand, supplier_code,
-                 price_base, price_retail, price_wholesale, price_purchase)
+                 price_base, price_retail, price_wholesale, price_purchase, product_group)
             )
             product_id = cur.fetchone()[0]
 
@@ -396,7 +400,7 @@ def handler(event: dict, context) -> dict:
                    name = %s, category_id = %s,
                    article = %s, brand = %s, supplier_code = %s,
                    price_base = %s, price_retail = %s, price_wholesale = %s, price_purchase = %s,
-                   updated_at = NOW()
+                   product_group = %s, updated_at = NOW()
                WHERE id = %s RETURNING id""",
             (name, category_id,
              (body.get('article') or '').strip() or None,
@@ -404,6 +408,7 @@ def handler(event: dict, context) -> dict:
              (body.get('supplier_code') or '').strip() or None,
              body.get('price_base'), body.get('price_retail'),
              body.get('price_wholesale'), body.get('price_purchase'),
+             (body.get('product_group') or '').strip() or None,
              product_id)
         )
         row = cur.fetchone()
