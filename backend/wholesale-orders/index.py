@@ -33,7 +33,7 @@ def handler(event: dict, context) -> dict:
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
                 'Access-Control-Max-Age': '86400'
             },
@@ -118,11 +118,14 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'order': order})}
 
         status_filter = params.get('status')
+        include_archived = params.get('include_archived') == '1'
         conditions = []
         values = []
         if status_filter:
             conditions.append("o.status = %s")
             values.append(status_filter)
+        elif not include_archived:
+            conditions.append("o.status != 'archived'")
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -199,6 +202,53 @@ def handler(event: dict, context) -> dict:
         cur.close()
         conn.close()
         return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': order_id})}
+
+    if method == 'PUT':
+        order_id = params.get('id')
+        if not order_id:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не указан id заявки'})}
+
+        cur.execute("SELECT id, status FROM wholesale_orders WHERE id = %s", (order_id,))
+        order = cur.fetchone()
+        if not order:
+            cur.close()
+            conn.close()
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
+
+        new_status = body.get('status')
+        if new_status:
+            allowed_statuses = ['new', 'confirmed', 'shipped', 'completed', 'cancelled', 'archived']
+            if new_status not in allowed_statuses:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Недопустимый статус'})}
+            cur.execute("UPDATE wholesale_orders SET status = %s WHERE id = %s", (new_status, order_id))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+    if method == 'DELETE':
+        if not is_owner:
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Только владелец может удалять заявки'})}
+
+        order_id = params.get('id')
+        if not order_id:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не указан id заявки'})}
+
+        cur.execute("DELETE FROM wholesale_order_items WHERE order_id = %s", (order_id,))
+        cur.execute("DELETE FROM wholesale_orders WHERE id = %s", (order_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
 
     cur.close()
     conn.close()
