@@ -35,6 +35,7 @@ interface Order {
   created_by: string;
   payment_status: string;
   paid_amount: number;
+  is_restored: boolean;
 }
 
 interface OrderLine {
@@ -112,7 +113,7 @@ const WholesaleOrders = () => {
       try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
     }
     const draft = localStorage.getItem("draft_order");
-    if (draft) {
+    if (draft && canCreate) {
       try {
         const d = JSON.parse(draft);
         if (d.customerName) setCustomerName(d.customerName);
@@ -356,13 +357,20 @@ const WholesaleOrders = () => {
               return (
                 <div
                   key={order.id}
-                  className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                  className={`rounded-xl border p-3 sm:p-4 cursor-pointer hover:bg-white/[0.02] transition-colors ${
+                    order.is_restored
+                      ? "bg-purple-500/5 border-purple-500/15"
+                      : "bg-card border-white/[0.08]"
+                  }`}
                   onClick={() => openOrder(order)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-medium text-sm sm:text-base">{order.customer_name}</p>
+                        {order.is_restored && (
+                          <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs">Из архива</Badge>
+                        )}
                         {isCompleted ? (
                           <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">Завершена</Badge>
                         ) : (
@@ -606,8 +614,22 @@ const WholesaleOrders = () => {
                   </Button>
                 </div>
               )}
-              {viewOrder.status !== "archived" && (
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                {viewOrder.status === "archived" && isOwner && (
+                  <Button
+                    className="rounded-xl flex-1"
+                    disabled={statusUpdating}
+                    onClick={() => updateOrderStatus("restore")}
+                  >
+                    {statusUpdating ? (
+                      <Icon name="Loader2" size={16} className="animate-spin" />
+                    ) : (
+                      <Icon name="ArchiveRestore" size={16} />
+                    )}
+                    <span className="ml-2">Вернуть в работу</span>
+                  </Button>
+                )}
+                {viewOrder.status !== "archived" && (
                   <Button
                     variant="outline"
                     onClick={archiveOrder}
@@ -616,8 +638,8 @@ const WholesaleOrders = () => {
                     <Icon name="Trash2" size={16} />
                     <span className="ml-1">Удалить</span>
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

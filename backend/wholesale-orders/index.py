@@ -80,7 +80,7 @@ def handler(event: dict, context) -> dict:
         if order_id:
             cur.execute(
                 """SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
-                          o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount
+                          o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored
                    FROM wholesale_orders o
                    JOIN managers m ON m.id = o.created_by
                    WHERE o.id = %s""",
@@ -112,6 +112,7 @@ def handler(event: dict, context) -> dict:
                 'status': row[3], 'total_amount': float(row[4]),
                 'created_at': str(row[5]), 'created_by': f"{row[6]} {row[7]}",
                 'payment_status': row[8], 'paid_amount': float(row[9]),
+                'is_restored': row[10],
                 'items': items
             }
             cur.close()
@@ -132,7 +133,7 @@ def handler(event: dict, context) -> dict:
 
         cur.execute(
             f"""SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
-                       o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount
+                       o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored
                 FROM wholesale_orders o
                 JOIN managers m ON m.id = o.created_by
                 {where}
@@ -146,7 +147,8 @@ def handler(event: dict, context) -> dict:
                 'id': r[0], 'customer_name': r[1], 'comment': r[2],
                 'status': r[3], 'total_amount': float(r[4]),
                 'created_at': str(r[5]), 'created_by': f"{r[6]} {r[7]}",
-                'payment_status': r[8], 'paid_amount': float(r[9])
+                'payment_status': r[8], 'paid_amount': float(r[9]),
+                'is_restored': r[10]
             })
 
         cur.close()
@@ -221,17 +223,33 @@ def handler(event: dict, context) -> dict:
 
         new_status = body.get('status')
         if new_status:
-            allowed_statuses = ['new', 'confirmed', 'shipped', 'completed', 'archived']
-            if new_status not in allowed_statuses:
-                cur.close()
-                conn.close()
-                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Недопустимый статус'})}
-            if new_status == 'shipped':
-                cur.execute("SELECT payment_status FROM wholesale_orders WHERE id = %s", (order_id,))
-                ps = cur.fetchone()[0]
-                if ps == 'paid':
-                    new_status = 'completed'
-            cur.execute("UPDATE wholesale_orders SET status = %s WHERE id = %s", (new_status, order_id))
+            current_status = order[1]
+
+            if new_status == 'restore':
+                cur.execute("SELECT previous_status FROM wholesale_orders WHERE id = %s", (order_id,))
+                prev = cur.fetchone()[0] or 'new'
+                cur.execute(
+                    "UPDATE wholesale_orders SET status = %s, previous_status = NULL, is_restored = true WHERE id = %s",
+                    (prev, order_id)
+                )
+            else:
+                allowed_statuses = ['new', 'confirmed', 'shipped', 'completed', 'archived']
+                if new_status not in allowed_statuses:
+                    cur.close()
+                    conn.close()
+                    return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Недопустимый статус'})}
+                if new_status == 'archived':
+                    cur.execute(
+                        "UPDATE wholesale_orders SET status = 'archived', previous_status = %s WHERE id = %s",
+                        (current_status, order_id)
+                    )
+                else:
+                    if new_status == 'shipped':
+                        cur.execute("SELECT payment_status FROM wholesale_orders WHERE id = %s", (order_id,))
+                        ps = cur.fetchone()[0]
+                        if ps == 'paid':
+                            new_status = 'completed'
+                    cur.execute("UPDATE wholesale_orders SET status = %s WHERE id = %s", (new_status, order_id))
 
         conn.commit()
         cur.close()
