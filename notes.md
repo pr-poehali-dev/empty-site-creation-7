@@ -34,6 +34,6 @@
 Таблица `categories` — иерархическая (parent_id → self).
 277 записей. Поля: name, sort_order, keywords (массив).
 
-## Нет поля external_id
+## external_id (V0027)
 
-В products и categories пока **нет** поля `external_id` для связки с UUID из 1С. Нужна миграция.
+Поле `external_id` (varchar 50, nullable, unique) добавлено в `products` и `categories` — для связки с UUID из 1С.
