@@ -48,6 +48,7 @@ interface Product {
   article: string | null;
   brand: string | null;
   supplier_code: string | null;
+  product_group: string | null;
   price_base: number | null;
   price_retail: number | null;
   price_wholesale: number | null;
@@ -103,6 +104,7 @@ const Catalog = () => {
   const [formArticle, setFormArticle] = useState("");
   const [formBrand, setFormBrand] = useState("");
   const [formSupplierCode, setFormSupplierCode] = useState("");
+  const [formProductGroup, setFormProductGroup] = useState("");
   const [formCategoryId, setFormCategoryId] = useState("");
   const [formPriceBase, setFormPriceBase] = useState("");
   const [formPriceRetail, setFormPriceRetail] = useState("");
@@ -176,6 +178,7 @@ const Catalog = () => {
         setFormArticle(draft.formArticle || "");
         setFormBrand(draft.formBrand || "");
         setFormSupplierCode(draft.formSupplierCode || "");
+        setFormProductGroup(draft.formProductGroup || "");
         setFormCategoryId(draft.formCategoryId || "");
         setFormPriceBase(draft.formPriceBase || "");
         setFormPriceRetail(draft.formPriceRetail || "");
@@ -377,6 +380,7 @@ const Catalog = () => {
     setFormArticle("");
     setFormBrand("");
     setFormSupplierCode("");
+    setFormProductGroup("");
     setFormCategoryId("");
     setFormPriceBase("");
     setFormPriceRetail("");
@@ -397,6 +401,7 @@ const Catalog = () => {
     setFormArticle(product.article || "");
     setFormBrand(product.brand || "");
     setFormSupplierCode(product.supplier_code || "");
+    setFormProductGroup(product.product_group || "");
     setFormCategoryId(String(product.category_id));
     setFormPriceBase(product.price_base != null ? String(product.price_base) : "");
     setFormPriceRetail(product.price_retail != null ? String(product.price_retail) : "");
@@ -498,6 +503,7 @@ const Catalog = () => {
         article: formArticle.trim() || null,
         brand: formBrand.trim() || null,
         supplier_code: formSupplierCode.trim() || null,
+        product_group: formProductGroup.trim() || null,
         price_base: formPriceBase ? Number(formPriceBase) : null,
         price_retail: formPriceRetail ? Number(formPriceRetail) : null,
         price_wholesale: formPriceWholesale ? Number(formPriceWholesale) : null,
@@ -896,48 +902,56 @@ const Catalog = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Категория</label>
-                <div className="relative">
-                  <button
-                    type="button"
-                    className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
-                    onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
-                  >
-                    {formCategoryId
-                      ? getCategoryPath(Number(formCategoryId))
-                      : <span className="text-muted-foreground">Без категории</span>}
-                  </button>
-                  {categoryDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden shadow-lg">
-                      <div className="p-2">
-                        <Input
-                          placeholder="Поиск категории..."
-                          value={categorySearch}
-                          onChange={(e) => setCategorySearch(e.target.value)}
-                          className="h-8 rounded-lg bg-secondary border-white/[0.08] text-xs"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="max-h-48 overflow-y-auto">
-                        {getFilteredCategories().map((cat) => (
-                          <button
-                            key={cat.id}
-                            className={`w-full text-left px-3 py-2 text-xs hover:bg-white/[0.06] transition-colors ${
-                              formCategoryId === String(cat.id) ? "bg-primary/20 text-primary" : ""
-                            }`}
-                            onClick={() => {
-                              setFormCategoryId(String(cat.id));
-                              setCategoryDropdownOpen(false);
-                              setCategorySearch("");
-                            }}
-                          >
-                            {getCategoryPath(cat.id)}
-                          </button>
-                        ))}
-                      </div>
+                <label className="text-sm font-medium text-muted-foreground">Группа</label>
+                <Input
+                  value={formProductGroup}
+                  onChange={(e) => setFormProductGroup(e.target.value)}
+                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Категория</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
+                  onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                >
+                  {formCategoryId
+                    ? getCategoryPath(Number(formCategoryId))
+                    : <span className="text-muted-foreground">Без категории</span>}
+                </button>
+                {categoryDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden shadow-lg">
+                    <div className="p-2">
+                      <Input
+                        placeholder="П��иск категории..."
+                        value={categorySearch}
+                        onChange={(e) => setCategorySearch(e.target.value)}
+                        className="h-8 rounded-lg bg-secondary border-white/[0.08] text-xs"
+                        autoFocus
+                      />
                     </div>
-                  )}
-                </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {getFilteredCategories().map((cat) => (
+                        <button
+                          key={cat.id}
+                          className={`w-full text-left px-3 py-2 text-xs hover:bg-white/[0.06] transition-colors ${
+                            formCategoryId === String(cat.id) ? "bg-primary/20 text-primary" : ""
+                          }`}
+                          onClick={() => {
+                            setFormCategoryId(String(cat.id));
+                            setCategoryDropdownOpen(false);
+                            setCategorySearch("");
+                          }}
+                        >
+                          {getCategoryPath(cat.id)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

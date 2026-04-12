@@ -77,6 +77,7 @@ def handle_schema(conn):
         {"key": "brand", "label": "Бренд", "type": "string", "required": False},
         {"key": "supplier_code", "label": "Код поставщика", "type": "string", "required": False},
         {"key": "barcode", "label": "Штрихкод", "type": "string", "required": False},
+        {"key": "product_group", "label": "Группа", "type": "string", "required": False},
     ]
     price_types = [
         {"key": "price_base", "label": "Базовая цена"},
@@ -138,6 +139,7 @@ def handle_import_products(conn, body):
             "article": item.get("article"),
             "brand": item.get("brand"),
             "supplier_code": item.get("supplier_code"),
+            "product_group": item.get("product_group"),
             "price_base": item.get("price_base"),
             "price_retail": item.get("price_retail"),
             "price_wholesale": item.get("price_wholesale"),
@@ -184,7 +186,7 @@ def handle_export_products(conn, params):
     query = """SELECT p.id, p.external_id, p.name, p.article, p.brand, p.supplier_code,
                       p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
                       p.category_id, c.name as category_name, c.external_id as category_external_id,
-                      p.updated_at
+                      p.updated_at, p.product_group
                FROM products p
                JOIN categories c ON c.id = p.category_id
                WHERE p.is_archived = false"""
@@ -210,6 +212,7 @@ def handle_export_products(conn, params):
             "category_id": r[10], "category_name": r[11],
             "category_external_id": r[12],
             "updated_at": str(r[13]),
+            "product_group": r[14],
             "barcodes": barcodes
         })
     cur.close()
