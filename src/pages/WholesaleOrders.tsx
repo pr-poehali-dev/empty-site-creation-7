@@ -91,6 +91,7 @@ const WholesaleOrders = () => {
   const [viewLoading, setViewLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [editOrderId, setEditOrderId] = useState<number | null>(null);
 
   const fetchOrders = useCallback(async (archived = false) => {
     setLoading(true);
@@ -114,14 +115,15 @@ const WholesaleOrders = () => {
     }
     const draft = localStorage.getItem("draft_order");
     const hasDraftItems = localStorage.getItem("draft_order_items");
-    if (draft && canCreate && hasDraftItems) {
+    if (draft && hasDraftItems) {
       try {
         const d = JSON.parse(draft);
         const items = JSON.parse(hasDraftItems);
         if (d.customerName && items.length > 0) {
           setCustomerName(d.customerName);
           if (d.comment) setComment(d.comment);
-          setCreateOpen(true);
+          if (d.editId) setEditOrderId(d.editId);
+          if (d.editId || canCreate) setCreateOpen(true);
         }
       } catch { /* ignore */ }
     }
@@ -154,7 +156,7 @@ const WholesaleOrders = () => {
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
   const goToList = () => {
-    localStorage.setItem("draft_order", JSON.stringify({ customerName, comment }));
+    localStorage.setItem("draft_order", JSON.stringify({ customerName, comment, editId: editOrderId }));
     navigate("/admin/orders/new-list");
   };
 
@@ -168,9 +170,11 @@ const WholesaleOrders = () => {
       return;
     }
     setSaving(true);
+    const isEdit = !!editOrderId;
     try {
-      const resp = await fetch(ORDERS_URL, {
-        method: "POST",
+      const url = isEdit ? `${ORDERS_URL}?id=${editOrderId}` : ORDERS_URL;
+      const resp = await fetch(url, {
+        method: isEdit ? "PUT" : "POST",
         headers: authHeaders,
         body: JSON.stringify({
           customer_name: customerName.trim(),
@@ -184,11 +188,12 @@ const WholesaleOrders = () => {
       });
       const data = await resp.json();
       if (resp.ok) {
-        toast({ title: "Заявка создана" });
+        toast({ title: isEdit ? "Заявка обновлена" : "Заявка создана" });
         setCreateOpen(false);
         setCustomerName("");
         setComment("");
         setLines([]);
+        setEditOrderId(null);
         localStorage.removeItem("draft_order");
         localStorage.removeItem("draft_order_items");
         fetchOrders(showArchive);
@@ -196,7 +201,7 @@ const WholesaleOrders = () => {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
     } catch {
-      toast({ title: "Ошибка", description: "Не удалось создать заявку", variant: "destructive" });
+      toast({ title: "Ошибка", description: "Не удалось сохранить заявку", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -415,10 +420,10 @@ const WholesaleOrders = () => {
       </main>
 
       {/* Create order dialog */}
-      <Dialog open={createOpen} onOpenChange={(open) => { if (!open) setCreateOpen(false); }}>
+      <Dialog open={createOpen} onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditOrderId(null); } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle>Создать заявку</DialogTitle>
+            <DialogTitle>{editOrderId ? "Редактировать заявку" : "Создать заявку"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
@@ -621,6 +626,27 @@ const WholesaleOrders = () => {
                 </div>
               )}
               <div className="flex gap-2 flex-wrap">
+                {viewOrder.status === "new" && (
+                  <Button
+                    variant="outline"
+                    className="rounded-xl border-white/[0.08]"
+                    onClick={() => {
+                      localStorage.setItem("draft_order_items", JSON.stringify(
+                        viewLines.map((l) => ({ product_id: l.product_id, name: l.name, article: l.article, quantity: l.quantity, price: l.price }))
+                      ));
+                      localStorage.setItem("draft_order", JSON.stringify({
+                        customerName: viewOrder.customer_name,
+                        comment: viewOrder.comment || "",
+                        editId: viewOrder.id,
+                      }));
+                      setViewOrder(null);
+                      navigate("/admin/orders/new-list");
+                    }}
+                  >
+                    <Icon name="Pencil" size={16} />
+                    <span className="ml-1">Редактировать</span>
+                  </Button>
+                )}
                 {viewOrder.status === "archived" && isOwner && (
                   <Button
                     className="rounded-xl"

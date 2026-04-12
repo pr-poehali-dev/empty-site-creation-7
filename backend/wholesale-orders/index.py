@@ -221,6 +221,29 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
 
+        customer_name = body.get('customer_name')
+        comment_val = body.get('comment')
+        items = body.get('items')
+
+        if customer_name is not None:
+            cur.execute("UPDATE wholesale_orders SET customer_name = %s WHERE id = %s", (customer_name.strip(), order_id))
+        if 'comment' in body:
+            cur.execute("UPDATE wholesale_orders SET comment = %s WHERE id = %s", (comment_val, order_id))
+
+        if items is not None:
+            cur.execute("DELETE FROM wholesale_order_items WHERE order_id = %s", (order_id,))
+            total = 0
+            for item in items:
+                qty = int(item.get('quantity', 1))
+                price = float(item.get('price', 0))
+                amount = price * qty
+                total += amount
+                cur.execute(
+                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount) VALUES (%s, %s, %s, %s, %s)",
+                    (order_id, item['product_id'], qty, price, amount)
+                )
+            cur.execute("UPDATE wholesale_orders SET total_amount = %s WHERE id = %s", (total, order_id))
+
         new_status = body.get('status')
         if new_status:
             current_status = order[1]
