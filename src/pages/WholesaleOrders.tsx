@@ -635,6 +635,28 @@ const WholesaleOrders = () => {
                     <span className="ml-2">Вернуть в работу</span>
                   </Button>
                 )}
+                {viewOrder.status === "confirmed" && (
+                  <Button
+                    variant="outline"
+                    className="rounded-xl border-white/[0.08] flex-1"
+                    disabled={statusUpdating}
+                    onClick={() => updateOrderStatus("new")}
+                  >
+                    <Icon name="Undo2" size={16} />
+                    <span className="ml-1">Отменить подтверждение</span>
+                  </Button>
+                )}
+                {viewOrder.status === "shipped" && (
+                  <Button
+                    variant="outline"
+                    className="rounded-xl border-white/[0.08] flex-1"
+                    disabled={statusUpdating}
+                    onClick={() => updateOrderStatus("confirmed")}
+                  >
+                    <Icon name="Undo2" size={16} />
+                    <span className="ml-1">Отменить отгрузку</span>
+                  </Button>
+                )}
                 {viewOrder.status !== "archived" && (
                   <Button
                     variant="outline"
