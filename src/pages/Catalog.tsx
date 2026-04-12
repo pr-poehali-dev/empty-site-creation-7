@@ -96,6 +96,9 @@ const Catalog = () => {
   const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Product | null>(null);
   const [deleteImageTarget, setDeleteImageTarget] = useState<ProductImage | null>(null);
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewImageIndex, setViewImageIndex] = useState(0);
   const [formName, setFormName] = useState("");
   const [formArticle, setFormArticle] = useState("");
   const [formBrand, setFormBrand] = useState("");
@@ -215,6 +218,22 @@ const Catalog = () => {
 
   const handleSearch = () => {
     fetchItems(selectedCategory, search, showArchive);
+  };
+
+  const openProductView = async (product: Product) => {
+    setViewProduct(product);
+    setViewImageIndex(0);
+    if (product.images.length === 0) {
+      setViewLoading(true);
+      try {
+        const resp = await fetch(`${PRODUCTS_URL}?id=${product.id}`, { headers: authHeaders });
+        const data = await resp.json();
+        if (resp.ok && data.item) {
+          setViewProduct(data.item);
+        }
+      } catch { /* ignore */ }
+      setViewLoading(false);
+    }
   };
 
   const toggleExpand = (id: number) => {
@@ -718,7 +737,8 @@ const Catalog = () => {
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 flex gap-3"
+                  className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 flex gap-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                  onClick={() => openProductView(item)}
                 >
                   {item.images.length > 0 ? (
                     <img
@@ -770,14 +790,14 @@ const Catalog = () => {
                     <div className="flex flex-col gap-1 flex-shrink-0">
                       <button
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground"
-                        onClick={() => handleEdit(item)}
+                        onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
                         title="Редактировать"
                       >
                         <Icon name="Pencil" size={14} />
                       </button>
                       <button
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-yellow-500/20 transition-colors text-muted-foreground hover:text-yellow-400"
-                        onClick={() => setDeleteProductTarget(item)}
+                        onClick={(e) => { e.stopPropagation(); setDeleteProductTarget(item); }}
                         title="В архив"
                       >
                         <Icon name="Archive" size={14} />
@@ -788,14 +808,14 @@ const Catalog = () => {
                     <div className="flex flex-col gap-1 flex-shrink-0">
                       <button
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-green-500/20 transition-colors text-muted-foreground hover:text-green-400"
-                        onClick={() => handleRestore(item)}
+                        onClick={(e) => { e.stopPropagation(); handleRestore(item); }}
                         title="Восстановить"
                       >
                         <Icon name="ArchiveRestore" size={14} />
                       </button>
                       <button
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"
-                        onClick={() => setPermanentDeleteTarget(item)}
+                        onClick={(e) => { e.stopPropagation(); setPermanentDeleteTarget(item); }}
                         title="Удалить навсегда"
                       >
                         <Icon name="Trash2" size={14} />
@@ -1288,6 +1308,125 @@ const Catalog = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!viewProduct} onOpenChange={(open) => { if (!open) setViewProduct(null); }}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto p-0">
+          {viewProduct && (
+            <>
+              {viewProduct.images.length > 0 ? (
+                <div className="relative">
+                  <img
+                    src={viewProduct.images[viewImageIndex]?.url}
+                    alt={viewProduct.name}
+                    className="w-full aspect-square object-contain bg-black/20 rounded-t-2xl"
+                  />
+                  {viewProduct.images.length > 1 && (
+                    <>
+                      <button
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white"
+                        onClick={() => setViewImageIndex((prev) => (prev - 1 + viewProduct.images.length) % viewProduct.images.length)}
+                      >
+                        <Icon name="ChevronLeft" size={18} />
+                      </button>
+                      <button
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white"
+                        onClick={() => setViewImageIndex((prev) => (prev + 1) % viewProduct.images.length)}
+                      >
+                        <Icon name="ChevronRight" size={18} />
+                      </button>
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        {viewProduct.images.map((_, i) => (
+                          <button
+                            key={i}
+                            className={`w-2 h-2 rounded-full transition-colors ${i === viewImageIndex ? "bg-white" : "bg-white/40"}`}
+                            onClick={() => setViewImageIndex(i)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="w-full aspect-[2/1] bg-white/[0.04] flex items-center justify-center rounded-t-2xl">
+                  <Icon name="Image" size={48} className="text-muted-foreground" />
+                </div>
+              )}
+              <div className="px-5 pb-5 pt-3 space-y-3">
+                <h2 className="text-lg font-semibold">{viewProduct.name}</h2>
+                <div className="flex flex-wrap gap-1.5">
+                  {viewProduct.article && (
+                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
+                      Артикул: {viewProduct.article}
+                    </Badge>
+                  )}
+                  {viewProduct.brand && (
+                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
+                      {viewProduct.brand}
+                    </Badge>
+                  )}
+                  {viewProduct.supplier_code && (
+                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
+                      Код: {viewProduct.supplier_code}
+                    </Badge>
+                  )}
+                  <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
+                    {viewProduct.category_name}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {viewProduct.price_base != null && (
+                    <div className="rounded-lg bg-white/[0.04] p-2">
+                      <span className="text-xs text-muted-foreground">Базовая</span>
+                      <p className="font-medium">{viewProduct.price_base.toLocaleString()} ₽</p>
+                    </div>
+                  )}
+                  {viewProduct.price_retail != null && (
+                    <div className="rounded-lg bg-white/[0.04] p-2">
+                      <span className="text-xs text-muted-foreground">Розница</span>
+                      <p className="font-medium">{viewProduct.price_retail.toLocaleString()} ₽</p>
+                    </div>
+                  )}
+                  {viewProduct.price_wholesale != null && (
+                    <div className="rounded-lg bg-white/[0.04] p-2">
+                      <span className="text-xs text-muted-foreground">Опт</span>
+                      <p className="font-medium">{viewProduct.price_wholesale.toLocaleString()} ₽</p>
+                    </div>
+                  )}
+                  {isOwner && viewProduct.price_purchase != null && (
+                    <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-2">
+                      <span className="text-xs text-yellow-400">Закупка</span>
+                      <p className="font-medium text-yellow-400">{viewProduct.price_purchase.toLocaleString()} ₽</p>
+                    </div>
+                  )}
+                </div>
+                {viewProduct.barcodes && viewProduct.barcodes.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Штрихкоды: {viewProduct.barcodes.map((b: string | { barcode: string }) => typeof b === 'string' ? b : b.barcode).join(", ")}
+                  </p>
+                )}
+                {canEdit && (
+                  <Button
+                    className="w-full rounded-xl"
+                    onClick={() => {
+                      const p = viewProduct;
+                      setViewProduct(null);
+                      handleEdit(p);
+                    }}
+                  >
+                    <Icon name="Pencil" size={16} />
+                    <span className="ml-1">Редактировать</span>
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+          {viewLoading && (
+            <div className="flex justify-center py-8">
+              <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
