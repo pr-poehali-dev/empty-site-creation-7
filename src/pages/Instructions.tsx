@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
+import MODULE_FORM_BSL from "@/data/module-form-bsl";
 
 const README_CONTENT = `# Обработка обмена с сайтом для 1С:УНФ
 
@@ -183,12 +184,12 @@ const README_CONTENT = `# Обработка обмена с сайтом для
 - **"Обязательное поле не сопоставлено"** — вернитесь на вкладку Сопоставление и заполните все обязательные поля
 - **Пустая таблица после "Заполнить список"** — убедитесь, что в справочнике Номенклатура есть элементы`;
 
-const downloadReadme = () => {
-  const blob = new Blob([README_CONTENT], { type: "text/markdown;charset=utf-8" });
+const downloadFile = (content: string, filename: string, mime: string) => {
+  const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "README.md";
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -338,16 +339,28 @@ const Instructions = () => {
             </Button>
             <h1 className="text-lg sm:text-xl font-semibold">Инструкции от Юры</h1>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 rounded-xl border-white/[0.08] gap-2"
-            onClick={downloadReadme}
-          >
-            <Icon name="Download" size={16} />
-            <span className="hidden sm:inline">Скачать README</span>
-            <span className="sm:hidden">Скачать</span>
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-xl border-white/[0.08] gap-2"
+              onClick={() => downloadFile(MODULE_FORM_BSL, "МодульФормы.bsl", "text/plain;charset=utf-8")}
+            >
+              <Icon name="FileCode" size={16} />
+              <span className="hidden sm:inline">Скачать .bsl</span>
+              <span className="sm:hidden">.bsl</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-xl border-white/[0.08] gap-2"
+              onClick={() => downloadFile(README_CONTENT, "README.md", "text/markdown;charset=utf-8")}
+            >
+              <Icon name="Download" size={16} />
+              <span className="hidden sm:inline">Скачать README</span>
+              <span className="sm:hidden">README</span>
+            </Button>
+          </div>
         </div>
       </header>
 
