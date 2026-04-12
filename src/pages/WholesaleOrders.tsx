@@ -33,6 +33,8 @@ interface Order {
   total_amount: number;
   created_at: string;
   created_by: string;
+  payment_status: string;
+  paid_amount: number;
 }
 
 interface OrderLine {
@@ -48,8 +50,18 @@ const statusLabels: Record<string, { label: string; className: string }> = {
   confirmed: { label: "Подтверждена", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
   shipped: { label: "Отгружена", className: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
   completed: { label: "Завершена", className: "bg-green-500/20 text-green-400 border-green-500/30" },
-  cancelled: { label: "Отменена", className: "bg-red-500/20 text-red-400 border-red-500/30" },
   archived: { label: "Архив", className: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
+};
+
+const paymentStatusLabels: Record<string, { label: string; className: string }> = {
+  not_paid: { label: "Не оплачена", className: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
+  partially_paid: { label: "Частично", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+  paid: { label: "Оплачена", className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+};
+
+const NEXT_STATUS: Record<string, { status: string; label: string; icon: string }> = {
+  new: { status: "confirmed", label: "Подтвердить", icon: "CheckCircle" },
+  confirmed: { status: "shipped", label: "Отгружена", icon: "Truck" },
 };
 
 const WholesaleOrders = () => {
@@ -77,6 +89,7 @@ const WholesaleOrders = () => {
   const [viewLines, setViewLines] = useState<OrderLine[]>([]);
   const [viewLoading, setViewLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   const fetchOrders = useCallback(async (archived = false) => {
     setLoading(true);
@@ -213,7 +226,7 @@ const WholesaleOrders = () => {
         body: JSON.stringify({ status: "archived" }),
       });
       if (resp.ok) {
-        toast({ title: "Заявка перенесена в архив" });
+        toast({ title: "Заявка удалена" });
         setViewOrder(null);
         fetchOrders(showArchive);
       } else {
@@ -221,7 +234,31 @@ const WholesaleOrders = () => {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
     } catch {
-      toast({ title: "Ошибка", description: "Не удалось архивировать", variant: "destructive" });
+      toast({ title: "Ошибка", description: "Не удалось удалить", variant: "destructive" });
+    }
+  };
+
+  const updateOrderStatus = async (newStatus: string) => {
+    if (!viewOrder) return;
+    setStatusUpdating(true);
+    try {
+      const resp = await fetch(`${ORDERS_URL}?id=${viewOrder.id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (resp.ok) {
+        toast({ title: "Статус обновлён" });
+        setViewOrder(null);
+        fetchOrders(showArchive);
+      } else {
+        const data = await resp.json();
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось обновить статус", variant: "destructive" });
+    } finally {
+      setStatusUpdating(false);
     }
   };
 
@@ -314,6 +351,8 @@ const WholesaleOrders = () => {
           <div className="space-y-2">
             {orders.map((order) => {
               const st = statusLabels[order.status] || statusLabels.new;
+              const ps = paymentStatusLabels[order.payment_status] || paymentStatusLabels.not_paid;
+              const isCompleted = order.status === "completed";
               return (
                 <div
                   key={order.id}
@@ -322,9 +361,16 @@ const WholesaleOrders = () => {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-medium text-sm sm:text-base">{order.customer_name}</p>
-                        <Badge className={`${st.className} text-xs`}>{st.label}</Badge>
+                        {isCompleted ? (
+                          <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">Завершена</Badge>
+                        ) : (
+                          <>
+                            <Badge className={`${st.className} text-xs`}>{st.label}</Badge>
+                            <Badge className={`${ps.className} text-xs`}>{ps.label}</Badge>
+                          </>
+                        )}
                       </div>
                       {order.comment && (
                         <p className="text-xs sm:text-sm text-muted-foreground mt-1 truncate">{order.comment}</p>
@@ -461,12 +507,19 @@ const WholesaleOrders = () => {
       <Dialog open={!!viewOrder} onOpenChange={(open) => { if (!open) setViewOrder(null); }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 flex-wrap">
+            <DialogTitle className="flex items-center gap-1.5 flex-wrap">
               <span>{viewOrder?.customer_name}</span>
-              {viewOrder && (
-                <Badge className={`${(statusLabels[viewOrder.status] || statusLabels.new).className} text-xs`}>
-                  {(statusLabels[viewOrder.status] || statusLabels.new).label}
-                </Badge>
+              {viewOrder && viewOrder.status === "completed" ? (
+                <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">Завершена</Badge>
+              ) : viewOrder && (
+                <>
+                  <Badge className={`${(statusLabels[viewOrder.status] || statusLabels.new).className} text-xs`}>
+                    {(statusLabels[viewOrder.status] || statusLabels.new).label}
+                  </Badge>
+                  <Badge className={`${(paymentStatusLabels[viewOrder.payment_status] || paymentStatusLabels.not_paid).className} text-xs`}>
+                    {(paymentStatusLabels[viewOrder.payment_status] || paymentStatusLabels.not_paid).label}
+                  </Badge>
+                </>
               )}
             </DialogTitle>
           </DialogHeader>
@@ -516,25 +569,64 @@ const WholesaleOrders = () => {
               ) : null}
             </div>
           )}
-          <DialogFooter className="gap-2 sm:gap-0">
-            {viewOrder && viewOrder.status !== "archived" && (
-              <Button
-                variant="outline"
-                onClick={archiveOrder}
-                className="rounded-xl border-white/[0.08] text-yellow-400 hover:text-yellow-300"
-              >
-                <Icon name="Archive" size={16} />
-                <span className="ml-1">В архив</span>
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => setViewOrder(null)}
-              className="rounded-xl border-white/[0.08]"
-            >
-              Закрыть
-            </Button>
-          </DialogFooter>
+          {viewOrder && (
+            <div className="space-y-3 pt-2 border-t border-white/[0.08]">
+              {viewOrder.status !== "archived" && viewOrder.status !== "completed" && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {NEXT_STATUS[viewOrder.status] && (
+                    <Button
+                      className="rounded-xl flex-1"
+                      disabled={statusUpdating}
+                      onClick={() => updateOrderStatus(NEXT_STATUS[viewOrder.status].status)}
+                    >
+                      {statusUpdating ? (
+                        <Icon name="Loader2" size={16} className="animate-spin" />
+                      ) : (
+                        <Icon name={NEXT_STATUS[viewOrder.status].icon} size={16} />
+                      )}
+                      <span className="ml-2">{NEXT_STATUS[viewOrder.status].label}</span>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="rounded-xl border-white/[0.08] flex-1"
+                    onClick={() => {
+                      setViewOrder(null);
+                      navigate(`/admin/orders/${viewOrder.id}/payments`);
+                    }}
+                  >
+                    <Icon name="Banknote" size={16} />
+                    <span className="ml-2">Оплата</span>
+                    {viewOrder.payment_status === "partially_paid" && (
+                      <Badge className="ml-1 bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-xs">Частично</Badge>
+                    )}
+                    {viewOrder.payment_status === "paid" && (
+                      <Badge className="ml-1 bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">Оплачена</Badge>
+                    )}
+                  </Button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                {viewOrder.status !== "archived" && (
+                  <Button
+                    variant="outline"
+                    onClick={archiveOrder}
+                    className="rounded-xl border-white/[0.08] text-destructive hover:text-destructive"
+                  >
+                    <Icon name="Trash2" size={16} />
+                    <span className="ml-1">Удалить</span>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => setViewOrder(null)}
+                  className="rounded-xl border-white/[0.08] flex-1"
+                >
+                  Закрыть
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

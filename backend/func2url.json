@@ -1,4 +1,5 @@
 {
+  "order-payments": "https://functions.poehali.dev/e4dc8d0d-913c-40e0-84e8-2bd0c73c1d1c",
   "catalog-products": "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5",
   "wholesale-orders": "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed",
   "catalog-categories": "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846",
