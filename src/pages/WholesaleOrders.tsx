@@ -49,7 +49,7 @@ interface OrderLine {
 const statusLabels: Record<string, { label: string; className: string }> = {
   new: { label: "Новая", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
   confirmed: { label: "Подтверждена", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
-  shipped: { label: "Отгружена", className: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+  shipped: { label: "Отгружена", className: "bg-red-500/20 text-red-400 border-red-500/30" },
   completed: { label: "Завершена", className: "bg-green-500/20 text-green-400 border-green-500/30" },
   archived: { label: "Архив", className: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
 };
@@ -113,12 +113,16 @@ const WholesaleOrders = () => {
       try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
     }
     const draft = localStorage.getItem("draft_order");
-    if (draft && canCreate) {
+    const hasDraftItems = localStorage.getItem("draft_order_items");
+    if (draft && canCreate && hasDraftItems) {
       try {
         const d = JSON.parse(draft);
-        if (d.customerName) setCustomerName(d.customerName);
-        if (d.comment) setComment(d.comment);
-        setCreateOpen(true);
+        const items = JSON.parse(hasDraftItems);
+        if (d.customerName && items.length > 0) {
+          setCustomerName(d.customerName);
+          if (d.comment) setComment(d.comment);
+          setCreateOpen(true);
+        }
       } catch { /* ignore */ }
     }
   }, []);
@@ -368,9 +372,6 @@ const WholesaleOrders = () => {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-medium text-sm sm:text-base">{order.customer_name}</p>
-                        {order.is_restored && (
-                          <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-xs">Из архива</Badge>
-                        )}
                         {isCompleted ? (
                           <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">Завершена</Badge>
                         ) : (
@@ -383,9 +384,14 @@ const WholesaleOrders = () => {
                       {order.comment && (
                         <p className="text-xs sm:text-sm text-muted-foreground mt-1 truncate">{order.comment}</p>
                       )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatDate(order.created_at)} · {order.created_by}
-                      </p>
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(order.created_at)} · {order.created_by}
+                        </p>
+                        {order.is_restored && (
+                          <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-[10px] py-0 px-1.5 leading-4">Из архива</Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <p className="text-sm sm:text-base font-semibold">
