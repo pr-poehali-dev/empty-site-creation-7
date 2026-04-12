@@ -242,7 +242,7 @@ const WholesaleOrders = () => {
       </main>
 
       <Dialog open={createOpen} onOpenChange={(open) => { if (!open) setCreateOpen(false); }}>
-        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Создать заявку</DialogTitle>
           </DialogHeader>
@@ -282,34 +282,38 @@ const WholesaleOrders = () => {
                   {lines.map((line, i) => (
                     <div
                       key={line.product_id}
-                      className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5 flex items-center gap-2"
+                      className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5 space-y-1.5"
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm truncate">{line.name}</p>
-                        {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm truncate">{line.name}</p>
+                          {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
+                        </div>
+                        <button
+                          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
+                          onClick={() => removeLine(i)}
+                        >
+                          <Icon name="X" size={14} className="text-destructive" />
+                        </button>
                       </div>
-                      <Input
-                        type="number"
-                        value={line.quantity}
-                        onChange={(e) => updateLineQty(i, parseInt(e.target.value) || 1)}
-                        className="w-16 h-8 text-center text-sm rounded-lg bg-secondary border-white/[0.08] px-1"
-                        min={1}
-                      />
-                      <Input
-                        type="number"
-                        value={line.price}
-                        onChange={(e) => updateLinePrice(i, parseFloat(e.target.value) || 0)}
-                        className="w-24 h-8 text-sm rounded-lg bg-secondary border-white/[0.08] px-2"
-                      />
-                      <span className="text-sm font-medium w-20 text-right flex-shrink-0">
-                        {(line.price * line.quantity).toLocaleString()} ₽
-                      </span>
-                      <button
-                        className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
-                        onClick={() => removeLine(i)}
-                      >
-                        <Icon name="X" size={14} className="text-destructive" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={line.quantity}
+                          onChange={(e) => updateLineQty(i, parseInt(e.target.value) || 1)}
+                          className="w-16 h-8 text-center text-sm rounded-lg bg-secondary border-white/[0.08] px-1"
+                          min={1}
+                        />
+                        <Input
+                          type="number"
+                          value={line.price}
+                          onChange={(e) => updateLinePrice(i, parseFloat(e.target.value) || 0)}
+                          className="w-24 h-8 text-sm rounded-lg bg-secondary border-white/[0.08] px-2"
+                        />
+                        <span className="text-sm font-medium ml-auto flex-shrink-0">
+                          {(line.price * line.quantity).toLocaleString()} ₽
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
