@@ -15,6 +15,7 @@ import OrderPayments from "./pages/OrderPayments";
 import OrderItemsList from "./pages/OrderItemsList";
 import ScanBarcode from "./pages/ScanBarcode";
 import Exchange1C from "./pages/Exchange1C";
+import Instructions from "./pages/Instructions";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="/admin/orders/new-list" element={<ProtectedRoute><OrderItemsList /></ProtectedRoute>} />
           <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
+          <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

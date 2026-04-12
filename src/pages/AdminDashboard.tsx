@@ -376,6 +376,14 @@ const AdminDashboard = () => {
             <Icon name="RefreshCw" size={20} />
             <span className="font-medium">Обмен с 1С</span>
           </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/instructions")}
+          >
+            <Icon name="BookOpen" size={20} />
+            <span className="font-medium">Инструкции от Юры</span>
+          </Button>
         </div>
 
         <div className="flex items-center justify-between mb-5 sm:mb-6">
