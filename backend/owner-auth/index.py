@@ -114,7 +114,7 @@ def handler(event: dict, context) -> dict:
             url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
             payload = json.dumps({
                 'chat_id': user[2],
-                'text': f'Ваш код авторизации: {code}\n\nКод действителен 5 минут.',
+                'text': f'{code} — код авторизации.\n\nДействителен 5 минут.',
                 'parse_mode': 'HTML'
             }).encode()
             req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})

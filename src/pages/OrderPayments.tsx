@@ -177,7 +177,7 @@ const OrderPayments = () => {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-white/[0.08] bg-card flex-shrink-0">
         <div className="max-w-3xl mx-auto flex items-center gap-2 px-4 py-3">
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/orders")}>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate(-1)}>
             <Icon name="ArrowLeft" size={18} />
           </Button>
           <h1 className="text-lg font-semibold">Оплата</h1>

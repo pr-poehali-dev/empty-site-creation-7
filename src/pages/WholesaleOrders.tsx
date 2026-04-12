@@ -606,8 +606,8 @@ const WholesaleOrders = () => {
                   </Button>
                 </div>
               )}
-              <div className="flex gap-2">
-                {viewOrder.status !== "archived" && (
+              {viewOrder.status !== "archived" && (
+                <div className="flex gap-2">
                   <Button
                     variant="outline"
                     onClick={archiveOrder}
@@ -616,15 +616,8 @@ const WholesaleOrders = () => {
                     <Icon name="Trash2" size={16} />
                     <span className="ml-1">Удалить</span>
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={() => setViewOrder(null)}
-                  className="rounded-xl border-white/[0.08] flex-1"
-                >
-                  Закрыть
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
