@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Отказ без API-ключа",
+      "method": "GET",
+      "path": "/?action=schema",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
