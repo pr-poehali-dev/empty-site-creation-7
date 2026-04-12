@@ -351,7 +351,7 @@ const AdminDashboard = () => {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
-        <div className="flex gap-2 mb-5 sm:mb-6">
+        <div className="flex gap-2 mb-5 sm:mb-6 flex-wrap">
           <Button
             variant="outline"
             className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
@@ -367,6 +367,14 @@ const AdminDashboard = () => {
           >
             <Icon name="ClipboardList" size={20} />
             <span className="font-medium">Заявки</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/exchange-1c")}
+          >
+            <Icon name="RefreshCw" size={20} />
+            <span className="font-medium">Обмен с 1С</span>
           </Button>
         </div>
 
