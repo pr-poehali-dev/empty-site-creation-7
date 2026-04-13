@@ -90,7 +90,6 @@ def handler(event: dict, context) -> dict:
     is_owner = user_role == 'owner'
 
     if method == 'GET':
-        print("GET params:", params)
         product_id = params.get('id')
         if product_id:
             if is_owner:

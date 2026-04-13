@@ -250,9 +250,8 @@ const OrderCreatePage = () => {
       try {
         const resp = await fetch(`${PRODUCTS_URL}?distinct=product_group`, { headers: authHeaders });
         const data = await resp.json();
-        console.log("loadGroups response:", resp.status, data);
         if (resp.ok) setProductGroups(data.groups || []);
-      } catch (e) { console.error("loadGroups error:", e); }
+      } catch { /* ignore */ }
     };
     loadWholesalers();
     loadGroups();
@@ -417,24 +416,26 @@ const OrderCreatePage = () => {
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
-        <div className="flex gap-1 mb-3 overflow-x-auto scrollbar-hide" style={{scrollbarWidth: 'none'}}>
-          {SEARCH_MODES.map((mode) => (
-            <button
-              key={mode.value}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
-                searchMode === mode.value
-                  ? "bg-primary/20 text-primary"
-                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
-              }`}
-              onClick={() => {
-                setSearchMode(mode.value);
-                if (searchQuery.trim()) searchProducts(searchQuery, mode.value);
-              }}
-            >
-              {mode.label}
-            </button>
-          ))}
-          <div className="relative" ref={groupRef}>
+        <div className="flex gap-1 mb-3 items-start">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1" style={{scrollbarWidth: 'none'}}>
+            {SEARCH_MODES.map((mode) => (
+              <button
+                key={mode.value}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                  searchMode === mode.value
+                    ? "bg-primary/20 text-primary"
+                    : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
+                }`}
+                onClick={() => {
+                  setSearchMode(mode.value);
+                  if (searchQuery.trim()) searchProducts(searchQuery, mode.value);
+                }}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-shrink-0" ref={groupRef}>
             <button
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
                 selectedGroup
@@ -443,11 +444,11 @@ const OrderCreatePage = () => {
               }`}
               onClick={() => setShowGroupList(!showGroupList)}
             >
-              {selectedGroup ? `Группа: ${selectedGroup}` : "Группа"}
+              {selectedGroup ? `${selectedGroup}` : "Группа"}
               <Icon name={showGroupList ? "ChevronUp" : "ChevronDown"} size={12} />
             </button>
             {showGroupList && (
-              <div className="absolute top-full left-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-60 overflow-y-auto shadow-lg min-w-[200px]">
+              <div className="absolute top-full right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-60 overflow-y-auto shadow-lg min-w-[200px]">
                 {selectedGroup && (
                   <button
                     className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm text-primary border-b border-white/[0.04]"
