@@ -799,8 +799,9 @@ const OrderCreatePage = () => {
             <AlertDialogCancel className="rounded-xl border-white/[0.08]">Остаться</AlertDialogCancel>
             <AlertDialogAction
               className="rounded-xl"
-              onClick={() => {
-                handleSave();
+              onClick={async () => {
+                await handleSave();
+                navigate("/admin/orders");
               }}
             >
               Сохранить
