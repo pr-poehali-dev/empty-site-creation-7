@@ -313,7 +313,7 @@ const OrderCreatePage = () => {
               <Icon name="Loader2" size={14} className="absolute right-3 top-3 animate-spin text-muted-foreground" />
             )}
             {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-60 overflow-y-auto shadow-lg">
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950/40 overflow-hidden max-h-60 overflow-y-auto shadow-lg">
                 {searchResults.map((item) => (
                   <button
                     key={item.id}
