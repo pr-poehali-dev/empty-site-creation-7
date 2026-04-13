@@ -98,7 +98,6 @@ const Catalog = () => {
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Product | null>(null);
   const [deleteImageTarget, setDeleteImageTarget] = useState<ProductImage | null>(null);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
-  const [pendingEditProduct, setPendingEditProduct] = useState<Product | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewImageIndex, setViewImageIndex] = useState(0);
   const [formName, setFormName] = useState("");
@@ -161,16 +160,6 @@ const Catalog = () => {
       setLoadingItems(false);
     }
   }, [token]);
-
-  useEffect(() => {
-    if (!viewProduct && pendingEditProduct) {
-      const timer = setTimeout(() => {
-        handleEdit(pendingEditProduct);
-        setPendingEditProduct(null);
-      }, 350);
-      return () => clearTimeout(timer);
-    }
-  }, [viewProduct, pendingEditProduct]);
 
   useEffect(() => {
     fetchCategories();
@@ -407,6 +396,7 @@ const Catalog = () => {
   };
 
   const handleEdit = (product: Product) => {
+    document.body.style.pointerEvents = "";
     setEditingProduct(product);
     setFormName(product.name);
     setFormArticle(product.article || "");
@@ -1438,8 +1428,9 @@ const Catalog = () => {
                   <Button
                     className="w-full rounded-xl"
                     onClick={() => {
-                      setPendingEditProduct(viewProduct);
+                      const p = viewProduct;
                       setViewProduct(null);
+                      handleEdit(p);
                     }}
                   >
                     <Icon name="Pencil" size={16} />
