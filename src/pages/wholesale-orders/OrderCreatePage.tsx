@@ -177,7 +177,7 @@ const OrderCreatePage = () => {
     if (scannedRaw) {
       localStorage.removeItem("scanned_order_barcodes");
       try {
-        const entries: { barcode: string; product_id: number | null; name: string | null }[] = JSON.parse(scannedRaw);
+        const entries: { barcode: string; product_id: number | null; name: string | null; price?: number }[] = JSON.parse(scannedRaw);
         const validEntries = entries.filter(e => e.product_id);
         if (validEntries.length > 0) {
           const loadScanned = async () => {
@@ -194,7 +194,7 @@ const OrderCreatePage = () => {
                     name: product.name,
                     article: product.article,
                     quantity: 1,
-                    price: calcPrice(product, rules),
+                    price: (entry.price && entry.price > 0) ? entry.price : calcPrice(product, rules),
                   });
                 }
               } catch { /* ignore */ }
@@ -679,9 +679,10 @@ const OrderCreatePage = () => {
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
                 onClick={() => {
-                  sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines }));
+                  sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                   const returnTo = editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create";
-                  navigate(`/admin/scan?returnTo=${returnTo}&key=scanned_order_barcodes`);
+                  const wParam = wholesalerId ? `&wholesalerId=${wholesalerId}` : "";
+                  navigate(`/admin/scan?returnTo=${returnTo}&key=scanned_order_barcodes${wParam}`);
                 }}
               >
                 <Icon name="Camera" size={18} />

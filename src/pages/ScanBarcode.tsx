@@ -6,6 +6,7 @@ import Icon from "@/components/ui/icon";
 
 const MAX_VISIBLE = 5;
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
+const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 
 interface DetectedBarcode {
   rawValue: string;
@@ -27,12 +28,21 @@ interface ScannedItem {
   name: string | null;
   found: boolean;
   product_id: number | null;
+  price: number;
+}
+
+interface PricingRule {
+  filter_type: string;
+  filter_value: string;
+  price_field: string;
+  formula: string;
 }
 
 interface CollectedEntry {
   barcode: string;
   product_id: number | null;
   name: string | null;
+  price: number;
 }
 
 const getDetectorCtor = (): BarcodeDetectorConstructor | undefined => {
@@ -45,6 +55,9 @@ const ScanBarcode = () => {
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get("returnTo") || "/admin/catalog";
   const storageKey = searchParams.get("key") || "scanned_barcodes";
+  const wholesalerIdParam = searchParams.get("wholesalerId");
+
+  const pricingRulesRef = useRef<PricingRule[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -73,6 +86,41 @@ const ScanBarcode = () => {
     Authorization: `Bearer ${token}`,
   };
 
+  const calcPrice = (product: Record<string, unknown>): number => {
+    const rules = pricingRulesRef.current;
+    const group = product.product_group as string | null;
+    let matched: PricingRule | null = null;
+    for (const r of rules) {
+      if (r.filter_type === "product_group" && group === r.filter_value) matched = r;
+    }
+    if (!matched) return parseFloat(String(product.price_wholesale || 0));
+    const priceMap: Record<string, number> = {
+      price_base: parseFloat(String(product.price_base || 0)),
+      price_retail: parseFloat(String(product.price_retail || 0)),
+      price_wholesale: parseFloat(String(product.price_wholesale || 0)),
+      price_purchase: parseFloat(String(product.price_purchase || 0)),
+    };
+    let result = priceMap[matched.price_field] || 0;
+    const regex = /([+\-*/])\s*([\d.]+)/g;
+    let m;
+    while ((m = regex.exec(matched.formula)) !== null) {
+      const v = parseFloat(m[2]) || 0;
+      if (m[1] === "*") result *= v;
+      else if (m[1] === "/") result = v ? result / v : 0;
+      else if (m[1] === "+") result += v;
+      else if (m[1] === "-") result -= v;
+    }
+    return Math.round(result * 100) / 100;
+  };
+
+  useEffect(() => {
+    if (!wholesalerIdParam) return;
+    fetch(`${PRICING_URL}?wholesaler_id=${wholesalerIdParam}`, { headers: authHeaders })
+      .then(r => r.json())
+      .then(data => { pricingRulesRef.current = data.items || []; })
+      .catch(() => {});
+  }, [wholesalerIdParam]);
+
   const saveCollected = (next: CollectedEntry[]) => {
     setCollected(next);
     localStorage.setItem(storageKey, JSON.stringify(next));
@@ -86,10 +134,11 @@ const ScanBarcode = () => {
       const data = await resp.json();
       const found = resp.ok && data.items?.length > 0 ? data.items[0] : data.item || null;
       if (found) {
-        return { id, barcode: code, name: found.name, found: true, product_id: found.id };
+        const price = calcPrice(found);
+        return { id, barcode: code, name: found.name, found: true, product_id: found.id, price };
       }
     } catch { /* ignore */ }
-    return { id, barcode: code, name: null, found: false, product_id: null };
+    return { id, barcode: code, name: null, found: false, product_id: null, price: 0 };
   };
 
   const processScan = async (code: string) => {
@@ -100,7 +149,7 @@ const ScanBarcode = () => {
     const id = ++idCounterRef.current;
     const item = await resolveBarcode(id, code);
 
-    const entry: CollectedEntry = { barcode: code, product_id: item.product_id, name: item.name };
+    const entry: CollectedEntry = { barcode: code, product_id: item.product_id, name: item.name, price: item.price };
     setCollected((prev) => {
       const next = [...prev, entry];
       localStorage.setItem(storageKey, JSON.stringify(next));
@@ -455,6 +504,9 @@ const ScanBarcode = () => {
                         </p>
                         <p className="text-[10px] text-white/30">{item.barcode}</p>
                       </div>
+                      {item.found && item.price > 0 && (
+                        <span className="text-xs text-green-400 font-medium flex-shrink-0">{item.price.toLocaleString()} ₽</span>
+                      )}
                       <button
                         className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10 flex-shrink-0"
                         onClick={(e) => { e.stopPropagation(); removeItem(item.id, item.barcode); }}
