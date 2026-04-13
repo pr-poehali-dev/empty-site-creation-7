@@ -185,11 +185,7 @@ const OrderCreatePage = () => {
   };
 
   const updateQty = (index: number, qty: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(0, qty) } : l)));
-  };
-
-  const commitQty = (index: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index && l.quantity < 1 ? { ...l, quantity: 1 } : l)));
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: qty } : l)));
   };
 
   const updatePrice = (index: number, price: number) => {
@@ -428,10 +424,11 @@ const OrderCreatePage = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <Input
+                    key={`qty-${line.product_id}-${line.quantity}`}
                     type="number"
-                    value={line.quantity}
-                    onChange={(e) => updateQty(i, parseInt(e.target.value) || 0)}
-                    onBlur={() => commitQty(i)}
+                    defaultValue={line.quantity}
+                    onBlur={(e) => updateQty(i, Math.max(1, parseInt(e.target.value) || 1))}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                     className="w-16 h-8 text-center text-sm rounded-lg bg-secondary border-white/[0.08] px-1"
                     min={1}
                   />
