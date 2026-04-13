@@ -156,6 +156,7 @@ const OrderCreatePage = () => {
 
   useEffect(() => {
     const saved = sessionStorage.getItem(DRAFT_KEY);
+    let rulesPromise: Promise<PricingRule[]> | null = null;
     if (saved) {
       try {
         const d = JSON.parse(saved);
@@ -164,7 +165,50 @@ const OrderCreatePage = () => {
         if (d.lines?.length) setLines(d.lines);
         if (d.wholesalerId) {
           setWholesalerId(d.wholesalerId);
-          loadPricingRules(d.wholesalerId);
+          rulesPromise = fetch(`${PRICING_URL}?wholesaler_id=${d.wholesalerId}`, { headers: authHeaders })
+            .then(r => r.json())
+            .then(data => { const items = data.items || []; setPricingRules(items); return items; })
+            .catch(() => [] as PricingRule[]);
+        }
+      } catch { /* ignore */ }
+    }
+
+    const scannedRaw = localStorage.getItem("scanned_order_barcodes");
+    if (scannedRaw) {
+      localStorage.removeItem("scanned_order_barcodes");
+      try {
+        const entries: { barcode: string; product_id: number | null; name: string | null }[] = JSON.parse(scannedRaw);
+        const validEntries = entries.filter(e => e.product_id);
+        if (validEntries.length > 0) {
+          const loadScanned = async () => {
+            const rules = rulesPromise ? await rulesPromise : pricingRules;
+            const newLines: OrderLine[] = [];
+            for (const entry of validEntries) {
+              const existing = newLines.find(l => l.product_id === entry.product_id);
+              if (existing) {
+                existing.quantity += 1;
+                continue;
+              }
+              try {
+                const resp = await fetch(`${PRODUCTS_URL}?id=${entry.product_id}`, { headers: authHeaders });
+                const data = await resp.json();
+                const product = data.item;
+                if (product) {
+                  newLines.push({
+                    product_id: product.id,
+                    name: product.name,
+                    article: product.article,
+                    quantity: 1,
+                    price: calcPrice(product, rules),
+                  });
+                }
+              } catch { /* ignore */ }
+            }
+            if (newLines.length > 0) {
+              setLines(prev => [...newLines, ...prev]);
+            }
+          };
+          loadScanned();
         }
       } catch { /* ignore */ }
     }
