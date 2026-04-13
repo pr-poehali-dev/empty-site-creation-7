@@ -41,7 +41,6 @@ const SEARCH_MODES = [
   { value: "all", label: "Все поля" },
   { value: "article", label: "Артикул" },
   { value: "supplier_code", label: "Код поставщика" },
-  { value: "product_group", label: "Группа" },
 ] as const;
 
 const OrderCreatePage = () => {
@@ -68,6 +67,10 @@ const OrderCreatePage = () => {
   const [searchMode, setSearchMode] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
+  const [productGroups, setProductGroups] = useState<string[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const [showGroupList, setShowGroupList] = useState(false);
+  const groupRef = useRef<HTMLDivElement>(null);
   const [searching, setSearching] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
@@ -144,7 +147,7 @@ const OrderCreatePage = () => {
     load();
   }, [editId]);
 
-  const searchProducts = useCallback(async (query: string, mode: string) => {
+  const searchProducts = useCallback(async (query: string, mode: string, group?: string) => {
     if (!query.trim() || query.trim().length < 2) {
       setSearchResults([]);
       return;
@@ -152,6 +155,8 @@ const OrderCreatePage = () => {
     setSearching(true);
     try {
       const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
+      const g = group !== undefined ? group : selectedGroup;
+      if (g) params.set("filter_group", g);
       const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok) setSearchResults(data.items || []);
@@ -241,13 +246,24 @@ const OrderCreatePage = () => {
         if (resp.ok) setWholesalers(data.items || []);
       } catch { /* ignore */ }
     };
+    const loadGroups = async () => {
+      try {
+        const resp = await fetch(`${PRODUCTS_URL}?distinct=product_group`, { headers: authHeaders });
+        const data = await resp.json();
+        if (resp.ok) setProductGroups(data.groups || []);
+      } catch { /* ignore */ }
+    };
     loadWholesalers();
+    loadGroups();
   }, []);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (wholesalerRef.current && !wholesalerRef.current.contains(e.target as Node)) {
         setShowWholesalerList(false);
+      }
+      if (groupRef.current && !groupRef.current.contains(e.target as Node)) {
+        setShowGroupList(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
@@ -306,7 +322,9 @@ const OrderCreatePage = () => {
       if (resp.ok) {
         sessionStorage.removeItem(DRAFT_KEY);
         toast({ title: editId ? "Заявка обновлена" : "Заявка создана" });
-        navigate("/admin/orders");
+        if (!editId && data.id) {
+          navigate(`/admin/orders/${data.id}/edit`, { replace: true });
+        }
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -393,19 +411,12 @@ const OrderCreatePage = () => {
               </Badge>
             )}
           </div>
-          <Button className="h-9 rounded-xl" onClick={handleSave} disabled={saving}>
-            {saving ? (
-              <Icon name="Loader2" size={16} className="animate-spin" />
-            ) : (
-              <Icon name="Check" size={16} />
-            )}
-            <span className="ml-1">{saving ? "..." : "Сохранить"}</span>
-          </Button>
+
         </div>
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
-        <div className="flex gap-1 mb-3 overflow-x-auto">
+        <div className="flex gap-1 mb-3 overflow-x-auto scrollbar-hide" style={{scrollbarWidth: 'none'}}>
           {SEARCH_MODES.map((mode) => (
             <button
               key={mode.value}
@@ -422,6 +433,40 @@ const OrderCreatePage = () => {
               {mode.label}
             </button>
           ))}
+          <div className="relative" ref={groupRef}>
+            <button
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-1 ${
+                selectedGroup
+                  ? "bg-primary/20 text-primary"
+                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
+              }`}
+              onClick={() => setShowGroupList(!showGroupList)}
+            >
+              {selectedGroup ? `Группа: ${selectedGroup}` : "Группа"}
+              <Icon name={showGroupList ? "ChevronUp" : "ChevronDown"} size={12} />
+            </button>
+            {showGroupList && (
+              <div className="absolute top-full left-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-60 overflow-y-auto shadow-lg min-w-[200px]">
+                {selectedGroup && (
+                  <button
+                    className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm text-primary border-b border-white/[0.04]"
+                    onClick={() => { setSelectedGroup(""); setShowGroupList(false); if (searchQuery.trim()) searchProducts(searchQuery, searchMode, ""); }}
+                  >
+                    Все группы
+                  </button>
+                )}
+                {productGroups.map((g) => (
+                  <button
+                    key={g}
+                    className={`w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0 ${selectedGroup === g ? "bg-white/[0.06] text-primary" : ""}`}
+                    onClick={() => { setSelectedGroup(g); setShowGroupList(false); if (searchQuery.trim()) searchProducts(searchQuery, searchMode, g); }}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-2 mb-3">
@@ -598,6 +643,17 @@ const OrderCreatePage = () => {
             ))}
           </div>
         )}
+
+        <div className="mt-4">
+          <Button className="w-full h-11 rounded-xl" onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <Icon name="Loader2" size={16} className="animate-spin" />
+            ) : (
+              <Icon name="Check" size={16} />
+            )}
+            <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
+          </Button>
+        </div>
 
         {editId && orderStatus !== "archived" && orderStatus !== "completed" && (
           <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">

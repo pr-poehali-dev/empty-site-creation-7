@@ -196,9 +196,17 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': items, 'total': len(items), 'page': 1, 'per_page': 50})}
 
+        if params.get('distinct') == 'product_group':
+            cur.execute("SELECT DISTINCT product_group FROM products WHERE product_group IS NOT NULL AND product_group != '' AND is_archived = false ORDER BY product_group")
+            groups = [r[0] for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'groups': groups})}
+
         category_id = params.get('category_id')
         search = params.get('search', '').strip()
         search_type = params.get('search_type', 'all')
+        filter_group = params.get('filter_group', '').strip()
         page = int(params.get('page', 1))
         per_page = int(params.get('per_page', 50))
         offset = (page - 1) * per_page
@@ -213,6 +221,10 @@ def handler(event: dict, context) -> dict:
         if category_id:
             conditions.append("p.category_id = %s")
             values.append(int(category_id))
+
+        if filter_group:
+            conditions.append("p.product_group = %s")
+            values.append(filter_group)
 
         if search:
             like = f"%{search}%"
