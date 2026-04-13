@@ -163,6 +163,16 @@ const Catalog = () => {
   }, [token]);
 
   useEffect(() => {
+    if (!viewProduct && pendingEditProduct) {
+      const timer = setTimeout(() => {
+        handleEdit(pendingEditProduct);
+        setPendingEditProduct(null);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [viewProduct, pendingEditProduct]);
+
+  useEffect(() => {
     fetchCategories();
   }, []);
 
@@ -1324,7 +1334,7 @@ const Catalog = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={!!viewProduct} onOpenChange={(open) => { if (!open) { setViewProduct(null); if (pendingEditProduct) { handleEdit(pendingEditProduct); setPendingEditProduct(null); } } }}>
+      <Dialog open={!!viewProduct} onOpenChange={(open) => { if (!open) setViewProduct(null); }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto p-0">
           {viewProduct && (
             <>
