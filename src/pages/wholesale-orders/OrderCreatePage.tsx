@@ -345,6 +345,15 @@ const OrderCreatePage = () => {
     loadPricingRules(w.id);
   };
 
+  useEffect(() => {
+    if (!customerName.trim() || wholesalers.length === 0) return;
+    const found = wholesalers.find(w => w.name === customerName.trim());
+    if (found && found.id !== wholesalerId) {
+      setWholesalerId(found.id);
+      loadPricingRules(found.id);
+    }
+  }, [customerName, wholesalers]);
+
   const updateQty = (index: number, qty: number) => {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: qty } : l)));
   };

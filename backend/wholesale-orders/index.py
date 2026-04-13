@@ -27,6 +27,46 @@ def get_manager_info(cur, phone):
 ALLOWED_ROLES = ['Управляющий', 'Менеджер опта']
 CAN_CREATE_ROLES = ['Управляющий', 'Менеджер опта']
 
+import re
+
+def calc_price_by_rules(cur, customer_name, product_id):
+    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
+    w = cur.fetchone()
+    if not w:
+        return 0
+    wholesaler_id = w[0]
+    cur.execute(
+        "SELECT filter_type, filter_value, price_field, formula FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority",
+        (wholesaler_id,)
+    )
+    rules = cur.fetchall()
+    if not rules:
+        return 0
+    cur.execute(
+        "SELECT price_base, price_retail, price_wholesale, price_purchase, product_group FROM products WHERE id = %s",
+        (product_id,)
+    )
+    prod = cur.fetchone()
+    if not prod:
+        return 0
+    price_map = {'price_base': prod[0], 'price_retail': prod[1], 'price_wholesale': prod[2], 'price_purchase': prod[3]}
+    product_group = prod[4]
+    matched = None
+    for r in rules:
+        if r[0] == 'product_group' and product_group == r[1]:
+            matched = r
+    if not matched:
+        return float(price_map.get('price_wholesale') or 0)
+    base = float(price_map.get(matched[2]) or 0)
+    for m in re.finditer(r'([+\-*/])\s*([\d.]+)', matched[3]):
+        v = float(m.group(2))
+        op = m.group(1)
+        if op == '*': base *= v
+        elif op == '/': base = base / v if v else 0
+        elif op == '+': base += v
+        elif op == '-': base -= v
+    return round(base, 2)
+
 def handler(event: dict, context) -> dict:
     if event.get('httpMethod') == 'OPTIONS':
         return {
@@ -182,7 +222,11 @@ def handler(event: dict, context) -> dict:
 
         total = 0
         for item in items:
-            amount = float(item.get('price', 0)) * int(item.get('quantity', 0))
+            price = float(item.get('price', 0))
+            if price == 0:
+                price = calc_price_by_rules(cur, customer_name, item.get('product_id'))
+            amount = price * int(item.get('quantity', 0))
+            item['_price'] = price
             total += amount
 
         cur.execute(
@@ -196,7 +240,7 @@ def handler(event: dict, context) -> dict:
 
         for item in items:
             qty = int(item.get('quantity', 1))
-            price = float(item.get('price', 0))
+            price = item.get('_price', float(item.get('price', 0)))
             amount = price * qty
             cur.execute(
                 """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount)
@@ -234,11 +278,15 @@ def handler(event: dict, context) -> dict:
             cur.execute("UPDATE wholesale_orders SET comment = %s WHERE id = %s", (comment_val, order_id))
 
         if items is not None:
+            cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+            cname = cur.fetchone()[0]
             cur.execute("DELETE FROM wholesale_order_items WHERE order_id = %s", (order_id,))
             total = 0
             for item in items:
                 qty = int(item.get('quantity', 1))
                 price = float(item.get('price', 0))
+                if price == 0:
+                    price = calc_price_by_rules(cur, customer_name or cname, item.get('product_id'))
                 amount = price * qty
                 total += amount
                 cur.execute(
