@@ -109,54 +109,43 @@ const WholesaleOrders = () => {
 
   useEffect(() => {
     fetchOrders();
-    const saved = localStorage.getItem("draft_order_items");
-    if (saved) {
-      try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
-    }
-    const draft = localStorage.getItem("draft_order");
-    const hasDraftItems = localStorage.getItem("draft_order_items");
-    if (draft && hasDraftItems) {
-      try {
-        const d = JSON.parse(draft);
-        const items = JSON.parse(hasDraftItems);
-        if (d.customerName && items.length > 0) {
-          setCustomerName(d.customerName);
+    const returning = localStorage.getItem("draft_order_returning");
+    if (returning) {
+      localStorage.removeItem("draft_order_returning");
+      const saved = localStorage.getItem("draft_order_items");
+      if (saved) {
+        try { setLines(JSON.parse(saved)); } catch { /* ignore */ }
+      }
+      const draft = localStorage.getItem("draft_order");
+      if (draft) {
+        try {
+          const d = JSON.parse(draft);
+          if (d.customerName) setCustomerName(d.customerName);
           if (d.comment) setComment(d.comment);
           if (d.editId) setEditOrderId(d.editId);
-          if (d.editId || canCreate) setCreateOpen(true);
-        }
-      } catch { /* ignore */ }
+          setCreateOpen(true);
+        } catch { /* ignore */ }
+      }
     }
   }, []);
 
   const updateLineQty = (index: number, qty: number) => {
-    setLines((prev) => {
-      const next = prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l));
-      localStorage.setItem("draft_order_items", JSON.stringify(next));
-      return next;
-    });
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l)));
   };
 
   const updateLinePrice = (index: number, price: number) => {
-    setLines((prev) => {
-      const next = prev.map((l, i) => (i === index ? { ...l, price: Math.max(0, price) } : l));
-      localStorage.setItem("draft_order_items", JSON.stringify(next));
-      return next;
-    });
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, price: Math.max(0, price) } : l)));
   };
 
   const removeLine = (index: number) => {
-    setLines((prev) => {
-      const next = prev.filter((_, i) => i !== index);
-      localStorage.setItem("draft_order_items", JSON.stringify(next));
-      return next;
-    });
+    setLines((prev) => prev.filter((_, i) => i !== index));
   };
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
   const goToList = () => {
     localStorage.setItem("draft_order", JSON.stringify({ customerName, comment, editId: editOrderId }));
+    localStorage.setItem("draft_order_items", JSON.stringify(lines));
     navigate("/admin/orders/new-list");
   };
 
@@ -196,6 +185,7 @@ const WholesaleOrders = () => {
         setEditOrderId(null);
         localStorage.removeItem("draft_order");
         localStorage.removeItem("draft_order_items");
+        localStorage.removeItem("draft_order_returning");
         fetchOrders(showArchive);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });

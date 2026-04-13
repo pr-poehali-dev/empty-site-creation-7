@@ -179,6 +179,7 @@ const OrderItemsList = () => {
 
   const handleDone = () => {
     localStorage.setItem("draft_order_items", JSON.stringify(lines));
+    localStorage.setItem("draft_order_returning", "1");
     navigate("/admin/orders");
   };
 
