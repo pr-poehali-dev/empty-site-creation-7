@@ -96,7 +96,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                               p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
-                              p.created_at, p.updated_at, c.name as category_name, p.product_group
+                              p.created_at, p.updated_at, c.name as category_name, p.product_group, p.external_id
                        FROM products p
                        JOIN categories c ON c.id = p.category_id
                        WHERE p.id = %s""",
@@ -106,7 +106,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                               p.price_base, p.price_retail, p.price_wholesale, NULL as price_purchase,
-                              p.created_at, p.updated_at, c.name as category_name, p.product_group
+                              p.created_at, p.updated_at, c.name as category_name, p.product_group, p.external_id
                        FROM products p
                        JOIN categories c ON c.id = p.category_id
                        WHERE p.id = %s""",
@@ -141,6 +141,7 @@ def handler(event: dict, context) -> dict:
                 'updated_at': str(row[11]) if row[11] else None,
                 'category_name': row[12],
                 'product_group': row[13],
+                'external_id': row[14],
                 'images': images,
                 'barcodes': barcodes
             }
@@ -165,7 +166,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(
                 f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                            p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
-                           p.created_at, c.name as category_name, p.product_group
+                           p.created_at, c.name as category_name, p.product_group, p.external_id
                     FROM products p
                     JOIN categories c ON c.id = p.category_id
                     WHERE p.id = %s""",
@@ -187,6 +188,7 @@ def handler(event: dict, context) -> dict:
                 'created_at': str(r[10]) if r[10] else None,
                 'category_name': r[11],
                 'product_group': r[12],
+                'external_id': r[13],
                 'images': [],
                 'barcodes': []
             }
@@ -234,7 +236,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                        p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
-                       p.created_at, c.name as category_name, p.product_group
+                       p.created_at, c.name as category_name, p.product_group, p.external_id
                 FROM products p
                 JOIN categories c ON c.id = p.category_id
                 {where}
@@ -280,6 +282,7 @@ def handler(event: dict, context) -> dict:
                 'created_at': str(r[10]) if r[10] else None,
                 'category_name': r[11],
                 'product_group': r[12],
+                'external_id': r[13],
                 'images': images_map.get(r[0], []),
                 'barcodes': barcodes_map.get(r[0], [])
             })

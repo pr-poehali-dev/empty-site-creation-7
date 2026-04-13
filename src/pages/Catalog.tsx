@@ -49,6 +49,7 @@ interface Product {
   brand: string | null;
   supplier_code: string | null;
   product_group: string | null;
+  external_id: string | null;
   price_base: number | null;
   price_retail: number | null;
   price_wholesale: number | null;
@@ -97,9 +98,7 @@ const Catalog = () => {
   const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Product | null>(null);
   const [deleteImageTarget, setDeleteImageTarget] = useState<ProductImage | null>(null);
-  const [viewProduct, setViewProduct] = useState<Product | null>(null);
-  const [viewLoading, setViewLoading] = useState(false);
-  const [viewImageIndex, setViewImageIndex] = useState(0);
+  const [editMode, setEditMode] = useState(false);
   const [formName, setFormName] = useState("");
   const [formArticle, setFormArticle] = useState("");
   const [formBrand, setFormBrand] = useState("");
@@ -186,6 +185,7 @@ const Catalog = () => {
         setFormPricePurchase(draft.formPricePurchase || "");
         setFormBarcodes(Array.isArray(draft.formBarcodes) ? draft.formBarcodes : []);
         setAddOpen(true);
+        setEditMode(true);
         localStorage.removeItem("draft_product");
       } catch { /* ignore */ }
     }
@@ -221,22 +221,6 @@ const Catalog = () => {
 
   const handleSearch = () => {
     fetchItems(selectedCategory, search, showArchive);
-  };
-
-  const openProductView = async (product: Product) => {
-    setViewProduct(product);
-    setViewImageIndex(0);
-    if (product.images.length === 0) {
-      setViewLoading(true);
-      try {
-        const resp = await fetch(`${PRODUCTS_URL}?id=${product.id}`, { headers: authHeaders });
-        const data = await resp.json();
-        if (resp.ok && data.item) {
-          setViewProduct(data.item);
-        }
-      } catch { /* ignore */ }
-      setViewLoading(false);
-    }
   };
 
   const toggleExpand = (id: number) => {
@@ -393,10 +377,10 @@ const Catalog = () => {
     setEditingProduct(null);
     setExistingImages([]);
     setRemovedImageIds([]);
+    setEditMode(false);
   };
 
   const handleEdit = (product: Product) => {
-    document.body.style.pointerEvents = "";
     setEditingProduct(product);
     setFormName(product.name);
     setFormArticle(product.article || "");
@@ -413,6 +397,14 @@ const Catalog = () => {
     setExistingImages([...product.images]);
     setRemovedImageIds([]);
     setAddOpen(true);
+  };
+
+  const isFieldDisabled = (fieldName: string) => {
+    if (!editingProduct) return false;
+    if (!editMode) return true;
+    if (isOwner) return false;
+    const priceFields = ['price_base', 'price_retail', 'price_wholesale'];
+    return !priceFields.includes(fieldName);
   };
 
   const confirmRemoveImage = () => {
@@ -642,6 +634,7 @@ const Catalog = () => {
                   resetForm();
                   if (selectedCategory) setFormCategoryId(String(selectedCategory));
                   setAddOpen(true);
+                  setEditMode(true);
                 }}
               >
                 <Icon name="Plus" size={16} />
@@ -745,7 +738,7 @@ const Catalog = () => {
                 <div
                   key={item.id}
                   className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 flex gap-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
-                  onClick={() => openProductView(item)}
+                  onClick={() => { handleEdit(item); setEditMode(false); }}
                 >
                   {item.images.length > 0 ? (
                     <img
@@ -796,13 +789,6 @@ const Catalog = () => {
                   {canEdit && !showArchive && (
                     <div className="flex flex-col gap-1 flex-shrink-0">
                       <button
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.08] transition-colors text-muted-foreground hover:text-foreground"
-                        onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
-                        title="Редактировать"
-                      >
-                        <Icon name="Pencil" size={14} />
-                      </button>
-                      <button
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-yellow-500/20 transition-colors text-muted-foreground hover:text-yellow-400"
                         onClick={(e) => { e.stopPropagation(); setDeleteProductTarget(item); }}
                         title="В архив"
@@ -840,25 +826,28 @@ const Catalog = () => {
       <Dialog open={addOpen} onOpenChange={(open) => { if (!open) { setAddOpen(false); resetForm(); } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "Редактировать товар" : "Добавить товар"}</DialogTitle>
+            <DialogTitle>{editingProduct ? (editMode ? "Редактировать товар" : editingProduct.name) : "Добавить товар"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-muted-foreground">Название *</label>
-                <button
-                  type="button"
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
-                  onClick={openWizard}
-                >
-                  <Icon name="Wand2" size={14} />
-                  Создать наименование
-                </button>
+                {!isFieldDisabled("name") && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                    onClick={openWizard}
+                  >
+                    <Icon name="Wand2" size={14} />
+                    Создать наименование
+                  </button>
+                )}
               </div>
               <Input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="Холодильник Samsung RB37"
+                disabled={isFieldDisabled("name")}
                 className="h-10 rounded-xl bg-secondary border-white/[0.08]"
               />
               {suggestedCategory && (
@@ -881,6 +870,7 @@ const Catalog = () => {
                 <Input
                   value={formArticle}
                   onChange={(e) => setFormArticle(e.target.value)}
+                  disabled={isFieldDisabled("article")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
               </div>
@@ -889,6 +879,7 @@ const Catalog = () => {
                 <Input
                   value={formBrand}
                   onChange={(e) => setFormBrand(e.target.value)}
+                  disabled={isFieldDisabled("brand")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
               </div>
@@ -899,6 +890,7 @@ const Catalog = () => {
                 <Input
                   value={formSupplierCode}
                   onChange={(e) => setFormSupplierCode(e.target.value)}
+                  disabled={isFieldDisabled("supplier_code")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
               </div>
@@ -907,23 +899,35 @@ const Catalog = () => {
                 <Input
                   value={formProductGroup}
                   onChange={(e) => setFormProductGroup(e.target.value)}
+                  disabled={isFieldDisabled("product_group")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
               </div>
             </div>
+            {editingProduct?.external_id && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">UUID (1С)</label>
+                <Input
+                  value={editingProduct.external_id}
+                  disabled
+                  className="h-10 rounded-xl bg-secondary border-white/[0.08] text-xs font-mono"
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Категория</label>
               <div className="relative">
                 <button
                   type="button"
                   className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
-                  onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                  disabled={isFieldDisabled("category")}
+                  onClick={() => !isFieldDisabled("category") && setCategoryDropdownOpen(!categoryDropdownOpen)}
                 >
                   {formCategoryId
                     ? getCategoryPath(Number(formCategoryId))
                     : <span className="text-muted-foreground">Без категории</span>}
                 </button>
-                {categoryDropdownOpen && (
+                {categoryDropdownOpen && !isFieldDisabled("category") && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden shadow-lg">
                     <div className="p-2">
                       <Input
@@ -964,6 +968,7 @@ const Catalog = () => {
                   value={formBarcodeInput}
                   onChange={(e) => setFormBarcodeInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addBarcode(); } }}
+                  disabled={isFieldDisabled("barcodes")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
                 />
                 <Button
@@ -971,6 +976,7 @@ const Catalog = () => {
                   variant="outline"
                   size="sm"
                   className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
+                  disabled={isFieldDisabled("barcodes")}
                   onClick={addBarcode}
                 >
                   <Icon name="Plus" size={16} />
@@ -980,6 +986,7 @@ const Catalog = () => {
                   variant="outline"
                   size="sm"
                   className="h-10 w-10 p-0 rounded-xl border-white/[0.08]"
+                  disabled={isFieldDisabled("barcodes")}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1011,6 +1018,7 @@ const Catalog = () => {
                   placeholder="Базовая"
                   value={formPriceBase}
                   onChange={(e) => setFormPriceBase(e.target.value)}
+                  disabled={isFieldDisabled("price_base")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
                 <Input
@@ -1018,6 +1026,7 @@ const Catalog = () => {
                   placeholder="Розничная"
                   value={formPriceRetail}
                   onChange={(e) => setFormPriceRetail(e.target.value)}
+                  disabled={isFieldDisabled("price_retail")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
                 <Input
@@ -1025,6 +1034,7 @@ const Catalog = () => {
                   placeholder="Оптовая"
                   value={formPriceWholesale}
                   onChange={(e) => setFormPriceWholesale(e.target.value)}
+                  disabled={isFieldDisabled("price_wholesale")}
                   className="h-10 rounded-xl bg-secondary border-white/[0.08]"
                 />
                 {isOwner && (
@@ -1033,6 +1043,7 @@ const Catalog = () => {
                     placeholder="Закупочная"
                     value={formPricePurchase}
                     onChange={(e) => setFormPricePurchase(e.target.value)}
+                    disabled={isFieldDisabled("price_purchase")}
                     className="h-10 rounded-xl bg-secondary border-yellow-500/30"
                   />
                 )}
@@ -1046,18 +1057,21 @@ const Catalog = () => {
                   {existingImages.map((img) => (
                     <div key={img.id} className="relative w-16 h-16">
                       <img src={img.url} alt="" className="w-16 h-16 rounded-lg object-cover" />
-                      <button
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive flex items-center justify-center"
-                        onClick={() => setDeleteImageTarget(img)}
-                      >
-                        <Icon name="X" size={12} />
-                      </button>
+                      {!isFieldDisabled("images") && (
+                        <button
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive flex items-center justify-center"
+                          onClick={() => setDeleteImageTarget(img)}
+                        >
+                          <Icon name="X" size={12} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
+            {!isFieldDisabled("images") && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">
                 {editingProduct ? "Добавить фото" : "Фотографии"}
@@ -1104,19 +1118,28 @@ const Catalog = () => {
                 onChange={(e) => handleFileSelect(e.target.files)}
               />
             </div>
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
+            {editingProduct && !editMode && canEdit && (
+              <Button variant="outline" onClick={() => setEditMode(true)} className="rounded-xl border-white/[0.08] mr-auto">
+                <Icon name="Pencil" size={16} />
+                <span className="ml-1">Редактировать</span>
+              </Button>
+            )}
             <Button variant="outline" onClick={() => { setAddOpen(false); resetForm(); }} className="rounded-xl border-white/[0.08]">
-              Отмена
+              {editingProduct && !editMode ? "Закрыть" : "Отмена"}
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="rounded-xl">
-              {saving ? (
-                <Icon name="Loader2" size={18} className="animate-spin" />
-              ) : (
-                <Icon name="Check" size={18} />
-              )}
-              <span className="ml-2">{saving ? "Сохранение..." : editingProduct ? "Сохранить" : "Добавить"}</span>
-            </Button>
+            {(!editingProduct || editMode) && (
+              <Button onClick={handleSave} disabled={saving} className="rounded-xl">
+                {saving ? (
+                  <Icon name="Loader2" size={18} className="animate-spin" />
+                ) : (
+                  <Icon name="Check" size={18} />
+                )}
+                <span className="ml-2">{saving ? "Сохранение..." : editingProduct ? "Сохранить" : "Добавить"}</span>
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1324,129 +1347,6 @@ const Catalog = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={!!viewProduct} onOpenChange={(open) => { if (!open) setViewProduct(null); }}>
-        <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto p-0">
-          {viewProduct && (
-            <>
-              {viewProduct.images.length > 0 ? (
-                <div className="relative">
-                  <img
-                    src={viewProduct.images[viewImageIndex]?.url}
-                    alt={viewProduct.name}
-                    className="w-full aspect-square object-contain bg-black/20 rounded-t-2xl"
-                  />
-                  {viewProduct.images.length > 1 && (
-                    <>
-                      <button
-                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white"
-                        onClick={() => setViewImageIndex((prev) => (prev - 1 + viewProduct.images.length) % viewProduct.images.length)}
-                      >
-                        <Icon name="ChevronLeft" size={18} />
-                      </button>
-                      <button
-                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white"
-                        onClick={() => setViewImageIndex((prev) => (prev + 1) % viewProduct.images.length)}
-                      >
-                        <Icon name="ChevronRight" size={18} />
-                      </button>
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
-                        {viewProduct.images.map((_, i) => (
-                          <button
-                            key={i}
-                            className={`w-2 h-2 rounded-full transition-colors ${i === viewImageIndex ? "bg-white" : "bg-white/40"}`}
-                            onClick={() => setViewImageIndex(i)}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="w-full aspect-[2/1] bg-white/[0.04] flex items-center justify-center rounded-t-2xl">
-                  <Icon name="Image" size={48} className="text-muted-foreground" />
-                </div>
-              )}
-              <div className="px-5 pb-5 pt-3 space-y-3">
-                <h2 className="text-lg font-semibold">{viewProduct.name}</h2>
-                <div className="flex flex-wrap gap-1.5">
-                  {viewProduct.article && (
-                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
-                      Артикул: {viewProduct.article}
-                    </Badge>
-                  )}
-                  {viewProduct.brand && (
-                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
-                      {viewProduct.brand}
-                    </Badge>
-                  )}
-                  {viewProduct.supplier_code && (
-                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
-                      Код: {viewProduct.supplier_code}
-                    </Badge>
-                  )}
-                  {viewProduct.product_group && (
-                    <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
-                      Группа: {viewProduct.product_group}
-                    </Badge>
-                  )}
-                  <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">
-                    {viewProduct.category_name}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  {viewProduct.price_base != null && (
-                    <div className="rounded-lg bg-white/[0.04] p-2">
-                      <span className="text-xs text-muted-foreground">Базовая</span>
-                      <p className="font-medium">{viewProduct.price_base.toLocaleString()} ₽</p>
-                    </div>
-                  )}
-                  {viewProduct.price_retail != null && (
-                    <div className="rounded-lg bg-white/[0.04] p-2">
-                      <span className="text-xs text-muted-foreground">Розница</span>
-                      <p className="font-medium">{viewProduct.price_retail.toLocaleString()} ₽</p>
-                    </div>
-                  )}
-                  {viewProduct.price_wholesale != null && (
-                    <div className="rounded-lg bg-white/[0.04] p-2">
-                      <span className="text-xs text-muted-foreground">Опт</span>
-                      <p className="font-medium">{viewProduct.price_wholesale.toLocaleString()} ₽</p>
-                    </div>
-                  )}
-                  {isOwner && viewProduct.price_purchase != null && (
-                    <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-2">
-                      <span className="text-xs text-yellow-400">Закупка</span>
-                      <p className="font-medium text-yellow-400">{viewProduct.price_purchase.toLocaleString()} ₽</p>
-                    </div>
-                  )}
-                </div>
-                {viewProduct.barcodes && viewProduct.barcodes.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Штрихкоды: {viewProduct.barcodes.map((b: string | { barcode: string }) => typeof b === 'string' ? b : b.barcode).join(", ")}
-                  </p>
-                )}
-                {canEdit && (
-                  <Button
-                    className="w-full rounded-xl"
-                    onClick={() => {
-                      const p = viewProduct;
-                      setViewProduct(null);
-                      handleEdit(p);
-                    }}
-                  >
-                    <Icon name="Pencil" size={16} />
-                    <span className="ml-1">Редактировать</span>
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
-          {viewLoading && (
-            <div className="flex justify-center py-8">
-              <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
