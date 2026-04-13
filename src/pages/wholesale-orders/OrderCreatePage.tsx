@@ -19,6 +19,7 @@ import Icon from "@/components/ui/icon";
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
+const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 
 interface OrderLine {
   product_id: number;
@@ -34,7 +35,20 @@ interface ProductSearchItem {
   article: string | null;
   brand: string | null;
   supplier_code: string | null;
+  price_base: number | null;
+  price_retail: number | null;
   price_wholesale: number | null;
+  price_purchase: number | null;
+  product_group: string | null;
+}
+
+interface PricingRule {
+  id: number;
+  priority: number;
+  filter_type: string;
+  filter_value: string;
+  price_field: string;
+  formula: string;
 }
 
 const SEARCH_MODES = [
@@ -77,6 +91,8 @@ const OrderCreatePage = () => {
   const [barcodeResults, setBarcodeResults] = useState<ProductSearchItem[]>([]);
   const barcodeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [wholesalers, setWholesalers] = useState<{id: number; name: string}[]>([]);
+  const [wholesalerId, setWholesalerId] = useState<number | null>(null);
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [showWholesalerList, setShowWholesalerList] = useState(false);
   const wholesalerRef = useRef<HTMLDivElement>(null);
   const [orderStatus, setOrderStatus] = useState("new");
@@ -101,6 +117,43 @@ const OrderCreatePage = () => {
 
   const DRAFT_KEY = "order_draft_state";
 
+  const loadPricingRules = async (wId: number) => {
+    try {
+      const resp = await fetch(`${PRICING_URL}?wholesaler_id=${wId}`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setPricingRules(data.items || []);
+    } catch { setPricingRules([]); }
+  };
+
+  const calcPrice = (item: ProductSearchItem, rules: PricingRule[]): number => {
+    let matchedRule: PricingRule | null = null;
+    for (const rule of rules) {
+      if (rule.filter_type === "product_group" && item.product_group === rule.filter_value) {
+        matchedRule = rule;
+      }
+    }
+    if (matchedRule) {
+      const priceMap: Record<string, number | null> = {
+        price_base: item.price_base,
+        price_retail: item.price_retail,
+        price_wholesale: item.price_wholesale,
+        price_purchase: item.price_purchase,
+      };
+      let result = priceMap[matchedRule.price_field] || 0;
+      const regex = /([+\-*/])\s*([\d.]+)/g;
+      let m;
+      while ((m = regex.exec(matchedRule.formula)) !== null) {
+        const v = parseFloat(m[2]) || 0;
+        if (m[1] === "*") result *= v;
+        else if (m[1] === "/") result = v ? result / v : 0;
+        else if (m[1] === "+") result += v;
+        else if (m[1] === "-") result -= v;
+      }
+      return Math.round(result * 100) / 100;
+    }
+    return item.price_wholesale || 0;
+  };
+
   useEffect(() => {
     const saved = sessionStorage.getItem(DRAFT_KEY);
     if (saved) {
@@ -109,13 +162,17 @@ const OrderCreatePage = () => {
         if (d.customerName) setCustomerName(d.customerName);
         if (d.comment) setComment(d.comment);
         if (d.lines?.length) setLines(d.lines);
+        if (d.wholesalerId) {
+          setWholesalerId(d.wholesalerId);
+          loadPricingRules(d.wholesalerId);
+        }
       } catch { /* ignore */ }
     }
   }, []);
 
   useEffect(() => {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines }));
-  }, [customerName, comment, lines]);
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+  }, [customerName, comment, lines, wholesalerId]);
 
   useEffect(() => {
     if (!editId) return;
@@ -137,6 +194,13 @@ const OrderCreatePage = () => {
               price: item.price,
             }))
           );
+          const wResp = await fetch(WHOLESALERS_URL, { headers: authHeaders });
+          const wData = await wResp.json();
+          const found = (wData.items || []).find((w: {id: number; name: string}) => w.name === data.order.customer_name);
+          if (found) {
+            setWholesalerId(found.id);
+            loadPricingRules(found.id);
+          }
         }
       } catch {
         toast({ title: "Ошибка", description: "Не удалось загрузить заявку", variant: "destructive" });
@@ -182,7 +246,7 @@ const OrderCreatePage = () => {
         name: item.name,
         article: item.article,
         quantity: 1,
-        price: item.price_wholesale || 0,
+        price: calcPrice(item, pricingRules),
       },
       ...prev,
     ]);
@@ -274,9 +338,11 @@ const OrderCreatePage = () => {
     w.name.toLowerCase().includes(customerName.toLowerCase())
   );
 
-  const selectWholesaler = (name: string) => {
-    setCustomerName(name);
+  const selectWholesaler = (w: {id: number; name: string}) => {
+    setCustomerName(w.name);
+    setWholesalerId(w.id);
     setShowWholesalerList(false);
+    loadPricingRules(w.id);
   };
 
   const updateQty = (index: number, qty: number) => {
@@ -591,7 +657,7 @@ const OrderCreatePage = () => {
                   <button
                     key={w.id}
                     className="w-full text-left px-3 py-2 hover:bg-white/[0.06] transition-colors text-sm border-b border-white/[0.04] last:border-0"
-                    onClick={() => selectWholesaler(w.name)}
+                    onClick={() => selectWholesaler(w)}
                   >
                     {w.name}
                   </button>
