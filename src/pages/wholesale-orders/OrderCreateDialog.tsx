@@ -103,19 +103,19 @@ const OrderCreateDialog = ({
                         <Icon name="X" size={14} className="text-destructive" />
                       </button>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <Input
                         type="number"
                         value={line.quantity}
                         onChange={(e) => updateLineQty(i, parseInt(e.target.value) || 1)}
-                        className="w-16 h-8 text-center text-sm rounded-lg bg-secondary border-white/[0.08] px-1"
+                        className="w-14 min-w-0 h-8 text-center text-sm rounded-lg bg-secondary border-white/[0.08] px-1"
                         min={1}
                       />
                       <Input
                         type="number"
                         value={line.price}
                         onChange={(e) => updateLinePrice(i, parseFloat(e.target.value) || 0)}
-                        className="w-24 h-8 text-sm rounded-lg bg-secondary border-white/[0.08] px-2"
+                        className="w-20 min-w-0 h-8 text-sm rounded-lg bg-secondary border-white/[0.08] px-2"
                       />
                       <span className="text-sm font-medium ml-auto flex-shrink-0">
                         {(line.price * line.quantity).toLocaleString()} ₽
