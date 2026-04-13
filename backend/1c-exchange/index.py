@@ -140,6 +140,7 @@ def handle_import_products(conn, body):
             "brand": item.get("brand"),
             "supplier_code": item.get("supplier_code"),
             "product_group": item.get("product_group"),
+            "product_group_id": item.get("product_group_id"),
             "price_base": item.get("price_base"),
             "price_retail": item.get("price_retail"),
             "price_wholesale": item.get("price_wholesale"),
