@@ -69,6 +69,21 @@ const OrderCreatePage = () => {
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
 
+  const DRAFT_KEY = "order_draft_state";
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(DRAFT_KEY);
+    if (saved) {
+      sessionStorage.removeItem(DRAFT_KEY);
+      try {
+        const d = JSON.parse(saved);
+        if (d.customerName) setCustomerName(d.customerName);
+        if (d.comment) setComment(d.comment);
+        if (d.lines?.length) setLines(d.lines);
+      } catch { /* ignore */ }
+    }
+  }, []);
+
   useEffect(() => {
     if (!editId) return;
     const load = async () => {
@@ -366,7 +381,9 @@ const OrderCreatePage = () => {
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
                 onClick={() => {
-                  navigate("/admin/scan?returnTo=/admin/orders/create&key=scanned_order_barcodes");
+                  sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines }));
+                  const returnTo = editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create";
+                  navigate(`/admin/scan?returnTo=${returnTo}&key=scanned_order_barcodes`);
                 }}
               >
                 <Icon name="Camera" size={18} />
