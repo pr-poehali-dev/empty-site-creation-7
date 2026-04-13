@@ -1429,7 +1429,7 @@ const Catalog = () => {
                     onClick={() => {
                       const p = viewProduct;
                       setViewProduct(null);
-                      handleEdit(p);
+                      setTimeout(() => handleEdit(p), 300);
                     }}
                   >
                     <Icon name="Pencil" size={16} />
