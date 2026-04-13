@@ -184,11 +184,6 @@ const OrderCreatePage = () => {
             const rules = rulesPromise ? await rulesPromise : pricingRules;
             const newLines: OrderLine[] = [];
             for (const entry of validEntries) {
-              const existing = newLines.find(l => l.product_id === entry.product_id);
-              if (existing) {
-                existing.quantity += 1;
-                continue;
-              }
               try {
                 const resp = await fetch(`${PRODUCTS_URL}?id=${entry.product_id}`, { headers: authHeaders });
                 const data = await resp.json();
