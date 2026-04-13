@@ -74,7 +74,6 @@ const OrderCreatePage = () => {
   useEffect(() => {
     const saved = sessionStorage.getItem(DRAFT_KEY);
     if (saved) {
-      sessionStorage.removeItem(DRAFT_KEY);
       try {
         const d = JSON.parse(saved);
         if (d.customerName) setCustomerName(d.customerName);
@@ -83,6 +82,10 @@ const OrderCreatePage = () => {
       } catch { /* ignore */ }
     }
   }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines }));
+  }, [customerName, comment, lines]);
 
   useEffect(() => {
     if (!editId) return;
@@ -225,6 +228,7 @@ const OrderCreatePage = () => {
       });
       const data = await resp.json();
       if (resp.ok) {
+        sessionStorage.removeItem(DRAFT_KEY);
         toast({ title: editId ? "Заявка обновлена" : "Заявка создана" });
         navigate("/admin/orders");
       } else {
@@ -466,7 +470,7 @@ const OrderCreatePage = () => {
             </AlertDialogAction>
             <AlertDialogAction
               className="rounded-xl bg-destructive hover:bg-destructive/90"
-              onClick={() => navigate("/admin/orders")}
+              onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/admin/orders"); }}
             >
               Не сохранять
             </AlertDialogAction>
