@@ -250,8 +250,9 @@ const OrderCreatePage = () => {
       try {
         const resp = await fetch(`${PRODUCTS_URL}?distinct=product_group`, { headers: authHeaders });
         const data = await resp.json();
+        console.log("loadGroups response:", resp.status, data);
         if (resp.ok) setProductGroups(data.groups || []);
-      } catch { /* ignore */ }
+      } catch (e) { console.error("loadGroups error:", e); }
     };
     loadWholesalers();
     loadGroups();
