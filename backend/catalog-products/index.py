@@ -196,7 +196,8 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': items, 'total': len(items), 'page': 1, 'per_page': 50})}
 
-        if params.get('distinct') == 'product_group':
+        distinct_param = params.get('distinct', '').strip()
+        if distinct_param == 'product_group':
             cur.execute("SELECT DISTINCT product_group FROM products WHERE product_group IS NOT NULL AND product_group != '' AND is_archived = false ORDER BY product_group")
             groups = [r[0] for r in cur.fetchall()]
             cur.close()
