@@ -143,7 +143,6 @@ const OrderCreatePage = () => {
 
   const addItem = (item: ProductSearchItem) => {
     setLines((prev) => [
-      ...prev,
       {
         product_id: item.id,
         name: item.name,
@@ -151,6 +150,7 @@ const OrderCreatePage = () => {
         quantity: 1,
         price: item.price_wholesale || 0,
       },
+      ...prev,
     ]);
     setSearchQuery("");
     setSearchResults([]);
