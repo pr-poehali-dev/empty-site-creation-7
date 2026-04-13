@@ -12,7 +12,7 @@ import ManagerDashboard from "./pages/ManagerDashboard";
 import Catalog from "./pages/Catalog";
 import WholesaleOrders from "./pages/WholesaleOrders";
 import OrderPayments from "./pages/OrderPayments";
-import OrderItemsList from "./pages/OrderItemsList";
+import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
 import ScanBarcode from "./pages/ScanBarcode";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
@@ -36,7 +36,8 @@ const App = () => (
           <Route path="/admin/catalog" element={<ProtectedRoute><Catalog /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute><WholesaleOrders /></ProtectedRoute>} />
           <Route path="/admin/orders/:orderId/payments" element={<ProtectedRoute><OrderPayments /></ProtectedRoute>} />
-          <Route path="/admin/orders/new-list" element={<ProtectedRoute><OrderItemsList /></ProtectedRoute>} />
+          <Route path="/admin/orders/create" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
+          <Route path="/admin/orders/:id/edit" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
           <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />

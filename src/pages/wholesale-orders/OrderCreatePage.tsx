@@ -1,11 +1,30 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
+const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
+
+interface OrderLine {
+  product_id: number;
+  name: string;
+  article: string | null;
+  quantity: number;
+  price: number;
+}
 
 interface ProductSearchItem {
   id: number;
@@ -16,22 +35,16 @@ interface ProductSearchItem {
   price_wholesale: number | null;
 }
 
-interface OrderLine {
-  product_id: number;
-  name: string;
-  article: string | null;
-  quantity: number;
-  price: number;
-}
-
 const SEARCH_MODES = [
   { value: "all", label: "Все поля" },
   { value: "article", label: "Артикул" },
   { value: "supplier_code", label: "Код поставщика" },
 ] as const;
 
-const OrderItemsList = () => {
+const OrderCreatePage = () => {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const editId = id ? parseInt(id) : null;
   const token = localStorage.getItem("auth_token") || "";
   const { toast } = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -42,8 +55,14 @@ const OrderItemsList = () => {
     Authorization: `Bearer ${token}`,
   };
 
+  const [customerName, setCustomerName] = useState("");
+  const [comment, setComment] = useState("");
   const [lines, setLines] = useState<OrderLine[]>([]);
-  const [searchMode, setSearchMode] = useState<string>("all");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(!!editId);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+
+  const [searchMode, setSearchMode] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -51,46 +70,32 @@ const OrderItemsList = () => {
   const [barcodeValue, setBarcodeValue] = useState("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("draft_order_items");
-    let initialLines: OrderLine[] = [];
-    if (saved) {
-      try { initialLines = JSON.parse(saved); setLines(initialLines); } catch { /* ignore */ }
-    }
-
-    const scannedRaw = localStorage.getItem("scanned_order_barcodes");
-    if (scannedRaw) {
+    if (!editId) return;
+    const load = async () => {
       try {
-        const entries = JSON.parse(scannedRaw);
-        localStorage.removeItem("scanned_order_barcodes");
-        if (Array.isArray(entries) && entries.length > 0) {
-          let current = [...initialLines];
-          for (const entry of entries) {
-            const productId = entry?.product_id;
-            const name = entry?.name;
-            if (!productId) continue;
-            const existing = current.find((l) => l.product_id === productId);
-            if (existing) {
-              current = current.map((l) => l.product_id === productId ? { ...l, quantity: l.quantity + 1 } : l);
-            } else {
-              current = [...current, { product_id: productId, name: name || "Без названия", article: null, quantity: 1, price: 0 }];
-            }
-          }
-          setLines(current);
-          localStorage.setItem("draft_order_items", JSON.stringify(current));
+        const resp = await fetch(`${ORDERS_URL}?id=${editId}`, { headers: authHeaders });
+        const data = await resp.json();
+        if (resp.ok && data.order) {
+          setCustomerName(data.order.customer_name || "");
+          setComment(data.order.comment || "");
+          setLines(
+            (data.order.items || []).map((item: OrderLine) => ({
+              product_id: item.product_id,
+              name: item.name,
+              article: item.article,
+              quantity: item.quantity,
+              price: item.price,
+            }))
+          );
         }
-      } catch { /* ignore */ }
-    }
-  }, []);
-
-  const openScanner = () => {
-    localStorage.setItem("scanned_order_barcodes", JSON.stringify([]));
-    navigate("/admin/scan?returnTo=/admin/orders/new-list&key=scanned_order_barcodes");
-  };
-
-  const saveLines = (next: OrderLine[]) => {
-    setLines(next);
-    localStorage.setItem("draft_order_items", JSON.stringify(next));
-  };
+      } catch {
+        toast({ title: "Ошибка", description: "Не удалось загрузить заявку", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [editId]);
 
   const searchProducts = useCallback(async (query: string, mode: string) => {
     if (!query.trim() || query.trim().length < 2) {
@@ -121,14 +126,13 @@ const OrderItemsList = () => {
   const addItem = (item: ProductSearchItem) => {
     const existing = lines.find((l) => l.product_id === item.id);
     if (existing) {
-      const next = lines.map((l) =>
-        l.product_id === item.id ? { ...l, quantity: l.quantity + 1 } : l
+      setLines((prev) =>
+        prev.map((l) => (l.product_id === item.id ? { ...l, quantity: l.quantity + 1 } : l))
       );
-      saveLines(next);
       toast({ title: `${item.name} — ещё +1` });
     } else {
-      saveLines([
-        ...lines,
+      setLines((prev) => [
+        ...prev,
         {
           product_id: item.id,
           name: item.name,
@@ -167,44 +171,113 @@ const OrderItemsList = () => {
   };
 
   const updateQty = (index: number, qty: number) => {
-    const next = lines.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l));
-    saveLines(next);
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l)));
+  };
+
+  const updatePrice = (index: number, price: number) => {
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, price: Math.max(0, price) } : l)));
   };
 
   const removeLine = (index: number) => {
-    saveLines(lines.filter((_, i) => i !== index));
+    setLines((prev) => prev.filter((_, i) => i !== index));
   };
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
-  const handleDone = () => {
-    localStorage.setItem("draft_order_items", JSON.stringify(lines));
-    localStorage.setItem("draft_order_returning", "1");
-    navigate("/admin/orders");
+  const handleSave = async () => {
+    if (!customerName.trim()) {
+      toast({ title: "Ошибка", description: "Укажите имя оптовика", variant: "destructive" });
+      return;
+    }
+    if (lines.length === 0) {
+      toast({ title: "Ошибка", description: "Добавьте хотя бы одну позицию", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const url = editId ? `${ORDERS_URL}?id=${editId}` : ORDERS_URL;
+      const resp = await fetch(url, {
+        method: editId ? "PUT" : "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          customer_name: customerName.trim(),
+          comment: comment.trim() || null,
+          items: lines.map((l) => ({
+            product_id: l.product_id,
+            quantity: l.quantity,
+            price: l.price,
+          })),
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: editId ? "Заявка обновлена" : "Заявка создана" });
+        navigate("/admin/orders");
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось сохранить заявку", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBack = () => {
+    if (customerName.trim() || lines.length > 0) {
+      setShowExitDialog(true);
+    } else {
+      navigate("/admin/orders");
+    }
   };
 
   const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-white/[0.08] bg-card flex-shrink-0">
+      <header className="border-b border-white/[0.08] bg-card flex-shrink-0 sticky top-0 z-20">
         <div className="max-w-3xl mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleDone}>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleBack}>
               <Icon name="ArrowLeft" size={18} />
             </Button>
-            <h1 className="text-lg font-semibold">Список позиций</h1>
+            <h1 className="text-lg font-semibold">{editId ? "Редактирование" : "Новая заявка"}</h1>
           </div>
-          <Button className="h-9" onClick={handleDone}>
-            <Icon name="Check" size={16} />
-            <span className="ml-1">Готово</span>
-            {lines.length > 0 && <span className="ml-1">({lines.length})</span>}
+          <Button className="h-9 rounded-xl" onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <Icon name="Loader2" size={16} className="animate-spin" />
+            ) : (
+              <Icon name="Check" size={16} />
+            )}
+            <span className="ml-1">{saving ? "..." : "Сохранить"}</span>
           </Button>
         </div>
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
-        {/* Search mode tabs */}
+        <div className="flex gap-2 mb-4">
+          <Input
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            placeholder="Оптовик *"
+            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
+          />
+          <Input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Комментарий"
+            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
+          />
+        </div>
+
         <div className="flex gap-1 mb-3 overflow-x-auto">
           {SEARCH_MODES.map((mode) => (
             <button
@@ -224,7 +297,6 @@ const OrderItemsList = () => {
           ))}
         </div>
 
-        {/* Search + barcode row */}
         <div className="flex gap-2 mb-3">
           <div className="relative flex-1">
             <Input
@@ -278,7 +350,6 @@ const OrderItemsList = () => {
           </button>
         </div>
 
-        {/* Barcode input */}
         {showBarcode && (
           <div className="flex gap-2 mb-3">
             <Input
@@ -294,7 +365,9 @@ const OrderItemsList = () => {
             {isMobile && (
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
-                onClick={openScanner}
+                onClick={() => {
+                  navigate("/admin/scan?returnTo=/admin/orders/create&key=scanned_order_barcodes");
+                }}
               >
                 <Icon name="Camera" size={18} />
               </button>
@@ -302,60 +375,88 @@ const OrderItemsList = () => {
           </div>
         )}
 
-        {/* Items list */}
+        {lines.length > 0 && (
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-muted-foreground">Позиции ({lines.length})</p>
+            <p className="text-sm font-semibold">Итого: {totalAmount.toLocaleString()} ₽</p>
+          </div>
+        )}
+
         {lines.length === 0 ? (
           <div className="text-center py-12">
-            <Icon name="ListPlus" size={48} className="text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Список пуст</p>
-            <p className="text-sm text-muted-foreground mt-1">Найдите товар через поиск или штрихкод</p>
+            <Icon name="PackageSearch" size={48} className="text-muted-foreground mx-auto mb-3" />
+            <p className="text-muted-foreground">Найдите и добавьте товары</p>
           </div>
         ) : (
           <div className="space-y-1.5">
             {lines.map((line, i) => (
               <div
                 key={line.product_id}
-                className="rounded-xl border border-white/[0.08] bg-card p-3 flex items-center gap-2"
+                className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm truncate">{line.name}</p>
-                  {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
-                  <p className="text-xs text-muted-foreground">{line.price.toLocaleString()} ₽ × {line.quantity}</p>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm truncate">{line.name}</p>
+                    {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
+                  </div>
                   <button
-                    className="w-7 h-7 rounded-md bg-white/[0.06] flex items-center justify-center"
-                    onClick={() => updateQty(i, line.quantity - 1)}
+                    className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
+                    onClick={() => removeLine(i)}
                   >
-                    <Icon name="Minus" size={14} />
-                  </button>
-                  <span className="w-8 text-center text-sm font-medium">{line.quantity}</span>
-                  <button
-                    className="w-7 h-7 rounded-md bg-white/[0.06] flex items-center justify-center"
-                    onClick={() => updateQty(i, line.quantity + 1)}
-                  >
-                    <Icon name="Plus" size={14} />
+                    <Icon name="X" size={14} className="text-destructive" />
                   </button>
                 </div>
-                <span className="text-sm font-medium w-20 text-right flex-shrink-0">
-                  {(line.price * line.quantity).toLocaleString()} ₽
-                </span>
-                <button
-                  className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
-                  onClick={() => removeLine(i)}
-                >
-                  <Icon name="X" size={14} className="text-destructive" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={line.quantity}
+                    onChange={(e) => updateQty(i, parseInt(e.target.value) || 1)}
+                    className="w-16 h-8 text-center text-sm rounded-lg bg-secondary border-white/[0.08] px-1"
+                    min={1}
+                  />
+                  <Input
+                    type="number"
+                    value={line.price}
+                    onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
+                    className="w-24 h-8 text-sm rounded-lg bg-secondary border-white/[0.08] px-2"
+                  />
+                  <span className="text-sm font-medium ml-auto flex-shrink-0">
+                    {(line.price * line.quantity).toLocaleString()} ₽
+                  </span>
+                </div>
               </div>
             ))}
-            <div className="flex justify-end pt-3 border-t border-white/[0.08]">
-              <p className="text-base font-semibold">Итого: {totalAmount.toLocaleString()} ₽</p>
-            </div>
           </div>
         )}
       </main>
 
+      <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Выйти из заявки?</AlertDialogTitle>
+            <AlertDialogDescription>Несохранённые данные будут потеряны</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel className="rounded-xl border-white/[0.08]">Остаться</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl"
+              onClick={() => {
+                handleSave();
+              }}
+            >
+              Сохранить
+            </AlertDialogAction>
+            <AlertDialogAction
+              className="rounded-xl bg-destructive hover:bg-destructive/90"
+              onClick={() => navigate("/admin/orders")}
+            >
+              Не сохранять
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
 
-export default OrderItemsList;
+export default OrderCreatePage;
