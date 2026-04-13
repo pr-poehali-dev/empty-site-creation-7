@@ -278,21 +278,6 @@ const OrderCreatePage = () => {
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
-        <div className="flex gap-2 mb-4">
-          <Input
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Оптовик *"
-            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
-          />
-          <Input
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Комментарий"
-            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
-          />
-        </div>
-
         <div className="flex gap-1 mb-3 overflow-x-auto">
           {SEARCH_MODES.map((mode) => (
             <button
@@ -391,6 +376,21 @@ const OrderCreatePage = () => {
             )}
           </div>
         )}
+
+        <div className="flex gap-2 mb-4">
+          <Input
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            placeholder="Оптовик *"
+            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
+          />
+          <Input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Комментарий"
+            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
+          />
+        </div>
 
         {lines.length > 0 && (
           <div className="flex items-center justify-between mb-2">
