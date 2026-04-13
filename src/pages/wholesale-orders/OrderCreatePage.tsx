@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -68,6 +69,25 @@ const OrderCreatePage = () => {
   const [searching, setSearching] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
+  const [orderStatus, setOrderStatus] = useState("new");
+  const [paymentStatus, setPaymentStatus] = useState("not_paid");
+  const [statusUpdating, setStatusUpdating] = useState(false);
+
+  const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
+  const isOwner = user.role === "owner";
+
+  const statusLabels: Record<string, { label: string; className: string }> = {
+    new: { label: "Новая", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+    confirmed: { label: "Подтверждена", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+    shipped: { label: "Отгружена", className: "bg-red-500/20 text-red-400 border-red-500/30" },
+    completed: { label: "Завершена", className: "bg-green-500/20 text-green-400 border-green-500/30" },
+    archived: { label: "Архив", className: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
+  };
+
+  const NEXT_STATUS: Record<string, { status: string; label: string; icon: string }> = {
+    new: { status: "confirmed", label: "Подтвердить", icon: "CheckCircle" },
+    confirmed: { status: "shipped", label: "Отгружена", icon: "Truck" },
+  };
 
   const DRAFT_KEY = "order_draft_state";
 
@@ -96,6 +116,8 @@ const OrderCreatePage = () => {
         if (resp.ok && data.order) {
           setCustomerName(data.order.customer_name || "");
           setComment(data.order.comment || "");
+          setOrderStatus(data.order.status || "new");
+          setPaymentStatus(data.order.payment_status || "not_paid");
           setLines(
             (data.order.items || []).map((item: OrderLine) => ({
               product_id: item.product_id,
@@ -242,6 +264,49 @@ const OrderCreatePage = () => {
     }
   };
 
+  const updateOrderStatus = async (newStatus: string) => {
+    if (!editId) return;
+    setStatusUpdating(true);
+    try {
+      const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (resp.ok) {
+        toast({ title: "Статус обновлён" });
+        navigate("/admin/orders");
+      } else {
+        const data = await resp.json();
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось обновить статус", variant: "destructive" });
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const archiveOrder = async () => {
+    if (!editId) return;
+    try {
+      const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({ status: "archived" }),
+      });
+      if (resp.ok) {
+        toast({ title: "Заявка удалена" });
+        navigate("/admin/orders");
+      } else {
+        const data = await resp.json();
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось удалить", variant: "destructive" });
+    }
+  };
+
   const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent);
 
   if (loading) {
@@ -261,6 +326,11 @@ const OrderCreatePage = () => {
               <Icon name="ArrowLeft" size={18} />
             </Button>
             <h1 className="text-lg font-semibold">{editId ? "Редактирование" : "Новая заявка"}</h1>
+            {editId && (
+              <Badge className={`${(statusLabels[orderStatus] || statusLabels.new).className} text-xs`}>
+                {(statusLabels[orderStatus] || statusLabels.new).label}
+              </Badge>
+            )}
           </div>
           <Button className="h-9 rounded-xl" onClick={handleSave} disabled={saving}>
             {saving ? (
@@ -424,6 +494,62 @@ const OrderCreatePage = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {editId && orderStatus !== "archived" && orderStatus !== "completed" && (
+          <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              {NEXT_STATUS[orderStatus] && (
+                <Button
+                  className="rounded-xl flex-1"
+                  disabled={statusUpdating}
+                  onClick={() => updateOrderStatus(NEXT_STATUS[orderStatus].status)}
+                >
+                  {statusUpdating ? (
+                    <Icon name="Loader2" size={16} className="animate-spin" />
+                  ) : (
+                    <Icon name={NEXT_STATUS[orderStatus].icon} size={16} />
+                  )}
+                  <span className="ml-2">{NEXT_STATUS[orderStatus].label}</span>
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="rounded-xl border-white/[0.08] flex-1"
+                onClick={() => navigate(`/admin/orders/${editId}/payments`)}
+              >
+                <Icon name="Banknote" size={16} />
+                <span className="ml-2">Оплата</span>
+              </Button>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {orderStatus === "confirmed" && (
+                <Button variant="outline" className="rounded-xl border-white/[0.08]" disabled={statusUpdating} onClick={() => updateOrderStatus("new")}>
+                  <Icon name="Undo2" size={16} />
+                  <span className="ml-1">Отменить подтверждение</span>
+                </Button>
+              )}
+              {orderStatus === "shipped" && (
+                <Button variant="outline" className="rounded-xl border-white/[0.08]" disabled={statusUpdating} onClick={() => updateOrderStatus("confirmed")}>
+                  <Icon name="Undo2" size={16} />
+                  <span className="ml-1">Отменить отгрузку</span>
+                </Button>
+              )}
+              <Button variant="outline" onClick={archiveOrder} className="rounded-xl border-white/[0.08] text-destructive hover:text-destructive">
+                <Icon name="Trash2" size={16} />
+                <span className="ml-1">Удалить</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {editId && orderStatus === "archived" && isOwner && (
+          <div className="mt-4 pt-4 border-t border-white/[0.08]">
+            <Button className="rounded-xl" disabled={statusUpdating} onClick={() => updateOrderStatus("restore")}>
+              {statusUpdating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="ArchiveRestore" size={16} />}
+              <span className="ml-2">Вернуть в работу</span>
+            </Button>
           </div>
         )}
       </main>
