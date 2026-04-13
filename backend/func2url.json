@@ -1,4 +1,5 @@
 {
+  "wholesalers": "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f",
   "1c-exchange": "https://functions.poehali.dev/6839fcc9-3788-4a5f-95af-8c1dcb80f890",
   "order-payments": "https://functions.poehali.dev/e4dc8d0d-913c-40e0-84e8-2bd0c73c1d1c",
   "catalog-products": "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5",

@@ -379,6 +379,22 @@ const AdminDashboard = () => {
           <Button
             variant="outline"
             className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/wholesalers")}
+          >
+            <Icon name="Users" size={20} />
+            <span className="font-medium">Оптовики</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/pricing")}
+          >
+            <Icon name="Calculator" size={20} />
+            <span className="font-medium">Определение цен</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
             onClick={() => navigate("/admin/instructions")}
           >
             <Icon name="BookOpen" size={20} />

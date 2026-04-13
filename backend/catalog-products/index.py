@@ -150,51 +150,51 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'item': item})}
 
         barcode = params.get('barcode', '').strip()
-        if barcode:
-            cur.execute(
-                "SELECT product_id FROM product_barcodes WHERE barcode = %s LIMIT 1",
-                (barcode,)
-            )
-            bc_row = cur.fetchone()
-            if not bc_row:
+        barcode_search = params.get('barcode_search', '').strip()
+        if barcode or barcode_search:
+            price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
+            if barcode:
+                cur.execute("SELECT product_id FROM product_barcodes WHERE barcode = %s LIMIT 1", (barcode,))
+                bc_row = cur.fetchone()
+                product_ids = [bc_row[0]] if bc_row else []
+            else:
+                cur.execute("SELECT DISTINCT product_id FROM product_barcodes WHERE barcode LIKE %s LIMIT 10", (f"%{barcode_search}%",))
+                product_ids = [r[0] for r in cur.fetchall()]
+
+            if not product_ids:
                 cur.close()
                 conn.close()
                 return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}
 
-            found_id = bc_row[0]
-            price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
+            placeholders = ','.join(['%s'] * len(product_ids))
             cur.execute(
                 f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                            p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
                            p.created_at, c.name as category_name, p.product_group, p.external_id
                     FROM products p
                     JOIN categories c ON c.id = p.category_id
-                    WHERE p.id = %s""",
-                (found_id,)
+                    WHERE p.id IN ({placeholders})""",
+                tuple(product_ids)
             )
-            r = cur.fetchone()
-            if not r:
-                cur.close()
-                conn.close()
-                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}
-
-            item = {
-                'id': r[0], 'category_id': r[1], 'name': r[2], 'article': r[3],
-                'brand': r[4], 'supplier_code': r[5],
-                'price_base': float(r[6]) if r[6] else None,
-                'price_retail': float(r[7]) if r[7] else None,
-                'price_wholesale': float(r[8]) if r[8] else None,
-                'price_purchase': float(r[9]) if r[9] else None,
-                'created_at': str(r[10]) if r[10] else None,
-                'category_name': r[11],
-                'product_group': r[12],
-                'external_id': r[13],
-                'images': [],
-                'barcodes': []
-            }
+            rows = cur.fetchall()
+            items = []
+            for r in rows:
+                items.append({
+                    'id': r[0], 'category_id': r[1], 'name': r[2], 'article': r[3],
+                    'brand': r[4], 'supplier_code': r[5],
+                    'price_base': float(r[6]) if r[6] else None,
+                    'price_retail': float(r[7]) if r[7] else None,
+                    'price_wholesale': float(r[8]) if r[8] else None,
+                    'price_purchase': float(r[9]) if r[9] else None,
+                    'created_at': str(r[10]) if r[10] else None,
+                    'category_name': r[11],
+                    'product_group': r[12],
+                    'external_id': r[13],
+                    'images': [], 'barcodes': []
+                })
             cur.close()
             conn.close()
-            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [item], 'total': 1, 'page': 1, 'per_page': 50})}
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': items, 'total': len(items), 'page': 1, 'per_page': 50})}
 
         category_id = params.get('category_id')
         search = params.get('search', '').strip()
@@ -221,6 +221,9 @@ def handler(event: dict, context) -> dict:
                 values.append(like)
             elif search_type == 'supplier_code':
                 conditions.append("p.supplier_code ILIKE %s")
+                values.append(like)
+            elif search_type == 'product_group':
+                conditions.append("p.product_group ILIKE %s")
                 values.append(like)
             else:
                 conditions.append("(p.name ILIKE %s OR p.article ILIKE %s OR p.brand ILIKE %s OR p.supplier_code ILIKE %s OR p.product_group ILIKE %s)")

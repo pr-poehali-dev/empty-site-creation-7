@@ -18,6 +18,7 @@ import Icon from "@/components/ui/icon";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
+const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
 
 interface OrderLine {
   product_id: number;
@@ -40,6 +41,7 @@ const SEARCH_MODES = [
   { value: "all", label: "Все поля" },
   { value: "article", label: "Артикул" },
   { value: "supplier_code", label: "Код поставщика" },
+  { value: "product_group", label: "Группа" },
 ] as const;
 
 const OrderCreatePage = () => {
@@ -69,6 +71,11 @@ const OrderCreatePage = () => {
   const [searching, setSearching] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeValue, setBarcodeValue] = useState("");
+  const [barcodeResults, setBarcodeResults] = useState<ProductSearchItem[]>([]);
+  const barcodeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const [wholesalers, setWholesalers] = useState<{id: number; name: string}[]>([]);
+  const [showWholesalerList, setShowWholesalerList] = useState(false);
+  const wholesalerRef = useRef<HTMLDivElement>(null);
   const [orderStatus, setOrderStatus] = useState("new");
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
@@ -200,6 +207,60 @@ const OrderCreatePage = () => {
     } finally {
       setSearching(false);
     }
+  };
+
+  const searchBarcodePartial = useCallback(async (query: string) => {
+    if (!query.trim() || query.trim().length < 2) {
+      setBarcodeResults([]);
+      return;
+    }
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?barcode_search=${encodeURIComponent(query)}&per_page=10`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setBarcodeResults(data.items || []);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const handleBarcodeInput = (value: string) => {
+    setBarcodeValue(value);
+    if (barcodeDebounceRef.current) clearTimeout(barcodeDebounceRef.current);
+    barcodeDebounceRef.current = setTimeout(() => searchBarcodePartial(value), 300);
+  };
+
+  const addItemFromBarcode = (item: ProductSearchItem) => {
+    addItem(item);
+    setBarcodeValue("");
+    setBarcodeResults([]);
+  };
+
+  useEffect(() => {
+    const loadWholesalers = async () => {
+      try {
+        const resp = await fetch(WHOLESALERS_URL, { headers: authHeaders });
+        const data = await resp.json();
+        if (resp.ok) setWholesalers(data.items || []);
+      } catch { /* ignore */ }
+    };
+    loadWholesalers();
+  }, []);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (wholesalerRef.current && !wholesalerRef.current.contains(e.target as Node)) {
+        setShowWholesalerList(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filteredWholesalers = wholesalers.filter(w =>
+    w.name.toLowerCase().includes(customerName.toLowerCase())
+  );
+
+  const selectWholesaler = (name: string) => {
+    setCustomerName(name);
+    setShowWholesalerList(false);
   };
 
   const updateQty = (index: number, qty: number) => {
@@ -417,17 +478,42 @@ const OrderCreatePage = () => {
         </div>
 
         {showBarcode && (
-          <div className="flex gap-2 mb-3">
-            <Input
-              ref={barcodeInputRef}
-              placeholder="Введите штрихкод..."
-              value={barcodeValue}
-              onChange={(e) => setBarcodeValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") searchByBarcode(barcodeValue);
-              }}
-              className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
-            />
+          <div className="relative flex gap-2 mb-3">
+            <div className="relative flex-1">
+              <Input
+                ref={barcodeInputRef}
+                placeholder="Введите штрихкод..."
+                value={barcodeValue}
+                onChange={(e) => handleBarcodeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { searchByBarcode(barcodeValue); setBarcodeResults([]); }
+                }}
+                className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm"
+              />
+              {barcodeResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-60 overflow-y-auto shadow-lg">
+                  {barcodeResults.map((item) => (
+                    <button
+                      key={item.id}
+                      className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors text-sm flex items-center justify-between border-b border-white/[0.04] last:border-0"
+                      onClick={() => addItemFromBarcode(item)}
+                    >
+                      <div className="min-w-0">
+                        <span className="block truncate">{item.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {item.article && `${item.article}`}
+                          {item.article && item.brand && " · "}
+                          {item.brand || ""}
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                        {item.price_wholesale ? `${item.price_wholesale.toLocaleString()} ₽` : "—"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {isMobile && (
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
@@ -444,12 +530,28 @@ const OrderCreatePage = () => {
         )}
 
         <div className="flex gap-2 mb-4">
-          <Input
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Оптовик *"
-            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
-          />
+          <div className="relative flex-1" ref={wholesalerRef}>
+            <Input
+              value={customerName}
+              onChange={(e) => { setCustomerName(e.target.value); setShowWholesalerList(true); }}
+              onFocus={() => setShowWholesalerList(true)}
+              placeholder="Оптовик *"
+              className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
+            />
+            {showWholesalerList && (customerName === "" || filteredWholesalers.length > 0) && (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                {filteredWholesalers.map((w) => (
+                  <button
+                    key={w.id}
+                    className="w-full text-left px-3 py-2 hover:bg-white/[0.06] transition-colors text-sm border-b border-white/[0.04] last:border-0"
+                    onClick={() => selectWholesaler(w.name)}
+                  >
+                    {w.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Input
             value={comment}
             onChange={(e) => setComment(e.target.value)}

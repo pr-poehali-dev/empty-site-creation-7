@@ -1,0 +1,1 @@
+{"tests": [{"name": "Get wholesalers list", "method": "GET", "path": "/", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"}]}

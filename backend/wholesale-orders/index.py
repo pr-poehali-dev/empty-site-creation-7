@@ -192,6 +192,8 @@ def handler(event: dict, context) -> dict:
         )
         order_id = cur.fetchone()[0]
 
+        cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name,))
+
         for item in items:
             qty = int(item.get('quantity', 1))
             price = float(item.get('price', 0))
@@ -227,6 +229,7 @@ def handler(event: dict, context) -> dict:
 
         if customer_name is not None:
             cur.execute("UPDATE wholesale_orders SET customer_name = %s WHERE id = %s", (customer_name.strip(), order_id))
+            cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name.strip(),))
         if 'comment' in body:
             cur.execute("UPDATE wholesale_orders SET comment = %s WHERE id = %s", (comment_val, order_id))
 

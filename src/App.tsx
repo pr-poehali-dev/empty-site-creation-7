@@ -16,6 +16,8 @@ import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
 import ScanBarcode from "./pages/ScanBarcode";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
+import Wholesalers from "./pages/Wholesalers";
+import PricingRules from "./pages/PricingRules";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -41,6 +43,8 @@ const App = () => (
           <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />
+          <Route path="/admin/wholesalers" element={<ProtectedRoute><Wholesalers /></ProtectedRoute>} />
+          <Route path="/admin/pricing" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
