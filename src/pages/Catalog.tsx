@@ -98,6 +98,7 @@ const Catalog = () => {
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Product | null>(null);
   const [deleteImageTarget, setDeleteImageTarget] = useState<ProductImage | null>(null);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [pendingEditProduct, setPendingEditProduct] = useState<Product | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewImageIndex, setViewImageIndex] = useState(0);
   const [formName, setFormName] = useState("");
@@ -1323,7 +1324,7 @@ const Catalog = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={!!viewProduct} onOpenChange={(open) => { if (!open) setViewProduct(null); }}>
+      <Dialog open={!!viewProduct} onOpenChange={(open) => { if (!open) { setViewProduct(null); if (pendingEditProduct) { handleEdit(pendingEditProduct); setPendingEditProduct(null); } } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card sm:max-w-lg max-h-[90vh] overflow-y-auto p-0">
           {viewProduct && (
             <>
@@ -1427,9 +1428,8 @@ const Catalog = () => {
                   <Button
                     className="w-full rounded-xl"
                     onClick={() => {
-                      const p = viewProduct;
+                      setPendingEditProduct(viewProduct);
                       setViewProduct(null);
-                      setTimeout(() => handleEdit(p), 300);
                     }}
                   >
                     <Icon name="Pencil" size={16} />
