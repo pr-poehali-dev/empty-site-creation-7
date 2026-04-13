@@ -167,7 +167,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав на создание заявок'})}
 
         customer_name = body.get('customer_name', '').strip()
-        comment = body.get('comment', '').strip() or None
+        comment = (body.get('comment') or '').strip() or None
         items = body.get('items', [])
 
         if not customer_name:
