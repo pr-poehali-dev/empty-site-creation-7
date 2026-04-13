@@ -139,14 +139,13 @@ const OrderCreatePage = () => {
   };
 
   const addItem = (item: ProductSearchItem) => {
-    const existing = lines.find((l) => l.product_id === item.id);
-    if (existing) {
-      setLines((prev) =>
-        prev.map((l) => (l.product_id === item.id ? { ...l, quantity: l.quantity + 1 } : l))
-      );
-      toast({ title: `${item.name} — ещё +1` });
-    } else {
-      setLines((prev) => [
+    setLines((prev) => {
+      const existing = prev.find((l) => l.product_id === item.id);
+      if (existing) {
+        toast({ title: `${item.name} — ещё +1` });
+        return prev.map((l) => (l.product_id === item.id ? { ...l, quantity: l.quantity + 1 } : l));
+      }
+      return [
         ...prev,
         {
           product_id: item.id,
@@ -155,8 +154,8 @@ const OrderCreatePage = () => {
           quantity: 1,
           price: item.price_wholesale || 0,
         },
-      ]);
-    }
+      ];
+    });
     setSearchQuery("");
     setSearchResults([]);
   };
