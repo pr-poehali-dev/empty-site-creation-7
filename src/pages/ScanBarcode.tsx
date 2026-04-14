@@ -8,6 +8,7 @@ const MAX_VISIBLE = 5;
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 const NEW_BARCODES_URL = "https://functions.poehali.dev/753c16bb-172a-460b-a7b4-2ffc3c26b6f7";
+const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 
 interface DetectedBarcode {
   rawValue: string;
@@ -80,6 +81,13 @@ const ScanBarcode = () => {
   const [searchResults, setSearchResults] = useState<{ id: number; name: string; article: string | null; brand: string | null }[]>([]);
   const [searching, setSearching] = useState(false);
   const [saveBarcodeDialog, setSaveBarcodeDialog] = useState<{ barcode: string; productId: number; productName: string } | null>(null);
+  const [tempResults, setTempResults] = useState<{ id: number; brand: string; article: string; price: number }[]>([]);
+  const [showTempForm, setShowTempForm] = useState(false);
+  const [tempBrand, setTempBrand] = useState("");
+  const [tempArticle, setTempArticle] = useState("");
+  const [tempQty, setTempQty] = useState("1");
+  const [tempPrice, setTempPrice] = useState("");
+  const [savingTemp, setSavingTemp] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const token = localStorage.getItem("auth_token") || "";
@@ -258,14 +266,20 @@ const ScanBarcode = () => {
   const doSearch = useCallback(async (query: string, mode: "all" | "article") => {
     if (!query.trim() || query.trim().length < 2) {
       setSearchResults([]);
+      setTempResults([]);
       return;
     }
     setSearching(true);
     try {
       const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
-      const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
-      const data = await resp.json();
-      if (resp.ok) setSearchResults(data.items || []);
+      const [prodResp, tempResp] = await Promise.all([
+        fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders }),
+        fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`, { headers: authHeaders }),
+      ]);
+      const prodData = await prodResp.json();
+      const tempData = await tempResp.json();
+      if (prodResp.ok) setSearchResults(prodData.items || []);
+      if (tempResp.ok) setTempResults(tempData.items || []);
     } catch { /* ignore */ }
     setSearching(false);
   }, [token]);
@@ -292,6 +306,70 @@ const ScanBarcode = () => {
     });
     setSearchItem(null);
     setSaveBarcodeDialog({ barcode, productId: product.id, productName: product.name });
+  };
+
+  const selectTempProduct = (tp: { id: number; brand: string; article: string }) => {
+    if (!searchItem) return;
+    const barcode = searchItem.barcode;
+    const name = `${tp.brand} ${tp.article}`;
+    setScannedItems((prev) =>
+      prev.map((s) => s.id === searchItem.id ? { ...s, name, found: true, product_id: null } : s)
+    );
+    setCollected((prev) => {
+      const idx = prev.findIndex((e) => e.barcode === barcode && !e.product_id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], product_id: null, name };
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+    setSearchItem(null);
+    fetch(NEW_BARCODES_URL, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ barcode, nomenclature_id: null, save_to_product: false }),
+    }).catch(() => {});
+  };
+
+  const saveTempAndSelect = async () => {
+    if (!searchItem || !tempBrand.trim() || !tempArticle.trim()) return;
+    setSavingTemp(true);
+    try {
+      const resp = await fetch(TEMP_PRODUCTS_URL, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          brand: tempBrand.trim(),
+          article: tempArticle.trim(),
+          quantity: parseFloat(tempQty) || 1,
+          price: parseFloat(tempPrice) || 0,
+        }),
+      });
+      if (resp.ok) {
+        const barcode = searchItem.barcode;
+        const name = `${tempBrand.trim()} ${tempArticle.trim()}`;
+        setScannedItems((prev) =>
+          prev.map((s) => s.id === searchItem.id ? { ...s, name, found: true, product_id: null } : s)
+        );
+        setCollected((prev) => {
+          const idx = prev.findIndex((e) => e.barcode === barcode && !e.product_id);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          next[idx] = { ...next[idx], product_id: null, name };
+          localStorage.setItem(storageKey, JSON.stringify(next));
+          return next;
+        });
+        setSearchItem(null);
+        setShowTempForm(false);
+        setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice("");
+        fetch(NEW_BARCODES_URL, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ barcode, nomenclature_id: null, save_to_product: false }),
+        }).catch(() => {});
+      }
+    } catch { /* ignore */ }
+    setSavingTemp(false);
   };
 
   const saveNewBarcode = async (save: boolean) => {
@@ -617,25 +695,66 @@ const ScanBarcode = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4">
-            {searchResults.length === 0 && searchQuery.trim().length >= 2 && !searching ? (
-              <p className="text-white/30 text-xs text-center mt-8">Ничего не найдено</p>
-            ) : (
-              <div className="space-y-1">
-                {searchResults.map((p) => (
-                  <button
-                    key={p.id}
-                    className="w-full text-left px-3 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
-                    onClick={() => selectProduct(p)}
-                  >
-                    <p className="text-white text-sm truncate">{p.name}</p>
-                    <p className="text-white/40 text-xs">
-                      {p.article && p.article}
-                      {p.article && p.brand && " · "}
-                      {p.brand || ""}
-                    </p>
-                  </button>
-                ))}
+            {showTempForm ? (
+              <div className="p-3 rounded-xl border border-red-500/30 bg-red-950/20">
+                <p className="text-xs text-red-400 mb-2 font-medium">Новый товар</p>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <Input placeholder="Бренд *" value={tempBrand} onChange={(e) => setTempBrand(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                  <Input placeholder="Артикул *" value={tempArticle} onChange={(e) => setTempArticle(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <Input placeholder="Кол-во" type="number" value={tempQty} onChange={(e) => setTempQty(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                  <Input placeholder="Цена" type="number" value={tempPrice} onChange={(e) => setTempPrice(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" className="rounded-lg flex-1" onClick={saveTempAndSelect} disabled={savingTemp || !tempBrand.trim() || !tempArticle.trim()}>
+                    {savingTemp ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Check" size={14} />}
+                    <span className="ml-1">Добавить</span>
+                  </Button>
+                  <Button size="sm" variant="ghost" className="rounded-lg text-white/50" onClick={() => setShowTempForm(false)}>Отмена</Button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  {tempResults.map((tp) => (
+                    <button
+                      key={`tp-${tp.id}`}
+                      className="w-full text-left px-3 py-2.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 transition-colors"
+                      onClick={() => selectTempProduct(tp)}
+                    >
+                      <p className="text-white text-sm truncate">{tp.brand} {tp.article}</p>
+                      <p className="text-amber-400 text-xs flex items-center gap-1">
+                        <Icon name="AlertTriangle" size={10} /> временный · {tp.price ? `${tp.price.toLocaleString()} ₽` : "—"}
+                      </p>
+                    </button>
+                  ))}
+                  {searchResults.map((p) => (
+                    <button
+                      key={p.id}
+                      className="w-full text-left px-3 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+                      onClick={() => selectProduct(p)}
+                    >
+                      <p className="text-white text-sm truncate">{p.name}</p>
+                      <p className="text-white/40 text-xs">
+                        {p.article && p.article}
+                        {p.article && p.brand && " · "}
+                        {p.brand || ""}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+                {searchResults.length === 0 && tempResults.length === 0 && searchQuery.trim().length >= 2 && !searching && (
+                  <p className="text-white/30 text-xs text-center mt-4 mb-2">Ничего не найдено</p>
+                )}
+                <button
+                  className="w-full text-left px-3 py-2.5 rounded-xl mt-2 text-amber-400 text-sm flex items-center gap-2 hover:bg-white/[0.04] transition-colors"
+                  onClick={() => setShowTempForm(true)}
+                >
+                  <Icon name="PlusCircle" size={14} />
+                  Товара нет в каталоге — добавь артикул и бренд
+                </button>
+              </>
             )}
           </div>
         </div>
