@@ -130,7 +130,7 @@ const OrderCreatePage = () => {
   const articleRef = useRef<HTMLDivElement>(null);
   const articleDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [savingTemp, setSavingTemp] = useState(false);
-  const [initialized, setInitialized] = useState(false);
+  const initializedRef = useRef(false);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -205,7 +205,7 @@ const OrderCreatePage = () => {
         }
       } catch { /* ignore */ }
     }
-    setInitialized(true);
+    setTimeout(() => { initializedRef.current = true; }, 100);
 
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
@@ -245,9 +245,9 @@ const OrderCreatePage = () => {
   }, []);
 
   useEffect(() => {
-    if (!initialized) return;
+    if (!initializedRef.current) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
-  }, [initialized, customerName, comment, lines, wholesalerId]);
+  }, [customerName, comment, lines, wholesalerId]);
 
   useEffect(() => {
     if (!editId) return;
