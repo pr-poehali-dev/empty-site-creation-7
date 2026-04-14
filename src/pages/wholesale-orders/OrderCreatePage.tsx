@@ -694,7 +694,7 @@ const OrderCreatePage = () => {
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleBack}>
               <Icon name="ArrowLeft" size={18} />
             </Button>
-            <h1 className="text-lg font-semibold">{editId ? "Редактирование" : "Новая заявка"}</h1>
+            <h1 className="text-lg font-semibold">{editId ? `Заявка #${editId}` : "Новая заявка"}</h1>
             {editId && (
               <Badge className={`${(statusLabels[orderStatus] || statusLabels.new).className} text-xs`}>
                 {(statusLabels[orderStatus] || statusLabels.new).label}
