@@ -148,7 +148,7 @@ const OrderCreatePage = () => {
     confirmed: { status: "shipped", label: "Отгружена", icon: "Truck" },
   };
 
-  const DRAFT_KEY = "order_draft_state";
+  const DRAFT_KEY = editId ? `order_draft_${editId}` : "order_draft_new";
 
   const loadPricingRules = async (wId: number) => {
     try {
