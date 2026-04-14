@@ -188,19 +188,24 @@ def handler(event: dict, context) -> dict:
         keep_price = body.get('keep_price', True)
 
         if replace_id or replace_temp_id:
+            cur.execute("SELECT brand, article FROM temp_products WHERE id = %s", (item_id,))
+            old_row = cur.fetchone()
+            old_name = f"{old_row[0]} {old_row[1]}" if old_row else None
+
             new_pid = replace_id or 19
             new_temp_pid = replace_temp_id if not replace_id else None
+            replace_name = body.get('replace_name', '')
+
+            where = "(temp_product_id = %s OR (product_id = 19 AND item_name = %s))"
+            where_args = [item_id, old_name]
+
             if keep_price:
-                cur.execute("UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s WHERE temp_product_id = %s",
-                            (new_pid, new_temp_pid, item_id))
+                cur.execute(f"UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, item_name = %s WHERE {where}",
+                            [new_pid, new_temp_pid, replace_name or old_name] + where_args)
             else:
                 replace_price = float(body.get('replace_price', 0))
-                cur.execute("UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, price = %s, amount = quantity * %s WHERE temp_product_id = %s",
-                            (new_pid, new_temp_pid, replace_price, replace_price, item_id))
-            if replace_id:
-                item_name = body.get('replace_name', '')
-                if item_name:
-                    cur.execute("UPDATE wholesale_order_items SET item_name = %s WHERE temp_product_id = %s", (item_name, new_temp_pid))
+                cur.execute(f"UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, item_name = %s, price = %s, amount = quantity * %s WHERE {where}",
+                            [new_pid, new_temp_pid, replace_name or old_name, replace_price, replace_price] + where_args)
 
         cur.execute("DELETE FROM temp_products WHERE id = %s", (item_id,))
         conn.commit()
