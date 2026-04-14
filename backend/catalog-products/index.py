@@ -96,7 +96,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                               p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
-                              p.created_at, p.updated_at, c.name as category_name, p.product_group, p.external_id
+                              p.created_at, p.updated_at, c.name as category_name, p.product_group, p.external_id, p.is_new
                        FROM products p
                        JOIN categories c ON c.id = p.category_id
                        WHERE p.id = %s""",
@@ -106,7 +106,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                               p.price_base, p.price_retail, p.price_wholesale, NULL as price_purchase,
-                              p.created_at, p.updated_at, c.name as category_name, p.product_group, p.external_id
+                              p.created_at, p.updated_at, c.name as category_name, p.product_group, p.external_id, p.is_new
                        FROM products p
                        JOIN categories c ON c.id = p.category_id
                        WHERE p.id = %s""",
@@ -142,6 +142,7 @@ def handler(event: dict, context) -> dict:
                 'category_name': row[12],
                 'product_group': row[13],
                 'external_id': row[14],
+                'is_new': bool(row[15]),
                 'images': images,
                 'barcodes': barcodes
             }
@@ -252,7 +253,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT p.id, p.category_id, p.name, p.article, p.brand, p.supplier_code,
                        p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
-                       p.created_at, c.name as category_name, p.product_group, p.external_id
+                       p.created_at, c.name as category_name, p.product_group, p.external_id, p.is_new
                 FROM products p
                 JOIN categories c ON c.id = p.category_id
                 {where}
@@ -299,6 +300,7 @@ def handler(event: dict, context) -> dict:
                 'category_name': r[11],
                 'product_group': r[12],
                 'external_id': r[13],
+                'is_new': bool(r[14]),
                 'images': images_map.get(r[0], []),
                 'barcodes': barcodes_map.get(r[0], [])
             })
@@ -341,10 +343,11 @@ def handler(event: dict, context) -> dict:
                     cur.execute("INSERT INTO categories (parent_id, name, sort_order) VALUES (NULL, 'Без категории', 9999) RETURNING id")
                     category_id = cur.fetchone()[0]
 
+            temp_product_id = body.get('temp_product_id')
             cur.execute(
                 """INSERT INTO products (category_id, name, article, brand, supplier_code,
-                           price_base, price_retail, price_wholesale, price_purchase, product_group)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           price_base, price_retail, price_wholesale, price_purchase, product_group, is_new)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                    RETURNING id""",
                 (category_id, name, article, brand, supplier_code,
                  price_base, price_retail, price_wholesale, price_purchase, product_group)
@@ -368,6 +371,12 @@ def handler(event: dict, context) -> dict:
                         "INSERT INTO product_barcodes (product_id, barcode) VALUES (%s, %s)",
                         (product_id, bc_val)
                     )
+
+            if temp_product_id:
+                cur.execute(
+                    "UPDATE temp_products SET status = 'added', nomenclature_id = %s WHERE id = %s",
+                    (product_id, temp_product_id)
+                )
 
             conn.commit()
             cur.close()

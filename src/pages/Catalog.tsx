@@ -50,6 +50,7 @@ interface Product {
   supplier_code: string | null;
   product_group: string | null;
   external_id: string | null;
+  is_new: boolean;
   price_base: number | null;
   price_retail: number | null;
   price_wholesale: number | null;
@@ -752,7 +753,12 @@ const Catalog = () => {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm sm:text-base truncate">{item.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm sm:text-base truncate">{item.name}</p>
+                      {item.is_new && (
+                        <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs flex-shrink-0">Новый</Badge>
+                      )}
+                    </div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
                       {item.article && (
                         <Badge className="bg-white/[0.06] text-muted-foreground border-white/[0.08] text-xs">

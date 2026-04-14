@@ -1,0 +1,10 @@
+{
+  "tests": [
+    {
+      "name": "GET temp products list",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    }
+  ]
+}

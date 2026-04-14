@@ -20,13 +20,18 @@ const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
+const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 
 interface OrderLine {
-  product_id: number;
+  product_id: number | null;
+  temp_product_id?: number | null;
   name: string;
   article: string | null;
+  brand?: string | null;
   quantity: number;
   price: number;
+  is_temp?: boolean;
+  has_uuid?: boolean;
 }
 
 interface ProductSearchItem {
@@ -40,6 +45,17 @@ interface ProductSearchItem {
   price_wholesale: number | null;
   price_purchase: number | null;
   product_group: string | null;
+  external_id?: string | null;
+}
+
+interface TempProduct {
+  id: number;
+  brand: string;
+  article: string;
+  quantity: number;
+  price: number;
+  status: string;
+  nomenclature_id: number | null;
 }
 
 interface PricingRule {
@@ -81,6 +97,7 @@ const OrderCreatePage = () => {
   const [searchMode, setSearchMode] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
+  const [tempProductResults, setTempProductResults] = useState<TempProduct[]>([]);
   const [productGroups, setProductGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [showGroupList, setShowGroupList] = useState(false);
@@ -98,6 +115,21 @@ const OrderCreatePage = () => {
   const [orderStatus, setOrderStatus] = useState("new");
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
+
+  // Temp product form state
+  const [showTempForm, setShowTempForm] = useState(false);
+  const [tempBrand, setTempBrand] = useState("");
+  const [tempArticle, setTempArticle] = useState("");
+  const [tempQty, setTempQty] = useState("1");
+  const [tempPrice, setTempPrice] = useState("");
+  const [allBrands, setAllBrands] = useState<string[]>([]);
+  const [showBrandList, setShowBrandList] = useState(false);
+  const [articleSuggestions, setArticleSuggestions] = useState<ProductSearchItem[]>([]);
+  const [showArticleList, setShowArticleList] = useState(false);
+  const brandRef = useRef<HTMLDivElement>(null);
+  const articleRef = useRef<HTMLDivElement>(null);
+  const articleDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const [savingTemp, setSavingTemp] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -195,6 +227,7 @@ const OrderCreatePage = () => {
                     article: product.article,
                     quantity: 1,
                     price: (entry.price && entry.price > 0) ? entry.price : calcPrice(product, rules),
+                    has_uuid: !!product.external_id,
                   });
                 }
               } catch { /* ignore */ }
@@ -231,6 +264,9 @@ const OrderCreatePage = () => {
               article: item.article,
               quantity: item.quantity,
               price: item.price,
+              is_temp: item.is_temp,
+              temp_product_id: item.temp_product_id,
+              has_uuid: item.has_uuid,
             }))
           );
           const wResp = await fetch(WHOLESALERS_URL, { headers: authHeaders });
@@ -253,6 +289,7 @@ const OrderCreatePage = () => {
   const searchProducts = useCallback(async (query: string, mode: string, group?: string) => {
     if (!query.trim() || query.trim().length < 2) {
       setSearchResults([]);
+      setTempProductResults([]);
       return;
     }
     setSearching(true);
@@ -260,9 +297,14 @@ const OrderCreatePage = () => {
       const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
       const g = group !== undefined ? group : selectedGroup;
       if (g) params.set("filter_group", g);
-      const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
-      const data = await resp.json();
-      if (resp.ok) setSearchResults(data.items || []);
+      const [prodResp, tempResp] = await Promise.all([
+        fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders }),
+        fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`, { headers: authHeaders }),
+      ]);
+      const prodData = await prodResp.json();
+      const tempData = await tempResp.json();
+      if (prodResp.ok) setSearchResults(prodData.items || []);
+      if (tempResp.ok) setTempProductResults(tempData.items || []);
     } catch {
       /* ignore */
     } finally {
@@ -284,13 +326,37 @@ const OrderCreatePage = () => {
         product_id: item.id,
         name: item.name,
         article: item.article,
+        brand: item.brand,
         quantity: 1,
         price: calcPrice(item, pricingRules),
+        is_temp: false,
+        has_uuid: !!item.external_id,
       },
       ...prev,
     ]);
     setSearchQuery("");
     setSearchResults([]);
+    setTempProductResults([]);
+  };
+
+  const addTempItemFromExisting = (tp: TempProduct) => {
+    setLines((prev) => [
+      {
+        product_id: null,
+        temp_product_id: tp.id,
+        name: `${tp.brand} ${tp.article}`,
+        article: tp.article,
+        brand: tp.brand,
+        quantity: tp.quantity,
+        price: tp.price,
+        is_temp: true,
+        has_uuid: false,
+      },
+      ...prev,
+    ]);
+    setSearchQuery("");
+    setSearchResults([]);
+    setTempProductResults([]);
   };
 
   const searchByBarcode = async (code: string) => {
@@ -341,6 +407,91 @@ const OrderCreatePage = () => {
     setBarcodeResults([]);
   };
 
+  // Load brands for temp product form
+  const loadBrands = useCallback(async () => {
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?distinct=brand`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setAllBrands((data.brands || data.groups || []).filter(Boolean));
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const searchArticles = (value: string) => {
+    setTempArticle(value);
+    if (articleDebounceRef.current) clearTimeout(articleDebounceRef.current);
+    if (!value.trim() || value.trim().length < 2) { setArticleSuggestions([]); return; }
+    articleDebounceRef.current = setTimeout(async () => {
+      try {
+        const resp = await fetch(`${PRODUCTS_URL}?search=${encodeURIComponent(value)}&search_type=article&per_page=8`, { headers: authHeaders });
+        const data = await resp.json();
+        if (resp.ok) setArticleSuggestions(data.items || []);
+      } catch { /* ignore */ }
+    }, 300);
+  };
+
+  const selectArticleFromExisting = (item: ProductSearchItem) => {
+    setShowTempForm(false);
+    setTempBrand("");
+    setTempArticle("");
+    setTempQty("1");
+    setTempPrice("");
+    setArticleSuggestions([]);
+    addItem(item);
+  };
+
+  const saveTempProduct = async () => {
+    if (!tempBrand.trim() || !tempArticle.trim() || !tempQty || !tempPrice) {
+      toast({ title: "Заполните все поля", variant: "destructive" });
+      return;
+    }
+    setSavingTemp(true);
+    try {
+      const resp = await fetch(TEMP_PRODUCTS_URL, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          brand: tempBrand.trim(),
+          article: tempArticle.trim(),
+          quantity: parseFloat(tempQty),
+          price: parseFloat(tempPrice),
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        // Add new brand to list if not exists
+        if (!allBrands.includes(tempBrand.trim())) {
+          setAllBrands(prev => [...prev, tempBrand.trim()].sort());
+        }
+        setLines(prev => [
+          {
+            product_id: null,
+            temp_product_id: data.id,
+            name: `${tempBrand.trim()} ${tempArticle.trim()}`,
+            article: tempArticle.trim(),
+            brand: tempBrand.trim(),
+            quantity: parseFloat(tempQty),
+            price: parseFloat(tempPrice),
+            is_temp: true,
+            has_uuid: false,
+          },
+          ...prev,
+        ]);
+        setShowTempForm(false);
+        setTempBrand("");
+        setTempArticle("");
+        setTempQty("1");
+        setTempPrice("");
+        setSearchQuery("");
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", variant: "destructive" });
+    } finally {
+      setSavingTemp(false);
+    }
+  };
+
   useEffect(() => {
     const loadWholesalers = async () => {
       try {
@@ -358,6 +509,7 @@ const OrderCreatePage = () => {
     };
     loadWholesalers();
     loadGroups();
+    loadBrands();
   }, []);
 
   useEffect(() => {
@@ -367,6 +519,12 @@ const OrderCreatePage = () => {
       }
       if (groupRef.current && !groupRef.current.contains(e.target as Node)) {
         setShowGroupList(false);
+      }
+      if (brandRef.current && !brandRef.current.contains(e.target as Node)) {
+        setShowBrandList(false);
+      }
+      if (articleRef.current && !articleRef.current.contains(e.target as Node)) {
+        setShowArticleList(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
@@ -394,7 +552,7 @@ const OrderCreatePage = () => {
   }, [customerName, wholesalers]);
 
   const updateQty = (index: number, qty: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: qty } : l)));
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l)));
   };
 
   const updatePrice = (index: number, price: number) => {
@@ -429,6 +587,9 @@ const OrderCreatePage = () => {
             product_id: l.product_id,
             quantity: l.quantity,
             price: l.price,
+            is_temp: l.is_temp || false,
+            temp_product_id: l.temp_product_id || null,
+            has_uuid: l.has_uuid || false,
           })),
         }),
       });
@@ -500,7 +661,14 @@ const OrderCreatePage = () => {
     }
   };
 
+  const filteredBrands = allBrands.filter(b =>
+    b.toLowerCase().includes(tempBrand.toLowerCase())
+  );
+
   const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent);
+
+  const showDropdown = searchQuery.trim().length >= 2;
+  const hasResults = searchResults.length > 0 || tempProductResults.length > 0;
 
   if (loading) {
     return (
@@ -525,7 +693,6 @@ const OrderCreatePage = () => {
               </Badge>
             )}
           </div>
-
         </div>
       </header>
 
@@ -600,8 +767,25 @@ const OrderCreatePage = () => {
             {searching && (
               <Icon name="Loader2" size={14} className="absolute right-3 top-3 animate-spin text-muted-foreground" />
             )}
-            {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-60 overflow-y-auto shadow-lg">
+            {showDropdown && (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-72 overflow-y-auto shadow-lg">
+                {tempProductResults.map((tp) => (
+                  <button
+                    key={`tp-${tp.id}`}
+                    className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors text-sm flex items-center justify-between border-b border-white/[0.04]"
+                    onClick={() => addTempItemFromExisting(tp)}
+                  >
+                    <div className="min-w-0">
+                      <span className="block truncate">{tp.brand} {tp.article}</span>
+                      <span className="text-xs text-amber-400 flex items-center gap-1">
+                        <Icon name="AlertTriangle" size={10} /> временный товар
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                      {tp.price ? `${tp.price.toLocaleString()} ₽` : "—"}
+                    </span>
+                  </button>
+                ))}
                 {searchResults.map((item) => (
                   <button
                     key={item.id}
@@ -621,6 +805,24 @@ const OrderCreatePage = () => {
                     </span>
                   </button>
                 ))}
+                {!hasResults && !searching && (
+                  <button
+                    className="w-full text-left px-3 py-3 hover:bg-white/[0.06] transition-colors text-sm text-amber-400 flex items-center gap-2 border-b border-white/[0.04]"
+                    onClick={() => { setShowTempForm(true); loadBrands(); }}
+                  >
+                    <Icon name="PlusCircle" size={14} />
+                    Товара нет в каталоге — добавь артикул и бренд
+                  </button>
+                )}
+                {hasResults && (
+                  <button
+                    className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors text-xs text-amber-400 flex items-center gap-2"
+                    onClick={() => { setShowTempForm(true); loadBrands(); }}
+                  >
+                    <Icon name="PlusCircle" size={12} />
+                    Товара нет в каталоге — добавь артикул и бренд
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -637,6 +839,85 @@ const OrderCreatePage = () => {
             <Icon name="ScanBarcode" size={18} />
           </button>
         </div>
+
+        {/* Temp product form */}
+        {showTempForm && (
+          <div className="mb-3 p-3 rounded-xl border border-red-500/30 bg-red-950/20">
+            <p className="text-xs text-red-400 mb-2 font-medium">Временный товар</p>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div className="relative" ref={brandRef}>
+                <Input
+                  placeholder="Бренд *"
+                  value={tempBrand}
+                  onChange={(e) => { setTempBrand(e.target.value); setShowBrandList(true); }}
+                  onFocus={() => setShowBrandList(true)}
+                  className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                />
+                {showBrandList && filteredBrands.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                    {filteredBrands.map((b) => (
+                      <button
+                        key={b}
+                        className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                        onClick={() => { setTempBrand(b); setShowBrandList(false); }}
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative" ref={articleRef}>
+                <Input
+                  placeholder="Артикул *"
+                  value={tempArticle}
+                  onChange={(e) => { searchArticles(e.target.value); setShowArticleList(true); }}
+                  onFocus={() => setShowArticleList(true)}
+                  className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                />
+                {showArticleList && articleSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                    {articleSuggestions.map((item) => (
+                      <button
+                        key={item.id}
+                        className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                        onClick={() => selectArticleFromExisting(item)}
+                      >
+                        <span className="block">{item.article}</span>
+                        <span className="text-xs text-muted-foreground">{item.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <Input
+                placeholder="Количество *"
+                type="number"
+                value={tempQty}
+                onChange={(e) => setTempQty(e.target.value)}
+                className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+              />
+              <Input
+                placeholder="Цена *"
+                type="number"
+                value={tempPrice}
+                onChange={(e) => setTempPrice(e.target.value)}
+                className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" className="rounded-lg flex-1" onClick={saveTempProduct} disabled={savingTemp}>
+                {savingTemp ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Check" size={14} />}
+                <span className="ml-1">Добавить</span>
+              </Button>
+              <Button size="sm" variant="ghost" className="rounded-lg" onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice(""); }}>
+                Отмена
+              </Button>
+            </div>
+          </div>
+        )}
 
         {showBarcode && (
           <div className="relative flex gap-2 mb-3">
@@ -736,28 +1017,72 @@ const OrderCreatePage = () => {
           </div>
         ) : (
           <div className="space-y-1.5">
-            {lines.map((line, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm truncate">{line.name}</p>
-                    {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
+            {lines.map((line, i) => {
+              const isRedLine = line.is_temp || (line.product_id && !line.has_uuid);
+              return (
+                <div
+                  key={i}
+                  className={`rounded-lg border p-2.5 ${
+                    isRedLine
+                      ? "border-red-500/30 bg-red-950/20"
+                      : "border-white/[0.08] bg-white/[0.02]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm truncate">{line.name}</p>
+                        {isRedLine && (
+                          <span className="text-xs text-red-400 flex-shrink-0">новый</span>
+                        )}
+                      </div>
+                      {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
+                    </div>
+                    <button
+                      className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
+                      onClick={() => removeLine(i)}
+                    >
+                      <Icon name="X" size={14} className="text-destructive" />
+                    </button>
                   </div>
-                  <span className="text-sm font-medium flex-shrink-0 mr-2">
-                    {line.price.toLocaleString()} ₽
-                  </span>
-                  <button
-                    className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
-                    onClick={() => removeLine(i)}
-                  >
-                    <Icon name="X" size={14} className="text-destructive" />
-                  </button>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08]"
+                        onClick={() => updateQty(i, line.quantity - 1)}
+                      >
+                        <Icon name="Minus" size={10} />
+                      </button>
+                      <Input
+                        type="number"
+                        value={line.quantity}
+                        onChange={(e) => updateQty(i, parseFloat(e.target.value) || 1)}
+                        className="w-12 h-6 text-center text-xs p-0 bg-white/[0.04] border-white/[0.08] rounded"
+                      />
+                      <button
+                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08]"
+                        onClick={() => updateQty(i, line.quantity + 1)}
+                      >
+                        <Icon name="Plus" size={10} />
+                      </button>
+                    </div>
+                    <span className="text-xs text-muted-foreground">шт</span>
+                    <div className="flex items-center gap-1 ml-auto">
+                      <Input
+                        type="number"
+                        value={line.price}
+                        onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
+                        className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
+                      />
+                      <span className="text-xs text-muted-foreground">₽</span>
+                    </div>
+                    <span className="text-xs font-medium flex-shrink-0">
+                      = {(line.price * line.quantity).toLocaleString()} ₽
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -841,16 +1166,11 @@ const OrderCreatePage = () => {
               className="rounded-xl"
               onClick={async () => {
                 await handleSave();
+                sessionStorage.removeItem(DRAFT_KEY);
                 navigate("/admin/orders");
               }}
             >
-              Сохранить
-            </AlertDialogAction>
-            <AlertDialogAction
-              className="rounded-xl bg-destructive hover:bg-destructive/90"
-              onClick={() => { sessionStorage.removeItem(DRAFT_KEY); navigate("/admin/orders"); }}
-            >
-              Не сохранять
+              Сохранить и выйти
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

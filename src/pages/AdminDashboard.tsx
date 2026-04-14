@@ -400,6 +400,22 @@ const AdminDashboard = () => {
             <Icon name="BookOpen" size={20} />
             <span className="font-medium">Инструкции от Юры</span>
           </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-red-500/30 justify-start gap-3 text-red-400 hover:text-red-300 hover:border-red-500/50"
+            onClick={() => navigate("/admin/new-products")}
+          >
+            <Icon name="PackagePlus" size={20} />
+            <span className="font-medium">Новые товары</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-red-500/30 justify-start gap-3 text-red-400 hover:text-red-300 hover:border-red-500/50"
+            onClick={() => navigate("/admin/new-barcodes")}
+          >
+            <Icon name="ScanLine" size={20} />
+            <span className="font-medium">Новые штрихкоды</span>
+          </Button>
         </div>
 
         <div className="flex items-center justify-between mb-5 sm:mb-6">

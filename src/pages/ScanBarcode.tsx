@@ -7,6 +7,7 @@ import Icon from "@/components/ui/icon";
 const MAX_VISIBLE = 5;
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
+const NEW_BARCODES_URL = "https://functions.poehali.dev/753c16bb-172a-460b-a7b4-2ffc3c26b6f7";
 
 interface DetectedBarcode {
   rawValue: string;
@@ -78,6 +79,7 @@ const ScanBarcode = () => {
   const [searchMode, setSearchMode] = useState<"all" | "article">("all");
   const [searchResults, setSearchResults] = useState<{ id: number; name: string; article: string | null; brand: string | null }[]>([]);
   const [searching, setSearching] = useState(false);
+  const [saveBarcodeDialog, setSaveBarcodeDialog] = useState<{ barcode: string; productId: number; productName: string } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const token = localStorage.getItem("auth_token") || "";
@@ -276,11 +278,12 @@ const ScanBarcode = () => {
 
   const selectProduct = (product: { id: number; name: string }) => {
     if (!searchItem) return;
+    const barcode = searchItem.barcode;
     setScannedItems((prev) =>
       prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true, product_id: product.id } : s)
     );
     setCollected((prev) => {
-      const idx = prev.findIndex((e) => e.barcode === searchItem.barcode && !e.product_id);
+      const idx = prev.findIndex((e) => e.barcode === barcode && !e.product_id);
       if (idx === -1) return prev;
       const next = [...prev];
       next[idx] = { ...next[idx], product_id: product.id, name: product.name };
@@ -288,6 +291,23 @@ const ScanBarcode = () => {
       return next;
     });
     setSearchItem(null);
+    setSaveBarcodeDialog({ barcode, productId: product.id, productName: product.name });
+  };
+
+  const saveNewBarcode = async (save: boolean) => {
+    if (!saveBarcodeDialog) return;
+    try {
+      await fetch(NEW_BARCODES_URL, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          barcode: saveBarcodeDialog.barcode,
+          nomenclature_id: saveBarcodeDialog.productId,
+          save_to_product: save,
+        }),
+      });
+    } catch { /* ignore */ }
+    setSaveBarcodeDialog(null);
   };
 
   useEffect(() => {
@@ -530,6 +550,25 @@ const ScanBarcode = () => {
             )}
           </div>
         </>
+      )}
+
+      {saveBarcodeDialog && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center px-4">
+          <div className="bg-card rounded-2xl border border-white/[0.08] p-5 max-w-sm w-full">
+            <p className="text-sm font-medium mb-1">Записать штрихкод?</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Записать штрихкод <span className="font-mono text-white">{saveBarcodeDialog.barcode}</span> в карточку товара «{saveBarcodeDialog.productName}»?
+            </p>
+            <div className="flex gap-2">
+              <Button className="flex-1 rounded-xl" onClick={() => saveNewBarcode(true)}>
+                Да, записать
+              </Button>
+              <Button variant="outline" className="rounded-xl border-white/[0.08]" onClick={() => saveNewBarcode(false)}>
+                Нет
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {searchItem && (
