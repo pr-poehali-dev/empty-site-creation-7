@@ -251,6 +251,35 @@ const OrderCreatePage = () => {
 
   useEffect(() => {
     if (!editId) return;
+    const draft = sessionStorage.getItem(DRAFT_KEY);
+    if (draft) {
+      try {
+        const d = JSON.parse(draft);
+        if (d.customerName) setCustomerName(d.customerName);
+        if (d.comment) setComment(d.comment);
+        if (d.lines?.length) setLines(d.lines);
+        if (d.wholesalerId) {
+          setWholesalerId(d.wholesalerId);
+          loadPricingRules(d.wholesalerId);
+        }
+      } catch { /* ignore */ }
+      canSaveDraftRef.current = true;
+      setLoading(false);
+
+      const loadStatus = async () => {
+        try {
+          const resp = await fetch(`${ORDERS_URL}?id=${editId}`, { headers: authHeaders });
+          const data = await resp.json();
+          if (resp.ok && data.order) {
+            setOrderStatus(data.order.status || "new");
+            setPaymentStatus(data.order.payment_status || "not_paid");
+          }
+        } catch { /* ignore */ }
+      };
+      loadStatus();
+      return;
+    }
+
     const load = async () => {
       try {
         const resp = await fetch(`${ORDERS_URL}?id=${editId}`, { headers: authHeaders });
