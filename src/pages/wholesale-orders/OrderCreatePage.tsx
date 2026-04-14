@@ -130,6 +130,7 @@ const OrderCreatePage = () => {
   const articleRef = useRef<HTMLDivElement>(null);
   const articleDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [savingTemp, setSavingTemp] = useState(false);
+  const initializedRef = useRef(false);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -204,6 +205,7 @@ const OrderCreatePage = () => {
         }
       } catch { /* ignore */ }
     }
+    initializedRef.current = true;
 
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
@@ -243,6 +245,7 @@ const OrderCreatePage = () => {
   }, []);
 
   useEffect(() => {
+    if (!initializedRef.current) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
   }, [customerName, comment, lines, wholesalerId]);
 
@@ -410,9 +413,14 @@ const OrderCreatePage = () => {
   // Load brands for temp product form
   const loadBrands = useCallback(async () => {
     try {
-      const resp = await fetch(`${PRODUCTS_URL}?distinct=brand`, { headers: authHeaders });
+      const resp = await fetch(`${PRODUCTS_URL}?search=&per_page=200`, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok) setAllBrands((data.brands || data.groups || []).filter(Boolean));
+      if (resp.ok && data.items) {
+        const brands = [...new Set<string>(
+          data.items.map((p: ProductSearchItem) => p.brand).filter(Boolean)
+        )].sort() as string[];
+        setAllBrands(brands);
+      }
     } catch { /* ignore */ }
   }, [token]);
 
@@ -808,7 +816,7 @@ const OrderCreatePage = () => {
                 {!hasResults && !searching && (
                   <button
                     className="w-full text-left px-3 py-3 hover:bg-white/[0.06] transition-colors text-sm text-amber-400 flex items-center gap-2 border-b border-white/[0.04]"
-                    onClick={() => { setShowTempForm(true); loadBrands(); }}
+                    onClick={() => setShowTempForm(true)}
                   >
                     <Icon name="PlusCircle" size={14} />
                     Товара нет в каталоге — добавь артикул и бренд
@@ -817,7 +825,7 @@ const OrderCreatePage = () => {
                 {hasResults && (
                   <button
                     className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors text-xs text-amber-400 flex items-center gap-2"
-                    onClick={() => { setShowTempForm(true); loadBrands(); }}
+                    onClick={() => setShowTempForm(true)}
                   >
                     <Icon name="PlusCircle" size={12} />
                     Товара нет в каталоге — добавь артикул и бренд
@@ -1165,7 +1173,6 @@ const OrderCreatePage = () => {
             <AlertDialogAction
               className="rounded-xl bg-destructive hover:bg-destructive/90"
               onClick={() => {
-                sessionStorage.removeItem(DRAFT_KEY);
                 navigate("/admin/orders");
               }}
             >
