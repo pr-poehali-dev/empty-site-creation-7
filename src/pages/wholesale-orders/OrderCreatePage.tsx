@@ -1173,6 +1173,7 @@ const OrderCreatePage = () => {
             <AlertDialogAction
               className="rounded-xl bg-destructive hover:bg-destructive/90"
               onClick={() => {
+                sessionStorage.removeItem(DRAFT_KEY);
                 navigate("/admin/orders");
               }}
             >
