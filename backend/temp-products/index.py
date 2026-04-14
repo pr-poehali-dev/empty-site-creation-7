@@ -86,6 +86,13 @@ def handler(event: dict, context) -> dict:
             args + [per_page, offset]
         )
         rows = cur.fetchall()
+        tp_ids = [r[0] for r in rows]
+        usage_map = {}
+        if tp_ids:
+            placeholders = ','.join(['%s'] * len(tp_ids))
+            cur.execute(f"SELECT temp_product_id, COUNT(DISTINCT order_id) FROM wholesale_order_items WHERE temp_product_id IN ({placeholders}) GROUP BY temp_product_id", tp_ids)
+            for u in cur.fetchall():
+                usage_map[u[0]] = u[1]
         items = []
         for r in rows:
             items.append({
@@ -94,7 +101,8 @@ def handler(event: dict, context) -> dict:
                 'status': r[5], 'nomenclature_id': r[6],
                 'created_by': r[7],
                 'created_at': str(r[8]) if r[8] else None,
-                'barcode': r[9]
+                'barcode': r[9],
+                'usage_count': usage_map.get(r[0], 0)
             })
 
         cur.close(); conn.close()
@@ -158,6 +166,36 @@ def handler(event: dict, context) -> dict:
 
         args.append(item_id)
         cur.execute(f"UPDATE temp_products SET {', '.join(updates)} WHERE id = %s", args)
+        conn.commit()
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+    if method == 'DELETE':
+        item_id = params.get('id')
+        if not item_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'id обязателен'})}
+
+        replace_id = body.get('replace_product_id')
+        replace_temp_id = body.get('replace_temp_product_id')
+        keep_price = body.get('keep_price', True)
+
+        if replace_id or replace_temp_id:
+            new_pid = replace_id or 19
+            new_temp_pid = replace_temp_id if not replace_id else None
+            if keep_price:
+                cur.execute("UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s WHERE temp_product_id = %s",
+                            (new_pid, new_temp_pid, item_id))
+            else:
+                replace_price = float(body.get('replace_price', 0))
+                cur.execute("UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, price = %s, amount = quantity * %s WHERE temp_product_id = %s",
+                            (new_pid, new_temp_pid, replace_price, replace_price, item_id))
+            if replace_id:
+                item_name = body.get('replace_name', '')
+                if item_name:
+                    cur.execute("UPDATE wholesale_order_items SET item_name = %s WHERE temp_product_id = %s", (item_name, new_temp_pid))
+
+        cur.execute("DELETE FROM temp_products WHERE id = %s", (item_id,))
         conn.commit()
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}

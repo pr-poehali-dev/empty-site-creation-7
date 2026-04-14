@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ interface TempProduct {
   status: string;
   nomenclature_id: number | null;
   created_at: string | null;
+  usage_count: number;
 }
 
 interface Category {
@@ -59,6 +60,14 @@ const NewProducts = () => {
   const [formPricePurchase, setFormPricePurchase] = useState("");
   const [saving, setSaving] = useState(false);
   const [showCatList, setShowCatList] = useState(false);
+
+  // Delete / replace
+  const [deleteItem, setDeleteItem] = useState<TempProduct | null>(null);
+  const [replaceSearch, setReplaceSearch] = useState("");
+  const [replaceResults, setReplaceResults] = useState<{ id: number; name: string; article: string | null; brand: string | null; price_wholesale?: number | null; is_temp?: boolean; temp_id?: number }[]>([]);
+  const [replaceSelected, setReplaceSelected] = useState<{ id: number | null; temp_id: number | null; name: string; price: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const replaceDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -140,6 +149,68 @@ const NewProducts = () => {
     }
   };
 
+  const startDelete = (item: TempProduct, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (item.usage_count === 0) {
+      if (confirm(`Удалить товар ${item.article}?`)) {
+        fetch(`${TEMP_PRODUCTS_URL}?id=${item.id}`, { method: "DELETE", headers: authHeaders, body: "{}" })
+          .then(r => { if (r.ok) { toast({ title: "Товар удалён" }); loadData(); } });
+      }
+      return;
+    }
+    setDeleteItem(item);
+    setReplaceSearch("");
+    setReplaceResults([]);
+    setReplaceSelected(null);
+  };
+
+  const searchReplace = (value: string) => {
+    setReplaceSearch(value);
+    setReplaceSelected(null);
+    if (replaceDebounceRef.current) clearTimeout(replaceDebounceRef.current);
+    if (!value.trim() || value.trim().length < 2) { setReplaceResults([]); return; }
+    replaceDebounceRef.current = setTimeout(async () => {
+      try {
+        const [prodResp, tempResp] = await Promise.all([
+          fetch(`${PRODUCTS_URL}?search=${encodeURIComponent(value)}&per_page=8`, { headers: authHeaders }),
+          fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(value)}&per_page=5`, { headers: authHeaders }),
+        ]);
+        const prodData = await prodResp.json();
+        const tempData = await tempResp.json();
+        const prodItems = (prodData.items || []).map((p: { id: number; name: string; article: string | null; brand: string | null; price_wholesale?: number | null }) => ({ ...p, is_temp: false }));
+        const tempItems = (tempData.items || []).filter((t: TempProduct) => t.id !== deleteItem?.id).map((t: TempProduct) => ({ id: t.id, name: `${t.brand} ${t.article}`, article: t.article, brand: t.brand, price_wholesale: t.price, is_temp: true, temp_id: t.id }));
+        setReplaceResults([...tempItems, ...prodItems]);
+      } catch { /* ignore */ }
+    }, 300);
+  };
+
+  const confirmDelete = async (keepPrice: boolean) => {
+    if (!deleteItem || !replaceSelected) return;
+    setDeleting(true);
+    try {
+      const resp = await fetch(`${TEMP_PRODUCTS_URL}?id=${deleteItem.id}`, {
+        method: "DELETE",
+        headers: authHeaders,
+        body: JSON.stringify({
+          replace_product_id: replaceSelected.id,
+          replace_temp_product_id: replaceSelected.temp_id,
+          keep_price: keepPrice,
+          replace_price: replaceSelected.price,
+          replace_name: replaceSelected.name,
+        }),
+      });
+      if (resp.ok) {
+        toast({ title: "Товар заменён и удалён" });
+        setDeleteItem(null);
+        loadData();
+      }
+    } catch {
+      toast({ title: "Ошибка", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const filteredCats = categories.filter(c =>
     c.name.toLowerCase().includes(formCategory.toLowerCase())
   );
@@ -184,21 +255,85 @@ const NewProducts = () => {
             ) : (
               <div className="space-y-2">
                 {activeItems.map((item) => (
-                  <button
-                    key={item.id}
-                    className="w-full text-left rounded-xl border border-red-500/30 bg-red-950/20 p-3 hover:border-red-500/50 transition-colors"
-                    onClick={() => openAddDialog(item)}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm">{item.brand} {item.article}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {item.price ? `${item.price.toLocaleString()} ₽` : "—"} · {formatDate(item.created_at)}
-                        </p>
+                  <div key={item.id}>
+                    <div
+                      className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 hover:border-red-500/50 transition-colors cursor-pointer"
+                      onClick={() => openAddDialog(item)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm">{item.brand} {item.article}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {item.price ? `${item.price.toLocaleString()} ₽` : "—"} · {formatDate(item.created_at)}
+                            {item.usage_count > 0 && <span className="ml-2 text-amber-400">в {item.usage_count} заявках</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors"
+                            onClick={(e) => startDelete(item, e)}
+                          >
+                            <Icon name="Trash2" size={14} className="text-destructive" />
+                          </button>
+                          <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
+                        </div>
                       </div>
-                      <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0" />
                     </div>
-                  </button>
+                    {deleteItem?.id === item.id && (
+                      <div className="mt-1 p-3 rounded-xl border border-red-500/30 bg-red-950/30">
+                        <p className="text-xs text-red-400 mb-2">
+                          Товар используется в {item.usage_count} заявках. Выберите замену:
+                        </p>
+                        <Input
+                          placeholder="Поиск товара для замены..."
+                          value={replaceSearch}
+                          onChange={(e) => searchReplace(e.target.value)}
+                          className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm mb-2"
+                        />
+                        {replaceResults.length > 0 && !replaceSelected && (
+                          <div className="border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto mb-2">
+                            {replaceResults.map((r) => (
+                              <button
+                                key={`${r.is_temp ? 'tp' : 'p'}-${r.id}`}
+                                className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                                onClick={() => setReplaceSelected({ id: r.is_temp ? null : r.id, temp_id: r.is_temp ? r.id : null, name: r.name, price: r.price_wholesale || 0 })}
+                              >
+                                <span>{r.name}</span>
+                                {r.is_temp && <span className="text-amber-400 text-xs ml-1">временный</span>}
+                                <span className="text-xs text-muted-foreground ml-2">{r.price_wholesale ? `${r.price_wholesale.toLocaleString()} ₽` : ""}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {replaceSelected && (
+                          <div className="mb-2 p-2 rounded-lg bg-white/[0.04]">
+                            <p className="text-xs mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
+                            <p className="text-xs text-muted-foreground">
+                              Текущая цена: {item.price.toLocaleString()} ₽ · Цена замены: {replaceSelected.price.toLocaleString()} ₽
+                            </p>
+                          </div>
+                        )}
+                        {replaceSelected && (
+                          <div className="flex gap-2 flex-wrap">
+                            <Button size="sm" className="rounded-lg" disabled={deleting} onClick={() => confirmDelete(true)}>
+                              Оставить цену
+                            </Button>
+                            <Button size="sm" variant="outline" className="rounded-lg border-white/[0.08]" disabled={deleting} onClick={() => confirmDelete(false)}>
+                              Взять из товара
+                            </Button>
+                            <Button size="sm" variant="ghost" className="rounded-lg" onClick={() => { setDeleteItem(null); setReplaceSelected(null); }}>
+                              Отменить
+                            </Button>
+                          </div>
+                        )}
+                        {!replaceSelected && (
+                          <Button size="sm" variant="ghost" className="rounded-lg mt-1" onClick={() => setDeleteItem(null)}>
+                            Отменить
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
