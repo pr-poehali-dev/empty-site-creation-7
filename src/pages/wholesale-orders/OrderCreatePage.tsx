@@ -190,12 +190,13 @@ const OrderCreatePage = () => {
   useEffect(() => {
     const saved = sessionStorage.getItem(DRAFT_KEY);
     let rulesPromise: Promise<PricingRule[]> | null = null;
+    let savedLines: OrderLine[] = [];
     if (saved) {
       try {
         const d = JSON.parse(saved);
         if (d.customerName) setCustomerName(d.customerName);
         if (d.comment) setComment(d.comment);
-        if (d.lines?.length) setLines(d.lines);
+        if (d.lines?.length) savedLines = d.lines;
         if (d.wholesalerId) {
           setWholesalerId(d.wholesalerId);
           rulesPromise = fetch(`${PRICING_URL}?wholesaler_id=${d.wholesalerId}`, { headers: authHeaders })
@@ -205,7 +206,6 @@ const OrderCreatePage = () => {
         }
       } catch { /* ignore */ }
     }
-    if (!editId) canSaveDraftRef.current = true;
 
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
@@ -245,14 +245,17 @@ const OrderCreatePage = () => {
                 });
               }
             }
-            if (newLines.length > 0) {
-              setLines(prev => [...newLines, ...prev]);
-            }
+            setLines([...newLines, ...savedLines]);
+            if (!editId) canSaveDraftRef.current = true;
           };
           loadScanned();
+          return;
         }
       } catch { /* ignore */ }
     }
+
+    if (savedLines.length > 0) setLines(savedLines);
+    if (!editId) canSaveDraftRef.current = true;
   }, []);
 
   useEffect(() => {
