@@ -634,6 +634,7 @@ const OrderCreatePage = () => {
           comment: comment.trim() || null,
           items: lines.map((l) => ({
             product_id: l.product_id,
+            name: l.name,
             quantity: l.quantity,
             price: l.price,
             is_temp: l.is_temp || false,

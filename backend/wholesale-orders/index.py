@@ -133,7 +133,7 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
 
             cur.execute(
-                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount, oi.temp_product_id
+                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount, oi.temp_product_id, oi.item_name
                    FROM wholesale_order_items oi
                    JOIN products p ON p.id = oi.product_id
                    WHERE oi.order_id = %s
@@ -143,14 +143,13 @@ def handler(event: dict, context) -> dict:
             items = []
             for r in cur.fetchall():
                 is_temp = r[7] is not None or r[1] == 19
-                tp_name = r[2]
-                if is_temp and r[7]:
-                    cur.execute("SELECT brand, article FROM temp_products WHERE id = %s", (r[7],))
-                    tp_row = cur.fetchone()
-                    if tp_row:
-                        tp_name = f"{tp_row[0]} {tp_row[1]}"
+                if is_temp:
+                    display_name = r[8] or r[2]
+                else:
+                    display_name = r[2]
                 items.append({
-                    'id': r[0], 'product_id': r[1] if r[1] != 19 else None, 'name': tp_name, 'article': r[3],
+                    'id': r[0], 'product_id': r[1] if r[1] != 19 else None, 'name': display_name,
+                    'article': r[3] if r[3] != '__TEMP__' else None,
                     'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6]),
                     'is_temp': is_temp, 'temp_product_id': r[7], 'has_uuid': False if is_temp else bool(r[3])
                 })
@@ -253,10 +252,11 @@ def handler(event: dict, context) -> dict:
             amount = price * qty
             pid = item.get('product_id') or TEMP_PRODUCT_ID
             temp_pid = item.get('temp_product_id')
+            item_name = item.get('name')
             cur.execute(
-                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id)
-                   VALUES (%s, %s, %s, %s, %s, %s)""",
-                (order_id, pid, qty, price, amount, temp_pid)
+                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id, item_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (order_id, pid, qty, price, amount, temp_pid, item_name)
             )
 
         conn.commit()
@@ -303,9 +303,10 @@ def handler(event: dict, context) -> dict:
                 amount = price * qty
                 total += amount
                 temp_pid = item.get('temp_product_id')
+                item_name = item.get('name')
                 cur.execute(
-                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (order_id, pid, qty, price, amount, temp_pid)
+                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id, item_name) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (order_id, pid, qty, price, amount, temp_pid, item_name)
                 )
             cur.execute("UPDATE wholesale_orders SET total_amount = %s WHERE id = %s", (total, order_id))
 

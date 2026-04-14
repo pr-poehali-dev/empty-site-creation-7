@@ -290,17 +290,18 @@ const ScanBarcode = () => {
     searchDebounceRef.current = setTimeout(() => doSearch(value, searchMode), 300);
   };
 
-  const selectProduct = (product: { id: number; name: string }) => {
+  const selectProduct = (product: { id: number; name: string; price_wholesale?: number | null }) => {
     if (!searchItem) return;
     const barcode = searchItem.barcode;
+    const price = product.price_wholesale || 0;
     setScannedItems((prev) =>
-      prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true, product_id: product.id } : s)
+      prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true, product_id: product.id, price } : s)
     );
     setCollected((prev) => {
       const idx = prev.findIndex((e) => e.barcode === barcode && !e.product_id);
       if (idx === -1) return prev;
       const next = [...prev];
-      next[idx] = { ...next[idx], product_id: product.id, name: product.name };
+      next[idx] = { ...next[idx], product_id: product.id, name: product.name, price };
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
