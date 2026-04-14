@@ -1,0 +1,10 @@
+{
+  "tests": [
+    {
+      "name": "GET brands list",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    }
+  ]
+}

@@ -21,6 +21,7 @@ import PricingRules from "./pages/PricingRules";
 import PricingRulesEdit from "./pages/PricingRulesEdit";
 import NewProducts from "./pages/NewProducts";
 import NewBarcodes from "./pages/NewBarcodes";
+import Brands from "./pages/Brands";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -51,6 +52,7 @@ const App = () => (
           <Route path="/admin/pricing/:id" element={<ProtectedRoute><PricingRulesEdit /></ProtectedRoute>} />
           <Route path="/admin/new-products" element={<ProtectedRoute><NewProducts /></ProtectedRoute>} />
           <Route path="/admin/new-barcodes" element={<ProtectedRoute><NewBarcodes /></ProtectedRoute>} />
+          <Route path="/admin/brands" element={<ProtectedRoute><Brands /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
