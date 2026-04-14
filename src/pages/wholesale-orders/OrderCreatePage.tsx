@@ -130,6 +130,7 @@ const OrderCreatePage = () => {
   const articleRef = useRef<HTMLDivElement>(null);
   const articleDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [savingTemp, setSavingTemp] = useState(false);
+  const canSaveDraftRef = useRef(false);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -204,7 +205,7 @@ const OrderCreatePage = () => {
         }
       } catch { /* ignore */ }
     }
-
+    if (!editId) canSaveDraftRef.current = true;
 
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
@@ -244,7 +245,7 @@ const OrderCreatePage = () => {
   }, []);
 
   useEffect(() => {
-    if (editId) return;
+    if (!canSaveDraftRef.current) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
   }, [customerName, comment, lines, wholesalerId]);
 
@@ -283,6 +284,7 @@ const OrderCreatePage = () => {
         toast({ title: "Ошибка", description: "Не удалось загрузить заявку", variant: "destructive" });
       } finally {
         setLoading(false);
+        canSaveDraftRef.current = true;
       }
     };
     load();
