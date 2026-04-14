@@ -309,18 +309,19 @@ const ScanBarcode = () => {
     setSaveBarcodeDialog({ barcode, productId: product.id, productName: product.name });
   };
 
-  const selectTempProduct = (tp: { id: number; brand: string; article: string }) => {
+  const selectTempProduct = (tp: { id: number; brand: string; article: string; price: number }) => {
     if (!searchItem) return;
     const barcode = searchItem.barcode;
     const name = `${tp.brand} ${tp.article}`;
+    const price = tp.price || 0;
     setScannedItems((prev) =>
-      prev.map((s) => s.id === searchItem.id ? { ...s, name, found: true, product_id: null } : s)
+      prev.map((s) => s.id === searchItem.id ? { ...s, name, found: true, product_id: null, price } : s)
     );
     setCollected((prev) => {
       const idx = prev.findIndex((e) => e.barcode === barcode && !e.product_id);
       if (idx === -1) return prev;
       const next = [...prev];
-      next[idx] = { ...next[idx], product_id: null, name };
+      next[idx] = { ...next[idx], product_id: null, name, price };
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
@@ -355,14 +356,15 @@ const ScanBarcode = () => {
       if (resp.ok) {
         const barcode = searchItem.barcode;
         const name = `${tempBrand.trim()} ${tempArticle.trim()}`;
+        const price = parseFloat(tempPrice) || 0;
         setScannedItems((prev) =>
-          prev.map((s) => s.id === searchItem.id ? { ...s, name, found: true, product_id: null } : s)
+          prev.map((s) => s.id === searchItem.id ? { ...s, name, found: true, product_id: null, price } : s)
         );
         setCollected((prev) => {
           const idx = prev.findIndex((e) => e.barcode === barcode && !e.product_id);
           if (idx === -1) return prev;
           const next = [...prev];
-          next[idx] = { ...next[idx], product_id: null, name };
+          next[idx] = { ...next[idx], product_id: null, name, price };
           localStorage.setItem(storageKey, JSON.stringify(next));
           return next;
         });
