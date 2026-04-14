@@ -79,9 +79,17 @@ def handler(event: dict, context) -> dict:
         rows = cur.fetchall()
         items = []
         for r in rows:
+            p_name = r[3]
+            p_article = r[4]
+            if not p_name and r[1]:
+                cur.execute("SELECT brand, article FROM temp_products WHERE barcode = %s LIMIT 1", (r[1],))
+                tp = cur.fetchone()
+                if tp:
+                    p_name = f"{tp[0]} {tp[1]}"
+                    p_article = tp[1]
             items.append({
                 'id': r[0], 'barcode': r[1], 'nomenclature_id': r[2],
-                'product_name': r[3], 'product_article': r[4],
+                'product_name': p_name, 'product_article': p_article,
                 'confirmed': r[5], 'is_removed': r[6],
                 'created_by': r[7],
                 'created_at': str(r[8]) if r[8] else None

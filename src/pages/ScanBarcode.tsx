@@ -78,7 +78,7 @@ const ScanBarcode = () => {
   const [searchItem, setSearchItem] = useState<ScannedItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"all" | "article">("all");
-  const [searchResults, setSearchResults] = useState<{ id: number; name: string; article: string | null; brand: string | null }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ id: number; name: string; article: string | null; brand: string | null; price_wholesale?: number | null }[]>([]);
   const [searching, setSearching] = useState(false);
   const [saveBarcodeDialog, setSaveBarcodeDialog] = useState<{ barcode: string; productId: number; productName: string } | null>(null);
   const [tempResults, setTempResults] = useState<{ id: number; brand: string; article: string; price: number }[]>([]);
