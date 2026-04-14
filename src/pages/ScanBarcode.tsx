@@ -92,6 +92,8 @@ const ScanBarcode = () => {
   const [showBrandList, setShowBrandList] = useState(false);
   const [articleSuggestions, setArticleSuggestions] = useState<{ id: number; name: string; article: string | null; brand: string | null }[]>([]);
   const [showArticleList, setShowArticleList] = useState(false);
+  const brandRef = useRef<HTMLDivElement>(null);
+  const articleRef = useRef<HTMLDivElement>(null);
   const articleDebounceRef2 = useRef<ReturnType<typeof setTimeout>>();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -435,6 +437,15 @@ const ScanBarcode = () => {
   const filteredBrands = allBrands.filter(b => b.toLowerCase().includes(tempBrand.toLowerCase()));
 
   useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (brandRef.current && !brandRef.current.contains(e.target as Node)) setShowBrandList(false);
+      if (articleRef.current && !articleRef.current.contains(e.target as Node)) setShowArticleList(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  useEffect(() => {
     const DetectorCtor = getDetectorCtor();
 
     if (!DetectorCtor) {
@@ -743,24 +754,44 @@ const ScanBarcode = () => {
           <div className="flex-1 overflow-y-auto px-4 pb-4">
             {showTempForm ? (
               <div className="p-3 rounded-xl border border-red-500/30 bg-red-950/20">
-                <p className="text-xs text-red-400 mb-2 font-medium">Новый товар</p>
+                <p className="text-xs text-red-400 mb-2 font-medium">Временный товар</p>
                 <div className="grid grid-cols-2 gap-2 mb-2">
-                  <div className="relative">
-                    <Input placeholder="Бренд *" value={tempBrand} onChange={(e) => { setTempBrand(e.target.value); setShowBrandList(true); }} onFocus={() => setShowBrandList(true)} onBlur={() => setTimeout(() => setShowBrandList(false), 200)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                  <div className="relative" ref={brandRef}>
+                    <Input
+                      placeholder="Бренд *"
+                      value={tempBrand}
+                      onChange={(e) => { setTempBrand(e.target.value); setShowBrandList(true); }}
+                      onFocus={() => setShowBrandList(true)}
+                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                    />
                     {showBrandList && filteredBrands.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
-                        {filteredBrands.slice(0, 15).map((b) => (
-                          <button key={b} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onMouseDown={(e) => { e.preventDefault(); setTempBrand(b); setShowBrandList(false); }}>{b}</button>
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                        {filteredBrands.map((b) => (
+                          <button
+                            key={b}
+                            className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                            onClick={() => { setTempBrand(b); setShowBrandList(false); }}
+                          >{b}</button>
                         ))}
                       </div>
                     )}
                   </div>
-                  <div className="relative">
-                    <Input placeholder="Артикул *" value={tempArticle} onChange={(e) => { searchArticlesInScan(e.target.value); setShowArticleList(true); }} onFocus={() => setShowArticleList(true)} onBlur={() => setTimeout(() => setShowArticleList(false), 200)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                  <div className="relative" ref={articleRef}>
+                    <Input
+                      placeholder="Артикул *"
+                      value={tempArticle}
+                      onChange={(e) => { searchArticlesInScan(e.target.value); setShowArticleList(true); }}
+                      onFocus={() => setShowArticleList(true)}
+                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                    />
                     {showArticleList && articleSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                         {articleSuggestions.map((item) => (
-                          <button key={item.id} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onMouseDown={(e) => { e.preventDefault(); selectProduct(item); setShowTempForm(false); setTempBrand(""); setTempArticle(""); setShowArticleList(false); }}>
+                          <button
+                            key={item.id}
+                            className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                            onClick={() => { selectProduct(item); setShowTempForm(false); setTempBrand(""); setTempArticle(""); setShowArticleList(false); }}
+                          >
                             <span className="block">{item.article}</span>
                             <span className="text-xs text-muted-foreground">{item.name}</span>
                           </button>
@@ -770,15 +801,23 @@ const ScanBarcode = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mb-2">
-                  <Input placeholder="Кол-во" type="number" value={tempQty} onChange={(e) => setTempQty(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
-                  <Input placeholder="Цена" type="number" value={tempPrice} onChange={(e) => setTempPrice(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                  <Input placeholder="Количество *" type="number" value={tempQty}
+                    onChange={(e) => setTempQty(e.target.value)}
+                    className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                  />
+                  <Input placeholder="Цена *" type="number" value={tempPrice}
+                    onChange={(e) => setTempPrice(e.target.value)}
+                    className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                  />
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" className="rounded-lg flex-1" onClick={saveTempAndSelect} disabled={savingTemp || !tempBrand.trim() || !tempArticle.trim()}>
                     {savingTemp ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Check" size={14} />}
                     <span className="ml-1">Добавить</span>
                   </Button>
-                  <Button size="sm" variant="ghost" className="rounded-lg text-white/50" onClick={() => setShowTempForm(false)}>Отмена</Button>
+                  <Button size="sm" variant="ghost" className="rounded-lg"
+                    onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice(""); }}
+                  >Отмена</Button>
                 </div>
               </div>
             ) : (
