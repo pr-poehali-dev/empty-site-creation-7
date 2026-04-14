@@ -88,6 +88,11 @@ const ScanBarcode = () => {
   const [tempQty, setTempQty] = useState("1");
   const [tempPrice, setTempPrice] = useState("");
   const [savingTemp, setSavingTemp] = useState(false);
+  const [allBrands, setAllBrands] = useState<string[]>([]);
+  const [showBrandList, setShowBrandList] = useState(false);
+  const [articleSuggestions, setArticleSuggestions] = useState<{ id: number; name: string; article: string | null; brand: string | null }[]>([]);
+  const [showArticleList, setShowArticleList] = useState(false);
+  const articleDebounceRef2 = useRef<ReturnType<typeof setTimeout>>();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const token = localStorage.getItem("auth_token") || "";
@@ -396,6 +401,33 @@ const ScanBarcode = () => {
     } catch { /* ignore */ }
     setSaveBarcodeDialog(null);
   };
+
+  useEffect(() => {
+    fetch(`${PRODUCTS_URL}?search=&per_page=200`, { headers: authHeaders })
+      .then(r => r.json())
+      .then(data => {
+        if (data.items) {
+          const brands = [...new Set<string>(data.items.map((p: { brand: string | null }) => p.brand).filter(Boolean))].sort() as string[];
+          setAllBrands(brands);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const searchArticlesInScan = (value: string) => {
+    setTempArticle(value);
+    if (articleDebounceRef2.current) clearTimeout(articleDebounceRef2.current);
+    if (!value.trim() || value.trim().length < 2) { setArticleSuggestions([]); return; }
+    articleDebounceRef2.current = setTimeout(async () => {
+      try {
+        const resp = await fetch(`${PRODUCTS_URL}?search=${encodeURIComponent(value)}&search_type=article&per_page=8`, { headers: authHeaders });
+        const data = await resp.json();
+        if (resp.ok) setArticleSuggestions(data.items || []);
+      } catch { /* ignore */ }
+    }, 300);
+  };
+
+  const filteredBrands = allBrands.filter(b => b.toLowerCase().includes(tempBrand.toLowerCase()));
 
   useEffect(() => {
     const DetectorCtor = getDetectorCtor();
@@ -708,8 +740,29 @@ const ScanBarcode = () => {
               <div className="p-3 rounded-xl border border-red-500/30 bg-red-950/20">
                 <p className="text-xs text-red-400 mb-2 font-medium">Новый товар</p>
                 <div className="grid grid-cols-2 gap-2 mb-2">
-                  <Input placeholder="Бренд *" value={tempBrand} onChange={(e) => setTempBrand(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
-                  <Input placeholder="Артикул *" value={tempArticle} onChange={(e) => setTempArticle(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                  <div className="relative">
+                    <Input placeholder="Бренд *" value={tempBrand} onChange={(e) => { setTempBrand(e.target.value); setShowBrandList(true); }} onFocus={() => setShowBrandList(true)} onBlur={() => setTimeout(() => setShowBrandList(false), 200)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                    {showBrandList && filteredBrands.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                        {filteredBrands.slice(0, 15).map((b) => (
+                          <button key={b} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onClick={() => { setTempBrand(b); setShowBrandList(false); }}>{b}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Input placeholder="Артикул *" value={tempArticle} onChange={(e) => { searchArticlesInScan(e.target.value); setShowArticleList(true); }} onFocus={() => setShowArticleList(true)} onBlur={() => setTimeout(() => setShowArticleList(false), 200)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
+                    {showArticleList && articleSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                        {articleSuggestions.map((item) => (
+                          <button key={item.id} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onClick={() => { selectProduct(item); setShowTempForm(false); setTempBrand(""); setTempArticle(""); setShowArticleList(false); }}>
+                            <span className="block">{item.article}</span>
+                            <span className="text-xs text-muted-foreground">{item.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <Input placeholder="Кол-во" type="number" value={tempQty} onChange={(e) => setTempQty(e.target.value)} className="h-9 rounded-lg bg-white/[0.08] border-white/[0.12] text-white text-sm" />
