@@ -750,7 +750,7 @@ const ScanBarcode = () => {
                     {showBrandList && filteredBrands.length > 0 && (
                       <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                         {filteredBrands.slice(0, 15).map((b) => (
-                          <button key={b} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onClick={() => { setTempBrand(b); setShowBrandList(false); }}>{b}</button>
+                          <button key={b} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onMouseDown={(e) => { e.preventDefault(); setTempBrand(b); setShowBrandList(false); }}>{b}</button>
                         ))}
                       </div>
                     )}
@@ -760,7 +760,7 @@ const ScanBarcode = () => {
                     {showArticleList && articleSuggestions.length > 0 && (
                       <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                         {articleSuggestions.map((item) => (
-                          <button key={item.id} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onClick={() => { selectProduct(item); setShowTempForm(false); setTempBrand(""); setTempArticle(""); setShowArticleList(false); }}>
+                          <button key={item.id} className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0" onMouseDown={(e) => { e.preventDefault(); selectProduct(item); setShowTempForm(false); setTempBrand(""); setTempArticle(""); setShowArticleList(false); }}>
                             <span className="block">{item.article}</span>
                             <span className="text-xs text-muted-foreground">{item.name}</span>
                           </button>
