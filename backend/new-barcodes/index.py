@@ -141,6 +141,13 @@ def handler(event: dict, context) -> dict:
 
         args.append(item_id)
         cur.execute(f"UPDATE new_barcodes SET {', '.join(updates)} WHERE id = %s", args)
+
+        if body.get('is_removed'):
+            cur.execute("SELECT barcode FROM new_barcodes WHERE id = %s", (item_id,))
+            bc_row = cur.fetchone()
+            if bc_row and bc_row[0]:
+                cur.execute("UPDATE temp_products SET barcode = NULL WHERE barcode = %s", (bc_row[0],))
+
         conn.commit()
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}

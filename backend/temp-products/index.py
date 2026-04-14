@@ -79,7 +79,7 @@ def handler(event: dict, context) -> dict:
         total = cur.fetchone()[0]
 
         cur.execute(
-            f"""SELECT id, brand, article, quantity, price, status, nomenclature_id, created_by, created_at
+            f"""SELECT id, brand, article, quantity, price, status, nomenclature_id, created_by, created_at, barcode
                 FROM temp_products {where}
                 ORDER BY created_at DESC
                 LIMIT %s OFFSET %s""",
@@ -93,7 +93,8 @@ def handler(event: dict, context) -> dict:
                 'quantity': float(r[3]), 'price': float(r[4]),
                 'status': r[5], 'nomenclature_id': r[6],
                 'created_by': r[7],
-                'created_at': str(r[8]) if r[8] else None
+                'created_at': str(r[8]) if r[8] else None,
+                'barcode': r[9]
             })
 
         cur.close(); conn.close()
@@ -111,11 +112,12 @@ def handler(event: dict, context) -> dict:
 
         manager_id = get_manager_id(cur, user[1])
 
+        barcode = (body.get('barcode') or '').strip() or None
         cur.execute(
-            """INSERT INTO temp_products (brand, article, quantity, price, created_by)
-               VALUES (%s, %s, %s, %s, %s)
+            """INSERT INTO temp_products (brand, article, quantity, price, created_by, barcode)
+               VALUES (%s, %s, %s, %s, %s, %s)
                RETURNING id, brand, article, quantity, price, status, created_at""",
-            (brand, article, quantity, price, manager_id)
+            (brand, article, quantity, price, manager_id, barcode)
         )
         row = cur.fetchone()
         conn.commit()
@@ -147,6 +149,8 @@ def handler(event: dict, context) -> dict:
             updates.append("status = %s"); args.append(body['status'])
         if 'nomenclature_id' in body:
             updates.append("nomenclature_id = %s"); args.append(body['nomenclature_id'])
+        if 'barcode' in body:
+            updates.append("barcode = %s"); args.append(body['barcode'])
 
         if not updates:
             cur.close(); conn.close()

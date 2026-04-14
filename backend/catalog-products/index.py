@@ -163,6 +163,19 @@ def handler(event: dict, context) -> dict:
                 product_ids = [r[0] for r in cur.fetchall()]
 
             if not product_ids:
+                if barcode:
+                    cur.execute("SELECT id, brand, article, price FROM temp_products WHERE barcode = %s AND status = 'pending' LIMIT 1", (barcode,))
+                    tp = cur.fetchone()
+                    if tp:
+                        cur.close(); conn.close()
+                        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [{
+                            'id': tp[0], 'name': f"{tp[1]} {tp[2]}", 'article': tp[2], 'brand': tp[1],
+                            'price_wholesale': float(tp[3]) if tp[3] else 0,
+                            'is_temp': True, 'temp_product_id': tp[0],
+                            'category_id': None, 'supplier_code': None, 'price_base': None,
+                            'price_retail': None, 'price_purchase': None, 'product_group': None,
+                            'external_id': None, 'category_name': None, 'images': [], 'barcodes': []
+                        }], 'total': 1, 'page': 1, 'per_page': 50})}
                 cur.close()
                 conn.close()
                 return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [], 'total': 0, 'page': 1, 'per_page': 50})}

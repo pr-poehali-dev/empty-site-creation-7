@@ -144,8 +144,8 @@ const ScanBarcode = () => {
       const data = await resp.json();
       const found = resp.ok && data.items?.length > 0 ? data.items[0] : data.item || null;
       if (found) {
-        const price = calcPrice(found);
-        return { id, barcode: code, name: found.name, found: true, product_id: found.id, price };
+        const price = found.is_temp ? (found.price_wholesale || 0) : calcPrice(found);
+        return { id, barcode: code, name: found.name, found: true, product_id: found.is_temp ? null : found.id, price };
       }
     } catch { /* ignore */ }
     return { id, barcode: code, name: null, found: false, product_id: null, price: 0 };
@@ -324,6 +324,11 @@ const ScanBarcode = () => {
       return next;
     });
     setSearchItem(null);
+    fetch(TEMP_PRODUCTS_URL + `?id=${tp.id}`, {
+      method: "PUT",
+      headers: authHeaders,
+      body: JSON.stringify({ barcode }),
+    }).catch(() => {});
     fetch(NEW_BARCODES_URL, {
       method: "POST",
       headers: authHeaders,
@@ -343,6 +348,7 @@ const ScanBarcode = () => {
           article: tempArticle.trim(),
           quantity: parseFloat(tempQty) || 1,
           price: parseFloat(tempPrice) || 0,
+          barcode: searchItem.barcode,
         }),
       });
       if (resp.ok) {
