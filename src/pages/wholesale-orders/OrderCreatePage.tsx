@@ -667,7 +667,7 @@ const OrderCreatePage = () => {
 
   const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent);
 
-  const showDropdown = searchQuery.trim().length >= 2;
+  const showDropdown = searchQuery.trim().length >= 2 && !showTempForm;
   const hasResults = searchResults.length > 0 || tempProductResults.length > 0;
 
   if (loading) {
@@ -1018,7 +1018,7 @@ const OrderCreatePage = () => {
         ) : (
           <div className="space-y-1.5">
             {lines.map((line, i) => {
-              const isRedLine = line.is_temp || (line.product_id && !line.has_uuid);
+              const isRedLine = line.is_temp === true || (line.product_id && line.has_uuid === false);
               return (
                 <div
                   key={i}
@@ -1160,8 +1160,17 @@ const OrderCreatePage = () => {
             <AlertDialogTitle>Выйти из заявки?</AlertDialogTitle>
             <AlertDialogDescription>Несохранённые данные будут потеряны</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:gap-0">
+          <AlertDialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
             <AlertDialogCancel className="rounded-xl border-white/[0.08]">Остаться</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-destructive hover:bg-destructive/90"
+              onClick={() => {
+                sessionStorage.removeItem(DRAFT_KEY);
+                navigate("/admin/orders");
+              }}
+            >
+              Не сохранять
+            </AlertDialogAction>
             <AlertDialogAction
               className="rounded-xl"
               onClick={async () => {

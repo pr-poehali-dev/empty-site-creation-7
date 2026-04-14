@@ -109,6 +109,9 @@ const NewBarcodes = () => {
           )}
           <p className="text-xs text-muted-foreground mt-0.5">{formatDate(item.created_at)}</p>
         </div>
+        {showActions && item.confirmed && (
+          <span className="text-xs text-green-400 flex-shrink-0 mr-1">Сохранён</span>
+        )}
         {showActions && (
           <div className="flex gap-1.5 flex-shrink-0">
             {!item.confirmed && item.nomenclature_id && (
