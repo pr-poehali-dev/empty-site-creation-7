@@ -246,7 +246,7 @@ const OrderCreatePage = () => {
               }
             }
             if (newLines.length > 0) {
-              setLines(prev => [...newLines, ...prev]);
+              setLines(prev => [...prev, ...newLines]);
             }
           };
           loadScanned();

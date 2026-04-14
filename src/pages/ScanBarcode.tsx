@@ -293,7 +293,7 @@ const ScanBarcode = () => {
   const selectProduct = (product: { id: number; name: string; price_wholesale?: number | null }) => {
     if (!searchItem) return;
     const barcode = searchItem.barcode;
-    const price = product.price_wholesale || 0;
+    const price = calcPrice(product as Record<string, unknown>);
     setScannedItems((prev) =>
       prev.map((s) => s.id === searchItem.id ? { ...s, name: product.name, found: true, product_id: product.id, price } : s)
     );
