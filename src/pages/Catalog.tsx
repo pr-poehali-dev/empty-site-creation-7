@@ -1001,9 +1001,11 @@ const Catalog = () => {
                   {formBarcodes.map((bc, i) => (
                     <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.06] text-xs">
                       {bc}
-                      <button onClick={() => setFormBarcodes((prev) => prev.filter((_, idx) => idx !== i))}>
-                        <Icon name="X" size={12} className="text-muted-foreground hover:text-destructive" />
-                      </button>
+                      {isOwner && (
+                        <button onClick={() => setFormBarcodes((prev) => prev.filter((_, idx) => idx !== i))}>
+                          <Icon name="X" size={12} className="text-muted-foreground hover:text-destructive" />
+                        </button>
+                      )}
                     </span>
                   ))}
                 </div>
