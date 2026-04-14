@@ -133,7 +133,7 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
 
             cur.execute(
-                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount
+                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount, oi.temp_product_id
                    FROM wholesale_order_items oi
                    JOIN products p ON p.id = oi.product_id
                    WHERE oi.order_id = %s
@@ -142,9 +142,17 @@ def handler(event: dict, context) -> dict:
             )
             items = []
             for r in cur.fetchall():
+                is_temp = r[7] is not None or r[1] == 19
+                tp_name = r[2]
+                if is_temp and r[7]:
+                    cur.execute("SELECT brand, article FROM temp_products WHERE id = %s", (r[7],))
+                    tp_row = cur.fetchone()
+                    if tp_row:
+                        tp_name = f"{tp_row[0]} {tp_row[1]}"
                 items.append({
-                    'id': r[0], 'product_id': r[1], 'name': r[2], 'article': r[3],
-                    'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6])
+                    'id': r[0], 'product_id': r[1] if r[1] != 19 else None, 'name': tp_name, 'article': r[3],
+                    'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6]),
+                    'is_temp': is_temp, 'temp_product_id': r[7], 'has_uuid': False if is_temp else bool(r[3])
                 })
 
             order = {
@@ -238,14 +246,17 @@ def handler(event: dict, context) -> dict:
 
         cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name,))
 
+        TEMP_PRODUCT_ID = 19
         for item in items:
             qty = int(item.get('quantity', 1))
             price = item.get('_price', float(item.get('price', 0)))
             amount = price * qty
+            pid = item.get('product_id') or TEMP_PRODUCT_ID
+            temp_pid = item.get('temp_product_id')
             cur.execute(
-                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (order_id, item['product_id'], qty, price, amount)
+                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (order_id, pid, qty, price, amount, temp_pid)
             )
 
         conn.commit()
@@ -281,17 +292,20 @@ def handler(event: dict, context) -> dict:
             cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
             cname = cur.fetchone()[0]
             cur.execute("DELETE FROM wholesale_order_items WHERE order_id = %s", (order_id,))
+            TEMP_PRODUCT_ID = 19
             total = 0
             for item in items:
                 qty = int(item.get('quantity', 1))
                 price = float(item.get('price', 0))
-                if price == 0:
-                    price = calc_price_by_rules(cur, customer_name or cname, item.get('product_id'))
+                pid = item.get('product_id') or TEMP_PRODUCT_ID
+                if price == 0 and pid != TEMP_PRODUCT_ID:
+                    price = calc_price_by_rules(cur, customer_name or cname, pid)
                 amount = price * qty
                 total += amount
+                temp_pid = item.get('temp_product_id')
                 cur.execute(
-                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount) VALUES (%s, %s, %s, %s, %s)",
-                    (order_id, item['product_id'], qty, price, amount)
+                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (order_id, pid, qty, price, amount, temp_pid)
                 )
             cur.execute("UPDATE wholesale_orders SET total_amount = %s WHERE id = %s", (total, order_id))
 

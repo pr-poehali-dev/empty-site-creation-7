@@ -212,27 +212,38 @@ const OrderCreatePage = () => {
       localStorage.removeItem("scanned_order_barcodes");
       try {
         const entries: { barcode: string; product_id: number | null; name: string | null; price?: number }[] = JSON.parse(scannedRaw);
-        const validEntries = entries.filter(e => e.product_id);
-        if (validEntries.length > 0) {
+        if (entries.length > 0) {
           const loadScanned = async () => {
             const rules = rulesPromise ? await rulesPromise : pricingRules;
             const newLines: OrderLine[] = [];
-            for (const entry of validEntries) {
-              try {
-                const resp = await fetch(`${PRODUCTS_URL}?id=${entry.product_id}`, { headers: authHeaders });
-                const data = await resp.json();
-                const product = data.item;
-                if (product) {
-                  newLines.push({
-                    product_id: product.id,
-                    name: product.name,
-                    article: product.article,
-                    quantity: 1,
-                    price: (entry.price && entry.price > 0) ? entry.price : calcPrice(product, rules),
-                    has_uuid: !!product.external_id,
-                  });
-                }
-              } catch { /* ignore */ }
+            for (const entry of entries) {
+              if (entry.product_id) {
+                try {
+                  const resp = await fetch(`${PRODUCTS_URL}?id=${entry.product_id}`, { headers: authHeaders });
+                  const data = await resp.json();
+                  const product = data.item;
+                  if (product) {
+                    newLines.push({
+                      product_id: product.id,
+                      name: product.name,
+                      article: product.article,
+                      quantity: 1,
+                      price: (entry.price && entry.price > 0) ? entry.price : calcPrice(product, rules),
+                      has_uuid: !!product.external_id,
+                    });
+                  }
+                } catch { /* ignore */ }
+              } else if (entry.name) {
+                newLines.push({
+                  product_id: null,
+                  name: entry.name,
+                  article: null,
+                  quantity: 1,
+                  price: entry.price || 0,
+                  is_temp: true,
+                  has_uuid: false,
+                });
+              }
             }
             if (newLines.length > 0) {
               setLines(prev => [...newLines, ...prev]);

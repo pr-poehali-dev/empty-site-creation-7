@@ -1,0 +1,3 @@
+ALTER TABLE t_p69702834_empty_site_creation_.wholesale_order_items DROP CONSTRAINT wholesale_order_items_nomenclature_id_fkey;
+ALTER TABLE t_p69702834_empty_site_creation_.wholesale_order_items ALTER COLUMN product_id SET DEFAULT NULL;
+ALTER TABLE t_p69702834_empty_site_creation_.wholesale_order_items ADD COLUMN temp_product_id INTEGER NULL;
