@@ -93,6 +93,13 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"SELECT temp_product_id, COUNT(DISTINCT order_id) FROM wholesale_order_items WHERE temp_product_id IN ({placeholders}) GROUP BY temp_product_id", tp_ids)
             for u in cur.fetchall():
                 usage_map[u[0]] = u[1]
+        for r in rows:
+            if r[0] not in usage_map or usage_map[r[0]] == 0:
+                name_match = f"{r[1]} {r[2]}"
+                cur.execute("SELECT COUNT(DISTINCT order_id) FROM wholesale_order_items WHERE product_id = 19 AND item_name = %s", (name_match,))
+                cnt = cur.fetchone()[0]
+                if cnt > 0:
+                    usage_map[r[0]] = usage_map.get(r[0], 0) + cnt
         items = []
         for r in rows:
             items.append({
