@@ -403,15 +403,14 @@ const ScanBarcode = () => {
   };
 
   useEffect(() => {
-    fetch(`${PRODUCTS_URL}?search=&per_page=200`, { headers: authHeaders })
-      .then(r => r.json())
-      .then(data => {
-        if (data.items) {
-          const brands = [...new Set<string>(data.items.map((p: { brand: string | null }) => p.brand).filter(Boolean))].sort() as string[];
-          setAllBrands(brands);
-        }
-      })
-      .catch(() => {});
+    Promise.all([
+      fetch(`${PRODUCTS_URL}?search=&per_page=200`, { headers: authHeaders }).then(r => r.json()),
+      fetch(`${TEMP_PRODUCTS_URL}?per_page=200`, { headers: authHeaders }).then(r => r.json()),
+    ]).then(([prodData, tempData]) => {
+      const prodBrands = (prodData.items || []).map((p: { brand: string | null }) => p.brand).filter(Boolean);
+      const tempBrands = (tempData.items || []).map((p: { brand: string }) => p.brand).filter(Boolean);
+      setAllBrands([...new Set<string>([...prodBrands, ...tempBrands])].sort() as string[]);
+    }).catch(() => {});
   }, []);
 
   const searchArticlesInScan = (value: string) => {
@@ -420,9 +419,15 @@ const ScanBarcode = () => {
     if (!value.trim() || value.trim().length < 2) { setArticleSuggestions([]); return; }
     articleDebounceRef2.current = setTimeout(async () => {
       try {
-        const resp = await fetch(`${PRODUCTS_URL}?search=${encodeURIComponent(value)}&search_type=article&per_page=8`, { headers: authHeaders });
-        const data = await resp.json();
-        if (resp.ok) setArticleSuggestions(data.items || []);
+        const [prodResp, tempResp] = await Promise.all([
+          fetch(`${PRODUCTS_URL}?search=${encodeURIComponent(value)}&search_type=article&per_page=8`, { headers: authHeaders }),
+          fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(value)}&per_page=5`, { headers: authHeaders }),
+        ]);
+        const prodData = await prodResp.json();
+        const tempData = await tempResp.json();
+        const prodItems = prodResp.ok ? (prodData.items || []) : [];
+        const tempItems = tempResp.ok ? (tempData.items || []).map((t: { id: number; brand: string; article: string }) => ({ id: t.id, name: `${t.brand} ${t.article}`, article: t.article, brand: t.brand })) : [];
+        setArticleSuggestions([...tempItems, ...prodItems]);
       } catch { /* ignore */ }
     }, 300);
   };
