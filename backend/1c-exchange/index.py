@@ -139,6 +139,34 @@ def handle_import_products(conn, body):
     errors = []
     results = []
     s3_client = None
+
+    ext_ids = [p.get("external_id") for p in products if p.get("external_id")]
+    existing_map = {}
+    if ext_ids:
+        cur.execute("SELECT external_id, id FROM products WHERE external_id = ANY(%s)", (ext_ids,))
+        existing_map = {row[0]: row[1] for row in cur.fetchall()}
+
+    cat_names = set()
+    cat_ext_ids = set()
+    for item in products:
+        if item.get("category_external_id"):
+            cat_ext_ids.add(item["category_external_id"])
+        if item.get("category_name"):
+            cat_names.add(item["category_name"])
+    cat_by_ext = {}
+    cat_by_name = {}
+    if cat_ext_ids:
+        cur.execute("SELECT external_id, id FROM categories WHERE external_id = ANY(%s)", (list(cat_ext_ids),))
+        cat_by_ext = {row[0]: row[1] for row in cur.fetchall()}
+    if cat_names:
+        cur.execute("SELECT name, id FROM categories WHERE name = ANY(%s)", (list(cat_names),))
+        cat_by_name = {row[0]: row[1] for row in cur.fetchall()}
+
+    to_insert = []
+    to_update = []
+    barcodes_to_add = []
+    images_to_process = []
+
     for item in products:
         ext_id = item.get("external_id")
         if not ext_id:
@@ -148,31 +176,26 @@ def handle_import_products(conn, body):
         if not name:
             errors.append({"external_id": ext_id, "error": "Нет наименования"})
             continue
-        category_ext_id = item.get("category_external_id")
         category_id = None
+        category_ext_id = item.get("category_external_id")
         if category_ext_id:
-            cur.execute("SELECT id FROM categories WHERE external_id = %s", (category_ext_id,))
-            row = cur.fetchone()
-            if row:
-                category_id = row[0]
+            category_id = cat_by_ext.get(category_ext_id)
         if not category_id:
             category_name = item.get("category_name")
             if category_name:
-                cur.execute("SELECT id FROM categories WHERE name = %s LIMIT 1", (category_name,))
-                row = cur.fetchone()
-                if row:
-                    category_id = row[0]
-                else:
+                category_id = cat_by_name.get(category_name)
+                if not category_id:
                     cur.execute(
                         "INSERT INTO categories (name, external_id) VALUES (%s, %s) RETURNING id",
                         (category_name, category_ext_id)
                     )
                     category_id = cur.fetchone()[0]
+                    cat_by_name[category_name] = category_id
+                    if category_ext_id:
+                        cat_by_ext[category_ext_id] = category_id
         if not category_id:
             errors.append({"external_id": ext_id, "error": "Не удалось определить категорию"})
             continue
-        cur.execute("SELECT id FROM products WHERE external_id = %s", (ext_id,))
-        existing = cur.fetchone()
         fields = {
             "name": name,
             "category_id": category_id,
@@ -187,55 +210,76 @@ def handle_import_products(conn, body):
             "price_purchase": item.get("price_purchase"),
         }
         fields = {k: v for k, v in fields.items() if v is not None}
-        if existing:
-            product_id = existing[0]
-            set_parts = [f"{k} = %s" for k in fields]
-            set_parts.append("updated_at = NOW()")
-            vals = list(fields.values())
-            vals.append(product_id)
-            cur.execute(f"UPDATE products SET {', '.join(set_parts)} WHERE id = %s", vals)
-            updated += 1
-            results.append({"external_id": ext_id, "id": product_id})
+        if ext_id in existing_map:
+            product_id = existing_map[ext_id]
+            to_update.append((fields, product_id, ext_id))
         else:
-            fields["external_id"] = ext_id
-            cols = list(fields.keys())
-            vals = list(fields.values())
-            placeholders = ["%s"] * len(vals)
-            cur.execute(
-                f"INSERT INTO products ({', '.join(cols)}) VALUES ({', '.join(placeholders)}) RETURNING id",
-                vals
-            )
-            product_id = cur.fetchone()[0]
-            created += 1
-            results.append({"external_id": ext_id, "id": product_id})
+            to_insert.append((fields, ext_id))
         barcode = item.get("barcode")
         if barcode:
-            cur.execute(
-                "SELECT id FROM product_barcodes WHERE product_id = %s AND barcode = %s",
-                (product_id, barcode)
-            )
-            if not cur.fetchone():
-                cur.execute(
-                    "INSERT INTO product_barcodes (product_id, barcode) VALUES (%s, %s)",
-                    (product_id, barcode)
-                )
+            barcodes_to_add.append((ext_id, barcode))
         images = item.get("images", [])
         if images:
-            if not s3_client:
-                s3_client = get_s3()
-            for idx, img_data in enumerate(images):
-                data_b64 = img_data if isinstance(img_data, str) else img_data.get("data", "")
-                ct = "image/jpeg" if isinstance(img_data, str) else img_data.get("content_type", "image/jpeg")
-                if not data_b64:
-                    continue
-                try:
-                    url, thumb_url = upload_image_with_thumb(s3_client, data_b64, ct)
-                    cur.execute(
-                        "INSERT INTO product_images (product_id, url, thumbnail_url, sort_order) VALUES (%s, %s, %s, %s)",
-                        (product_id, url, thumb_url, idx)
-                    )
-                except Exception:
-                    pass
+            images_to_process.append((ext_id, images))
+
+    for fields, product_id, ext_id in to_update:
+        set_parts = [f"{k} = %s" for k in fields]
+        set_parts.append("updated_at = NOW()")
+        vals = list(fields.values())
+        vals.append(product_id)
+        cur.execute(f"UPDATE products SET {', '.join(set_parts)} WHERE id = %s", vals)
+        updated += 1
+        results.append({"external_id": ext_id, "id": product_id})
+
+    for fields, ext_id in to_insert:
+        fields["external_id"] = ext_id
+        cols = list(fields.keys())
+        vals = list(fields.values())
+        placeholders = ["%s"] * len(vals)
+        cur.execute(
+            f"INSERT INTO products ({', '.join(cols)}) VALUES ({', '.join(placeholders)}) RETURNING id",
+            vals
+        )
+        product_id = cur.fetchone()[0]
+        existing_map[ext_id] = product_id
+        created += 1
+        results.append({"external_id": ext_id, "id": product_id})
+
+    if barcodes_to_add:
+        product_ids_for_bc = [existing_map[e] for e, _ in barcodes_to_add if e in existing_map]
+        existing_barcodes = set()
+        if product_ids_for_bc:
+            cur.execute("SELECT product_id, barcode FROM product_barcodes WHERE product_id = ANY(%s)", (product_ids_for_bc,))
+            existing_barcodes = {(row[0], row[1]) for row in cur.fetchall()}
+        insert_bc = []
+        for ext_id, barcode in barcodes_to_add:
+            pid = existing_map.get(ext_id)
+            if pid and (pid, barcode) not in existing_barcodes:
+                insert_bc.append((pid, barcode))
+        if insert_bc:
+            args = ",".join(cur.mogrify("(%s,%s)", row).decode() for row in insert_bc)
+            cur.execute(f"INSERT INTO product_barcodes (product_id, barcode) VALUES {args}")
+
+    for ext_id, images in images_to_process:
+        pid = existing_map.get(ext_id)
+        if not pid:
+            continue
+        if not s3_client:
+            s3_client = get_s3()
+        for idx, img_data in enumerate(images):
+            data_b64 = img_data if isinstance(img_data, str) else img_data.get("data", "")
+            ct = "image/jpeg" if isinstance(img_data, str) else img_data.get("content_type", "image/jpeg")
+            if not data_b64:
+                continue
+            try:
+                url, thumb_url = upload_image_with_thumb(s3_client, data_b64, ct)
+                cur.execute(
+                    "INSERT INTO product_images (product_id, url, thumbnail_url, sort_order) VALUES (%s, %s, %s, %s)",
+                    (pid, url, thumb_url, idx)
+                )
+            except Exception:
+                pass
+
     conn.commit()
     cur.close()
     return resp(200, {"created": created, "updated": updated, "errors": errors, "products": results})
