@@ -85,13 +85,20 @@ const WholesaleOrders = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    const isArchived = deleteTarget.status === "archived";
     try {
-      const resp = await fetch(`${ORDERS_URL}?id=${deleteTarget.id}`, {
-        method: "DELETE",
-        headers: authHeaders,
-      });
+      const resp = isArchived
+        ? await fetch(`${ORDERS_URL}?id=${deleteTarget.id}`, {
+            method: "DELETE",
+            headers: authHeaders,
+          })
+        : await fetch(`${ORDERS_URL}?id=${deleteTarget.id}`, {
+            method: "PUT",
+            headers: authHeaders,
+            body: JSON.stringify({ status: "archived" }),
+          });
       if (resp.ok) {
-        toast({ title: "Заявка удалена" });
+        toast({ title: isArchived ? "Заявка удалена" : "Заявка в архиве" });
         setDeleteTarget(null);
         setViewOrder(null);
         fetchOrders(showArchive);
