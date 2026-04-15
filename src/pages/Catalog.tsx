@@ -167,7 +167,7 @@ const Catalog = () => {
     try {
       const resp = await fetch(BRANDS_URL, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok) setAllBrands((data.brands || []).map((b: { name: string }) => b.name));
+      if (resp.ok) setAllBrands((data.items || []).map((b: { name: string }) => b.name));
     } catch { /* ignore */ }
   }, [token]);
 
