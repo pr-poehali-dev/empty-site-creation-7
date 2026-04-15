@@ -26,6 +26,7 @@ import compressImage from "@/lib/compressImage";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
+const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
 
 interface Category {
   id: number;
@@ -124,6 +125,11 @@ const Catalog = () => {
   const [searchParams] = useSearchParams();
   const [productGroups, setProductGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string>(searchParams.get("group") || "");
+  const [allBrands, setAllBrands] = useState<string[]>([]);
+  const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+  const brandDropdownRef = useRef<HTMLDivElement>(null);
+  const groupDropdownRef = useRef<HTMLDivElement>(null);
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardCategoryId, setWizardCategoryId] = useState("");
@@ -154,6 +160,14 @@ const Catalog = () => {
       const resp = await fetch(`${PRODUCTS_URL}?distinct=product_group`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok) setProductGroups(data.groups || []);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const fetchBrands = useCallback(async () => {
+    try {
+      const resp = await fetch(BRANDS_URL, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setAllBrands((data.brands || []).map((b: { name: string }) => b.name));
     } catch { /* ignore */ }
   }, [token]);
 
@@ -195,6 +209,20 @@ const Catalog = () => {
   useEffect(() => {
     fetchCategories();
     fetchGroups();
+    fetchBrands();
+  }, []);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target as Node)) {
+        setShowBrandDropdown(false);
+      }
+      if (groupDropdownRef.current && !groupDropdownRef.current.contains(e.target as Node)) {
+        setShowGroupDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
   useEffect(() => {
@@ -997,12 +1025,28 @@ const Catalog = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Бренд</label>
-                <Input
-                  value={formBrand}
-                  onChange={(e) => setFormBrand(e.target.value)}
-                  disabled={isFieldDisabled("brand")}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <div className="relative" ref={brandDropdownRef}>
+                  <Input
+                    value={formBrand}
+                    onChange={(e) => { setFormBrand(e.target.value); setShowBrandDropdown(true); }}
+                    onFocus={() => setShowBrandDropdown(true)}
+                    disabled={isFieldDisabled("brand")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                  {showBrandDropdown && !isFieldDisabled("brand") && allBrands.filter(b => b.toLowerCase().includes(formBrand.toLowerCase())).length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                      {allBrands.filter(b => b.toLowerCase().includes(formBrand.toLowerCase())).map((b) => (
+                        <button
+                          key={b}
+                          className={`w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0 ${formBrand === b ? "bg-white/[0.06] text-primary" : ""}`}
+                          onClick={() => { setFormBrand(b); setShowBrandDropdown(false); }}
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1017,12 +1061,28 @@ const Catalog = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Группа</label>
-                <Input
-                  value={formProductGroup}
-                  onChange={(e) => setFormProductGroup(e.target.value)}
-                  disabled={isFieldDisabled("product_group")}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <div className="relative" ref={groupDropdownRef}>
+                  <Input
+                    value={formProductGroup}
+                    onChange={(e) => { setFormProductGroup(e.target.value); setShowGroupDropdown(true); }}
+                    onFocus={() => setShowGroupDropdown(true)}
+                    disabled={isFieldDisabled("product_group")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                  {showGroupDropdown && !isFieldDisabled("product_group") && productGroups.filter(g => g.toLowerCase().includes(formProductGroup.toLowerCase())).length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                      {productGroups.filter(g => g.toLowerCase().includes(formProductGroup.toLowerCase())).map((g) => (
+                        <button
+                          key={g}
+                          className={`w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0 ${formProductGroup === g ? "bg-white/[0.06] text-primary" : ""}`}
+                          onClick={() => { setFormProductGroup(g); setShowGroupDropdown(false); }}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             {editingProduct?.external_id && (
