@@ -121,7 +121,7 @@ const Catalog = () => {
   const [saving, setSaving] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [productGroups, setProductGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string>(searchParams.get("group") || "");
 
@@ -740,6 +740,32 @@ const Catalog = () => {
                 Все товары
               </button>
               {renderCategoryTree(null)}
+
+              {productGroups.length > 0 && (
+                <>
+                  <div className="border-t border-white/[0.08] my-2" />
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider px-2 mb-2">Группы</p>
+                  <button
+                    className={`w-full text-left px-2 py-1.5 rounded-lg text-sm mb-1 ${
+                      !selectedGroup ? "bg-primary/20 text-primary" : "hover:bg-white/[0.06]"
+                    }`}
+                    onClick={() => { setSelectedGroup(""); setShowMobileCategories(false); }}
+                  >
+                    Все группы
+                  </button>
+                  {productGroups.map((g) => (
+                    <button
+                      key={g}
+                      className={`w-full text-left px-2 py-1.5 rounded-lg text-sm mb-1 truncate ${
+                        selectedGroup === g ? "bg-primary/20 text-primary" : "hover:bg-white/[0.06]"
+                      }`}
+                      onClick={() => { setSelectedGroup(g); setShowMobileCategories(false); }}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -755,6 +781,32 @@ const Catalog = () => {
             Все товары
           </button>
           {renderCategoryTree(null)}
+
+          {productGroups.length > 0 && (
+            <>
+              <div className="border-t border-white/[0.08] my-3" />
+              <p className="text-xs text-muted-foreground uppercase tracking-wider px-2 mb-2">Группы</p>
+              <button
+                className={`w-full text-left px-2 py-1.5 rounded-lg text-sm mb-1 ${
+                  !selectedGroup ? "bg-primary/20 text-primary" : "hover:bg-white/[0.06]"
+                }`}
+                onClick={() => setSelectedGroup("")}
+              >
+                Все группы
+              </button>
+              {productGroups.map((g) => (
+                <button
+                  key={g}
+                  className={`w-full text-left px-2 py-1.5 rounded-lg text-sm mb-1 truncate ${
+                    selectedGroup === g ? "bg-primary/20 text-primary" : "hover:bg-white/[0.06]"
+                  }`}
+                  onClick={() => setSelectedGroup(g)}
+                >
+                  {g}
+                </button>
+              ))}
+            </>
+          )}
         </aside>
 
         {/* Main content */}
@@ -771,32 +823,6 @@ const Catalog = () => {
               <Icon name="Search" size={16} />
             </Button>
           </div>
-
-          {productGroups.length > 0 && (
-            <div className="flex items-center gap-2 mb-3">
-              <select
-                value={selectedGroup}
-                onChange={(e) => setSelectedGroup(e.target.value)}
-                className="h-9 rounded-xl bg-secondary border border-white/[0.08] text-sm px-3 text-foreground min-w-0 flex-1 max-w-xs"
-              >
-                <option value="">Все группы</option>
-                {productGroups.map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
-              {selectedGroup && (
-                <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => setSelectedGroup("")}>
-                  <Icon name="X" size={14} />
-                </Button>
-              )}
-              {isOwner && (
-                <Button variant="outline" size="sm" className="h-9 flex-shrink-0" onClick={() => navigate("/admin/product-groups")}>
-                  <Icon name="FolderTree" size={16} />
-                  <span className="ml-1 hidden sm:inline">Группы</span>
-                </Button>
-              )}
-            </div>
-          )}
 
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-muted-foreground">

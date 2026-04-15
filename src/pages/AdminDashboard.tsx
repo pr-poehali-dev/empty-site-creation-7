@@ -424,6 +424,14 @@ const AdminDashboard = () => {
             <Icon name="Tag" size={20} />
             <span className="font-medium">Бренды</span>
           </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+            onClick={() => navigate("/admin/product-groups")}
+          >
+            <Icon name="FolderTree" size={20} />
+            <span className="font-medium">Группы</span>
+          </Button>
         </div>
 
         <div className="flex items-center justify-between mb-5 sm:mb-6">
