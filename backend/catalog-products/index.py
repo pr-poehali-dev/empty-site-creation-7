@@ -3,8 +3,10 @@ import json
 import os
 import base64
 import uuid
+import io
 import psycopg2
 import boto3
+from PIL import Image
 
 def get_db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -50,10 +52,24 @@ def upload_image(s3, data_b64, content_type='image/jpeg'):
         ext = 'png'
     elif 'webp' in content_type:
         ext = 'webp'
-    key = f"catalog/{uuid.uuid4().hex}.{ext}"
+    uid = uuid.uuid4().hex
+    key = f"catalog/{uid}.{ext}"
     s3.put_object(Bucket='files', Key=key, Body=data, ContentType=content_type)
-    cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
-    return cdn_url
+    cdn_base = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket"
+    cdn_url = f"{cdn_base}/{key}"
+    thumb_url = None
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.thumbnail((200, 200))
+        buf = io.BytesIO()
+        img.save(buf, format='WEBP', quality=75)
+        buf.seek(0)
+        thumb_key = f"catalog/thumb/{uid}.webp"
+        s3.put_object(Bucket='files', Key=thumb_key, Body=buf.read(), ContentType='image/webp')
+        thumb_url = f"{cdn_base}/{thumb_key}"
+    except Exception:
+        pass
+    return cdn_url, thumb_url
 
 def handler(event: dict, context) -> dict:
     if event.get('httpMethod') == 'OPTIONS':
@@ -281,14 +297,14 @@ def handler(event: dict, context) -> dict:
         if product_ids:
             placeholders = ','.join(['%s'] * len(product_ids))
             cur.execute(
-                f"""SELECT product_id, id, url, sort_order
+                f"""SELECT product_id, id, url, sort_order, thumbnail_url
                     FROM product_images
                     WHERE product_id IN ({placeholders})
                     ORDER BY sort_order""",
                 product_ids
             )
             for img in cur.fetchall():
-                images_map.setdefault(img[0], []).append({'id': img[1], 'url': img[2], 'sort_order': img[3]})
+                images_map.setdefault(img[0], []).append({'id': img[1], 'url': img[2], 'sort_order': img[3], 'thumbnail_url': img[4]})
 
         barcodes_map = {}
         if product_ids:
@@ -370,10 +386,10 @@ def handler(event: dict, context) -> dict:
             if images_data:
                 s3 = get_s3()
                 for i, img in enumerate(images_data):
-                    url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
+                    url, thumb_url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
                     cur.execute(
-                        "INSERT INTO product_images (product_id, url, sort_order) VALUES (%s, %s, %s)",
-                        (product_id, url, i)
+                        "INSERT INTO product_images (product_id, url, thumbnail_url, sort_order) VALUES (%s, %s, %s, %s)",
+                        (product_id, url, thumb_url, i)
                     )
 
             barcodes_data = body.get('barcodes', [])
@@ -462,10 +478,10 @@ def handler(event: dict, context) -> dict:
         if new_images:
             s3 = get_s3()
             for i, img in enumerate(new_images):
-                url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
+                url, thumb_url = upload_image(s3, img.get('data', ''), img.get('content_type', 'image/jpeg'))
                 cur.execute(
-                    "INSERT INTO product_images (product_id, url, sort_order) VALUES (%s, %s, %s)",
-                    (product_id, url, 100 + i)
+                    "INSERT INTO product_images (product_id, url, thumbnail_url, sort_order) VALUES (%s, %s, %s, %s)",
+                    (product_id, url, thumb_url, 100 + i)
                 )
 
         remove_images = body.get('remove_images', [])

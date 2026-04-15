@@ -39,6 +39,7 @@ interface ProductImage {
   id: number;
   url: string;
   sort_order: number;
+  thumbnail_url?: string;
 }
 
 interface Product {
@@ -91,6 +92,10 @@ const Catalog = () => {
   const [total, setTotal] = useState(0);
   const [showMobileCategories, setShowMobileCategories] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -141,23 +146,37 @@ const Catalog = () => {
     }
   }, [token]);
 
-  const fetchItems = useCallback(async (categoryId: number | null, searchQuery?: string, archived?: boolean) => {
-    setLoadingItems(true);
+  const fetchItems = useCallback(async (categoryId: number | null, searchQuery?: string, archived?: boolean, pageNum = 1, append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingItems(true);
+    }
     try {
       const params = new URLSearchParams();
       if (categoryId) params.set("category_id", String(categoryId));
       if (searchQuery) params.set("search", searchQuery);
       if (archived) params.set("archived", "true");
+      params.set("page", String(pageNum));
+      params.set("per_page", "50");
       const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok) {
-        setItems(data.items || []);
+        const newItems = data.items || [];
+        if (append) {
+          setItems(prev => [...prev, ...newItems]);
+        } else {
+          setItems(newItems);
+        }
         setTotal(data.total || 0);
+        setPage(pageNum);
+        setHasMore(pageNum * 50 < (data.total || 0));
       }
     } catch {
       toast({ title: "Ошибка", description: "Не удалось загрузить товары", variant: "destructive" });
     } finally {
       setLoadingItems(false);
+      setLoadingMore(false);
     }
   }, [token]);
 
@@ -166,8 +185,26 @@ const Catalog = () => {
   }, []);
 
   useEffect(() => {
-    fetchItems(selectedCategory, search, showArchive);
+    setItems([]);
+    setPage(1);
+    setHasMore(true);
+    fetchItems(selectedCategory, search, showArchive, 1, false);
   }, [selectedCategory, showArchive]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loadingItems) {
+          fetchItems(selectedCategory, search, showArchive, page + 1, true);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loadingItems, page, selectedCategory, search, showArchive]);
 
   useEffect(() => {
     const draftRaw = localStorage.getItem("draft_product");
@@ -221,7 +258,10 @@ const Catalog = () => {
   };
 
   const handleSearch = () => {
-    fetchItems(selectedCategory, search, showArchive);
+    setItems([]);
+    setPage(1);
+    setHasMore(true);
+    fetchItems(selectedCategory, search, showArchive, 1, false);
   };
 
   const toggleExpand = (id: number) => {
@@ -428,7 +468,8 @@ const Catalog = () => {
       const data = await resp.json();
       if (resp.ok) {
         toast({ title: "Товар в архиве", description: name });
-        fetchItems(selectedCategory, search, showArchive);
+        setItems([]); setPage(1); setHasMore(true);
+        fetchItems(selectedCategory, search, showArchive, 1, false);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -446,7 +487,8 @@ const Catalog = () => {
       const data = await resp.json();
       if (resp.ok) {
         toast({ title: "Товар восстановлен", description: product.name });
-        fetchItems(selectedCategory, search, showArchive);
+        setItems([]); setPage(1); setHasMore(true);
+        fetchItems(selectedCategory, search, showArchive, 1, false);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -464,7 +506,8 @@ const Catalog = () => {
       const data = await resp.json();
       if (resp.ok) {
         toast({ title: "Товар удалён навсегда", description: product.name });
-        fetchItems(selectedCategory, search, showArchive);
+        setItems([]); setPage(1); setHasMore(true);
+        fetchItems(selectedCategory, search, showArchive, 1, false);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -528,7 +571,8 @@ const Catalog = () => {
         toast({ title: editingProduct ? "Товар обновлён" : "Товар добавлен" });
         setAddOpen(false);
         resetForm();
-        fetchItems(selectedCategory, search, showArchive);
+        setItems([]); setPage(1); setHasMore(true);
+        fetchItems(selectedCategory, search, showArchive, 1, false);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -743,8 +787,9 @@ const Catalog = () => {
                 >
                   {item.images.length > 0 ? (
                     <img
-                      src={item.images[0].url}
+                      src={item.images[0].thumbnail_url || item.images[0].url}
                       alt={item.name}
+                      loading="lazy"
                       className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover flex-shrink-0"
                     />
                   ) : (
@@ -823,6 +868,11 @@ const Catalog = () => {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+          {hasMore && !loadingItems && items.length > 0 && (
+            <div ref={sentinelRef} className="flex justify-center py-4">
+              {loadingMore && <Icon name="Loader2" size={20} className="animate-spin text-muted-foreground" />}
             </div>
           )}
         </main>
@@ -1064,7 +1114,7 @@ const Catalog = () => {
                 <div className="flex gap-2 flex-wrap">
                   {existingImages.map((img) => (
                     <div key={img.id} className="relative w-16 h-16">
-                      <img src={img.url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                      <img src={img.url} alt="" loading="lazy" className="w-16 h-16 rounded-lg object-cover" />
                       {!isFieldDisabled("images") && (
                         <button
                           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive flex items-center justify-center"
@@ -1087,7 +1137,7 @@ const Catalog = () => {
               <div className="flex gap-2 flex-wrap">
                 {formImages.map((img, i) => (
                   <div key={i} className="relative w-16 h-16">
-                    <img src={img.preview} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                    <img src={img.preview} alt="" loading="lazy" className="w-16 h-16 rounded-lg object-cover" />
                     <button
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive flex items-center justify-center"
                       onClick={() => removeImage(i)}
