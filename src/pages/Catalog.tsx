@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -121,6 +121,9 @@ const Catalog = () => {
   const [saving, setSaving] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [productGroups, setProductGroups] = useState<string[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string>(searchParams.get("group") || "");
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardCategoryId, setWizardCategoryId] = useState("");
@@ -146,7 +149,15 @@ const Catalog = () => {
     }
   }, [token]);
 
-  const fetchItems = useCallback(async (categoryId: number | null, searchQuery?: string, archived?: boolean, pageNum = 1, append = false) => {
+  const fetchGroups = useCallback(async () => {
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?distinct=product_group`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setProductGroups(data.groups || []);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  const fetchItems = useCallback(async (categoryId: number | null, searchQuery?: string, archived?: boolean, pageNum = 1, append = false, filterGroup?: string) => {
     if (append) {
       setLoadingMore(true);
     } else {
@@ -157,6 +168,7 @@ const Catalog = () => {
       if (categoryId) params.set("category_id", String(categoryId));
       if (searchQuery) params.set("search", searchQuery);
       if (archived) params.set("archived", "true");
+      if (filterGroup) params.set("filter_group", filterGroup);
       params.set("page", String(pageNum));
       params.set("per_page", "50");
       const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
@@ -182,14 +194,15 @@ const Catalog = () => {
 
   useEffect(() => {
     fetchCategories();
+    fetchGroups();
   }, []);
 
   useEffect(() => {
     setItems([]);
     setPage(1);
     setHasMore(true);
-    fetchItems(selectedCategory, search, showArchive, 1, false);
-  }, [selectedCategory, showArchive]);
+    fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
+  }, [selectedCategory, showArchive, selectedGroup]);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -197,14 +210,14 @@ const Catalog = () => {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loadingMore && !loadingItems) {
-          fetchItems(selectedCategory, search, showArchive, page + 1, true);
+          fetchItems(selectedCategory, search, showArchive, page + 1, true, selectedGroup);
         }
       },
       { threshold: 0.1 }
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, loadingItems, page, selectedCategory, search, showArchive]);
+  }, [hasMore, loadingMore, loadingItems, page, selectedCategory, search, showArchive, selectedGroup]);
 
   useEffect(() => {
     const draftRaw = localStorage.getItem("draft_product");
@@ -261,7 +274,7 @@ const Catalog = () => {
     setItems([]);
     setPage(1);
     setHasMore(true);
-    fetchItems(selectedCategory, search, showArchive, 1, false);
+    fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
   };
 
   const toggleExpand = (id: number) => {
@@ -469,7 +482,7 @@ const Catalog = () => {
       if (resp.ok) {
         toast({ title: "Товар в архиве", description: name });
         setItems([]); setPage(1); setHasMore(true);
-        fetchItems(selectedCategory, search, showArchive, 1, false);
+        fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -488,7 +501,7 @@ const Catalog = () => {
       if (resp.ok) {
         toast({ title: "Товар восстановлен", description: product.name });
         setItems([]); setPage(1); setHasMore(true);
-        fetchItems(selectedCategory, search, showArchive, 1, false);
+        fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -507,7 +520,7 @@ const Catalog = () => {
       if (resp.ok) {
         toast({ title: "Товар удалён навсегда", description: product.name });
         setItems([]); setPage(1); setHasMore(true);
-        fetchItems(selectedCategory, search, showArchive, 1, false);
+        fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -572,7 +585,7 @@ const Catalog = () => {
         setAddOpen(false);
         resetForm();
         setItems([]); setPage(1); setHasMore(true);
-        fetchItems(selectedCategory, search, showArchive, 1, false);
+        fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -759,9 +772,35 @@ const Catalog = () => {
             </Button>
           </div>
 
+          {productGroups.length > 0 && (
+            <div className="flex items-center gap-2 mb-3">
+              <select
+                value={selectedGroup}
+                onChange={(e) => setSelectedGroup(e.target.value)}
+                className="h-9 rounded-xl bg-secondary border border-white/[0.08] text-sm px-3 text-foreground min-w-0 flex-1 max-w-xs"
+              >
+                <option value="">Все группы</option>
+                {productGroups.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+              {selectedGroup && (
+                <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => setSelectedGroup("")}>
+                  <Icon name="X" size={14} />
+                </Button>
+              )}
+              {isOwner && (
+                <Button variant="outline" size="sm" className="h-9 flex-shrink-0" onClick={() => navigate("/admin/product-groups")}>
+                  <Icon name="FolderTree" size={16} />
+                  <span className="ml-1 hidden sm:inline">Группы</span>
+                </Button>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-muted-foreground">
-              {selectedCategoryName} · {total} {total === 1 ? "позиция" : "позиций"}
+              {selectedCategoryName}{selectedGroup ? ` · ${selectedGroup}` : ""} · {total} {total === 1 ? "позиция" : "позиций"}
             </p>
           </div>
 
