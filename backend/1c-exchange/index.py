@@ -99,6 +99,7 @@ def handle_import_products(conn, body):
     created = 0
     updated = 0
     errors = []
+    results = []
     for item in products:
         ext_id = item.get("external_id")
         if not ext_id:
@@ -155,6 +156,7 @@ def handle_import_products(conn, body):
             vals.append(product_id)
             cur.execute(f"UPDATE products SET {', '.join(set_parts)} WHERE id = %s", vals)
             updated += 1
+            results.append({"external_id": ext_id, "id": product_id})
         else:
             fields["external_id"] = ext_id
             cols = list(fields.keys())
@@ -166,6 +168,7 @@ def handle_import_products(conn, body):
             )
             product_id = cur.fetchone()[0]
             created += 1
+            results.append({"external_id": ext_id, "id": product_id})
         barcode = item.get("barcode")
         if barcode:
             cur.execute(
@@ -179,7 +182,7 @@ def handle_import_products(conn, body):
                 )
     conn.commit()
     cur.close()
-    return resp(200, {"created": created, "updated": updated, "errors": errors})
+    return resp(200, {"created": created, "updated": updated, "errors": errors, "products": results})
 
 def handle_export_products(conn, params):
     cur = conn.cursor()
