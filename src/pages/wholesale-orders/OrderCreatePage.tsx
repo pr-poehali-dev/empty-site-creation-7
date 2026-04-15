@@ -875,7 +875,7 @@ const OrderCreatePage = () => {
                     onClick={() => addItem(item)}
                   >
                     <div className="min-w-0">
-                      <span className="block truncate">{item.name}</span>
+                      <span className="block break-words">{item.name}</span>
                       <span className="text-xs text-muted-foreground">
                         {item.article && `${item.article}`}
                         {item.article && item.brand && " · "}
@@ -1023,7 +1023,7 @@ const OrderCreatePage = () => {
                       onClick={() => addItemFromBarcode(item)}
                     >
                       <div className="min-w-0">
-                        <span className="block truncate">{item.name}</span>
+                        <span className="block break-words">{item.name}</span>
                         <span className="text-xs text-muted-foreground">
                           {item.article && `${item.article}`}
                           {item.article && item.brand && " · "}
