@@ -21,6 +21,7 @@ const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac
 const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
+const EXPORT_URL = "https://functions.poehali.dev/9a93a221-e083-4f2d-9e96-1d086b30243b";
 
 interface OrderLine {
   product_id: number | null;
@@ -115,6 +116,7 @@ const OrderCreatePage = () => {
   const [orderStatus, setOrderStatus] = useState("new");
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Temp product form state
   const [showTempForm, setShowTempForm] = useState(false);
@@ -718,6 +720,33 @@ const OrderCreatePage = () => {
     b.toLowerCase().includes(tempBrand.toLowerCase())
   );
 
+  const exportToExcel = async () => {
+    if (!editId) return;
+    setExporting(true);
+    try {
+      const resp = await fetch(`${EXPORT_URL}?id=${editId}`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok && data.file) {
+        const byteChars = atob(data.file);
+        const byteArray = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+        const blob = new Blob([byteArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = data.filename || `Заявка_${editId}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        toast({ title: "Ошибка", description: data.error || "Не удалось экспортировать", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось скачать файл", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent);
 
   const showDropdown = searchQuery.trim().length >= 2 && !showTempForm;
@@ -1174,6 +1203,15 @@ const OrderCreatePage = () => {
               >
                 <Icon name="Banknote" size={16} />
                 <span className="ml-2">Оплата</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-xl border-white/[0.08]"
+                onClick={exportToExcel}
+                disabled={exporting}
+              >
+                {exporting ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="FileSpreadsheet" size={16} />}
+                <span className="ml-2">Excel</span>
               </Button>
             </div>
             <div className="flex gap-2 flex-wrap">

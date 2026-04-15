@@ -1,0 +1,1 @@
+{"tests": [{"name": "Отказ без авторизации", "method": "GET", "path": "/?id=1", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"}]}
