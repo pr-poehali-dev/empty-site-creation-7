@@ -2,10 +2,48 @@
 import json
 import os
 import uuid
+import base64
+import io
 import psycopg2
+import boto3
+from PIL import Image
 
 def get_db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
+
+def get_s3():
+    return boto3.client(
+        's3',
+        endpoint_url='https://bucket.poehali.dev',
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY']
+    )
+
+def upload_image_with_thumb(s3, data_b64, content_type='image/jpeg'):
+    data = base64.b64decode(data_b64)
+    ext = 'jpg'
+    if 'png' in content_type:
+        ext = 'png'
+    elif 'webp' in content_type:
+        ext = 'webp'
+    uid = uuid.uuid4().hex
+    key = f"catalog/{uid}.{ext}"
+    s3.put_object(Bucket='files', Key=key, Body=data, ContentType=content_type)
+    cdn_base = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket"
+    cdn_url = f"{cdn_base}/{key}"
+    thumb_url = None
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.thumbnail((200, 200))
+        buf = io.BytesIO()
+        img.save(buf, format='WEBP', quality=75)
+        buf.seek(0)
+        thumb_key = f"catalog/thumb/{uid}.webp"
+        s3.put_object(Bucket='files', Key=thumb_key, Body=buf.read(), ContentType='image/webp')
+        thumb_url = f"{cdn_base}/{thumb_key}"
+    except Exception:
+        pass
+    return cdn_url, thumb_url
 
 def resp(status, data):
     return {
@@ -100,6 +138,7 @@ def handle_import_products(conn, body):
     updated = 0
     errors = []
     results = []
+    s3_client = None
     for item in products:
         ext_id = item.get("external_id")
         if not ext_id:
@@ -180,6 +219,23 @@ def handle_import_products(conn, body):
                     "INSERT INTO product_barcodes (product_id, barcode) VALUES (%s, %s)",
                     (product_id, barcode)
                 )
+        images = item.get("images", [])
+        if images:
+            if not s3_client:
+                s3_client = get_s3()
+            for idx, img_data in enumerate(images):
+                data_b64 = img_data if isinstance(img_data, str) else img_data.get("data", "")
+                ct = "image/jpeg" if isinstance(img_data, str) else img_data.get("content_type", "image/jpeg")
+                if not data_b64:
+                    continue
+                try:
+                    url, thumb_url = upload_image_with_thumb(s3_client, data_b64, ct)
+                    cur.execute(
+                        "INSERT INTO product_images (product_id, url, thumbnail_url, sort_order) VALUES (%s, %s, %s, %s)",
+                        (product_id, url, thumb_url, idx)
+                    )
+                except Exception:
+                    pass
     conn.commit()
     cur.close()
     return resp(200, {"created": created, "updated": updated, "errors": errors, "products": results})
