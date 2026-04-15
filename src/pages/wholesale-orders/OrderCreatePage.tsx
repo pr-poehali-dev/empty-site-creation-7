@@ -256,7 +256,7 @@ const OrderCreatePage = () => {
       } catch { /* ignore */ }
     }
 
-    if (savedLines.length > 0) setLines(savedLines);
+    if (!editId && savedLines.length > 0) setLines(savedLines);
     if (!editId) canSaveDraftRef.current = true;
   }, []);
 
