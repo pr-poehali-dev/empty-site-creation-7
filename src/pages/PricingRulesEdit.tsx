@@ -25,6 +25,14 @@ const OPERATORS = [
   { value: "-", label: "−" },
 ];
 
+const CONDITION_OPERATORS = [
+  { value: "<", label: "<" },
+  { value: ">", label: ">" },
+  { value: "=", label: "=" },
+  { value: "<=", label: "≤" },
+  { value: ">=", label: "≥" },
+];
+
 interface Rule {
   id: number;
   wholesaler_id: number;
@@ -34,6 +42,9 @@ interface Rule {
   price_field: string;
   formula: string;
   created_at: string;
+  condition_price_field: string | null;
+  condition_operator: string | null;
+  condition_value: number | null;
 }
 
 interface FormulaStep {
@@ -84,6 +95,10 @@ const PricingRulesEdit = () => {
   const [formGroup, setFormGroup] = useState("");
   const [formPriceField, setFormPriceField] = useState("price_base");
   const [formSteps, setFormSteps] = useState<FormulaStep[]>([{ operator: "/", value: "100" }, { operator: "*", value: "43" }]);
+  const [condEnabled, setCondEnabled] = useState(false);
+  const [condField, setCondField] = useState("price_base");
+  const [condOp, setCondOp] = useState("<");
+  const [condValue, setCondValue] = useState("");
 
   const loadRules = useCallback(async () => {
     const resp = await fetch(`${PRICING_URL}?wholesaler_id=${id}`, { headers: authHeaders });
@@ -114,18 +129,27 @@ const PricingRulesEdit = () => {
       return;
     }
     const formula = buildFormula(formSteps);
+    const condData = condEnabled ? {
+      condition_price_field: condField,
+      condition_operator: condOp,
+      condition_value: condValue ? parseFloat(condValue) : null,
+    } : {
+      condition_price_field: null,
+      condition_operator: null,
+      condition_value: null,
+    };
 
     if (editingId) {
       await fetch(PRICING_URL, {
         method: "PUT",
         headers: authHeaders,
-        body: JSON.stringify({ id: editingId, filter_value: formGroup, price_field: formPriceField, formula }),
+        body: JSON.stringify({ id: editingId, filter_value: formGroup, price_field: formPriceField, formula, ...condData }),
       });
     } else {
       await fetch(PRICING_URL, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ wholesaler_id: Number(id), filter_value: formGroup, price_field: formPriceField, formula }),
+        body: JSON.stringify({ wholesaler_id: Number(id), filter_value: formGroup, price_field: formPriceField, formula, ...condData }),
       });
     }
     setShowAdd(false);
@@ -159,6 +183,17 @@ const PricingRulesEdit = () => {
     setFormPriceField(rule.price_field);
     setFormSteps(parseFormula(rule.formula));
     setEditingId(rule.id);
+    if (rule.condition_price_field && rule.condition_operator) {
+      setCondEnabled(true);
+      setCondField(rule.condition_price_field);
+      setCondOp(rule.condition_operator);
+      setCondValue(rule.condition_value != null ? String(rule.condition_value) : "");
+    } else {
+      setCondEnabled(false);
+      setCondField("price_base");
+      setCondOp("<");
+      setCondValue("");
+    }
     setShowAdd(true);
   };
 
@@ -166,6 +201,10 @@ const PricingRulesEdit = () => {
     setFormGroup("");
     setFormPriceField("price_base");
     setFormSteps([{ operator: "/", value: "100" }, { operator: "*", value: "43" }]);
+    setCondEnabled(false);
+    setCondField("price_base");
+    setCondOp("<");
+    setCondValue("");
   };
 
   const addStep = () => setFormSteps([...formSteps, { operator: "*", value: "" }]);
@@ -219,6 +258,11 @@ const PricingRulesEdit = () => {
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">{rule.filter_value}</span>
                           </div>
+                          {rule.condition_price_field && rule.condition_operator && rule.condition_value != null && (
+                            <p className="text-xs text-orange-300 mb-0.5">
+                              Условие: {PRICE_FIELDS.find((p) => p.value === rule.condition_price_field)?.label} {CONDITION_OPERATORS.find((o) => o.value === rule.condition_operator)?.label} {rule.condition_value}₽
+                            </p>
+                          )}
                           <p className="text-xs text-muted-foreground">
                             {priceLabel} {rule.formula}
                           </p>
@@ -279,6 +323,45 @@ const PricingRulesEdit = () => {
                   </SelectContent>
                 </Select>
               </DebugBadge>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground mb-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={condEnabled}
+                  onChange={(e) => setCondEnabled(e.target.checked)}
+                  className="rounded"
+                />
+                Дополнительное условие (необязательно)
+              </label>
+              {condEnabled && (
+                <div className="flex items-center gap-2 mt-2">
+                  <Select value={condField} onValueChange={setCondField}>
+                    <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PRICE_FIELDS.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={condOp} onValueChange={setCondOp}>
+                    <SelectTrigger className="w-16"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CONDITION_OPERATORS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    value={condValue}
+                    onChange={(e) => setCondValue(e.target.value)}
+                    placeholder="Сумма"
+                    className="w-28"
+                  />
+                </div>
+              )}
             </div>
 
             <div>

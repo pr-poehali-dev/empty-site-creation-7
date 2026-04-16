@@ -29,6 +29,28 @@ CAN_CREATE_ROLES = ['Управляющий', 'Менеджер опта']
 
 import re
 
+def check_condition(price_map, cond_field, cond_op, cond_val):
+    if not cond_field or not cond_op or cond_val is None:
+        return True
+    price = float(price_map.get(cond_field) or 0)
+    val = float(cond_val)
+    if cond_op == '<': return price < val
+    if cond_op == '>': return price > val
+    if cond_op == '=': return price == val
+    if cond_op == '<=': return price <= val
+    if cond_op == '>=': return price >= val
+    return True
+
+def apply_formula(base, formula):
+    for m in re.finditer(r'([+\-*/])\s*([\d.]+)', formula):
+        v = float(m.group(2))
+        op = m.group(1)
+        if op == '*': base *= v
+        elif op == '/': base = base / v if v else 0
+        elif op == '+': base += v
+        elif op == '-': base -= v
+    return round(base, 2)
+
 def calc_price_by_rules(cur, customer_name, product_id):
     cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
     w = cur.fetchone()
@@ -36,7 +58,9 @@ def calc_price_by_rules(cur, customer_name, product_id):
         return 0
     wholesaler_id = w[0]
     cur.execute(
-        "SELECT filter_type, filter_value, price_field, formula FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority",
+        """SELECT filter_type, filter_value, price_field, formula,
+                  condition_price_field, condition_operator, condition_value
+           FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
         (wholesaler_id,)
     )
     rules = cur.fetchall()
@@ -54,18 +78,13 @@ def calc_price_by_rules(cur, customer_name, product_id):
     matched = None
     for r in rules:
         if r[0] == 'product_group' and product_group == r[1]:
-            matched = r
+            if check_condition(price_map, r[4], r[5], r[6]):
+                matched = r
+                break
     if not matched:
         return float(price_map.get('price_wholesale') or 0)
     base = float(price_map.get(matched[2]) or 0)
-    for m in re.finditer(r'([+\-*/])\s*([\d.]+)', matched[3]):
-        v = float(m.group(2))
-        op = m.group(1)
-        if op == '*': base *= v
-        elif op == '/': base = base / v if v else 0
-        elif op == '+': base += v
-        elif op == '-': base -= v
-    return round(base, 2)
+    return apply_formula(base, matched[3])
 
 def handler(event: dict, context) -> dict:
     if event.get('httpMethod') == 'OPTIONS':
@@ -277,6 +296,33 @@ def handler(event: dict, context) -> dict:
             cur.close()
             conn.close()
             return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
+
+        action = body.get('action')
+        if action == 'apply_pricing':
+            if not is_owner and role_name != 'Управляющий':
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав'})}
+            cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+            cname = cur.fetchone()[0]
+            cur.execute(
+                "SELECT id, product_id, quantity FROM wholesale_order_items WHERE order_id = %s",
+                (order_id,)
+            )
+            rows = cur.fetchall()
+            total = 0
+            for row in rows:
+                item_id, pid, qty = row
+                price = calc_price_by_rules(cur, cname, pid)
+                amount = price * qty
+                total += amount
+                cur.execute(
+                    "UPDATE wholesale_order_items SET price = %s, amount = %s WHERE id = %s",
+                    (price, amount, item_id)
+                )
+            cur.execute("UPDATE wholesale_orders SET total_amount = %s WHERE id = %s", (total, order_id))
+            conn.commit()
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True, 'total': float(total)})}
 
         customer_name = body.get('customer_name')
         comment_val = body.get('comment')

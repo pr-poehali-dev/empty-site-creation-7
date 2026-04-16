@@ -67,6 +67,9 @@ interface PricingRule {
   filter_value: string;
   price_field: string;
   formula: string;
+  condition_price_field: string | null;
+  condition_operator: string | null;
+  condition_value: number | null;
 }
 
 const SEARCH_MODES = [
@@ -118,6 +121,7 @@ const OrderCreatePage = () => {
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [applyingPricing, setApplyingPricing] = useState(false);
 
   // Temp product form state
   const [showTempForm, setShowTempForm] = useState(false);
@@ -161,20 +165,34 @@ const OrderCreatePage = () => {
     } catch { setPricingRules([]); }
   };
 
+  const checkCondition = (priceMap: Record<string, number | null>, field: string | null, op: string | null, val: number | null): boolean => {
+    if (!field || !op || val == null) return true;
+    const price = priceMap[field] || 0;
+    if (op === "<") return price < val;
+    if (op === ">") return price > val;
+    if (op === "=") return price === val;
+    if (op === "<=") return price <= val;
+    if (op === ">=") return price >= val;
+    return true;
+  };
+
   const calcPrice = (item: ProductSearchItem, rules: PricingRule[]): number => {
+    const priceMap: Record<string, number | null> = {
+      price_base: item.price_base,
+      price_retail: item.price_retail,
+      price_wholesale: item.price_wholesale,
+      price_purchase: item.price_purchase,
+    };
     let matchedRule: PricingRule | null = null;
     for (const rule of rules) {
       if (rule.filter_type === "product_group" && item.product_group === rule.filter_value) {
-        matchedRule = rule;
+        if (checkCondition(priceMap, rule.condition_price_field, rule.condition_operator, rule.condition_value)) {
+          matchedRule = rule;
+          break;
+        }
       }
     }
     if (matchedRule) {
-      const priceMap: Record<string, number | null> = {
-        price_base: item.price_base,
-        price_retail: item.price_retail,
-        price_wholesale: item.price_wholesale,
-        price_purchase: item.price_purchase,
-      };
       let result = priceMap[matchedRule.price_field] || 0;
       const regex = /([+\-*/])\s*([\d.]+)/g;
       let m;
@@ -751,6 +769,31 @@ const OrderCreatePage = () => {
     }
   };
 
+  const canApplyPricing = isOwner || user.role_name === "Управляющий";
+
+  const applyPricing = async () => {
+    if (!editId) return;
+    setApplyingPricing(true);
+    try {
+      const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({ action: "apply_pricing" }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Цены пересчитаны" });
+        window.location.reload();
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось пересчитать цены", variant: "destructive" });
+    } finally {
+      setApplyingPricing(false);
+    }
+  };
+
   const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent);
 
   const showDropdown = searchQuery.trim().length >= 2 && !showTempForm;
@@ -1227,6 +1270,17 @@ const OrderCreatePage = () => {
                 <span className="ml-2">Excel</span>
               </Button>
             </div>
+            {canApplyPricing && (
+              <Button
+                variant="outline"
+                className="rounded-xl border-white/[0.08] w-full"
+                onClick={applyPricing}
+                disabled={applyingPricing}
+              >
+                {applyingPricing ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
+                <span className="ml-2">Применить ценообразование</span>
+              </Button>
+            )}
             <div className="flex gap-2 flex-wrap">
               {orderStatus === "confirmed" && (
                 <Button variant="outline" className="rounded-xl border-white/[0.08]" disabled={statusUpdating} onClick={() => updateOrderStatus("new")}>
