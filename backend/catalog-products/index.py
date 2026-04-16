@@ -383,6 +383,9 @@ def handler(event: dict, context) -> dict:
             )
             product_id = cur.fetchone()[0]
 
+            if brand:
+                cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (brand,))
+
             if images_data:
                 s3 = get_s3()
                 for i, img in enumerate(images_data):
@@ -473,6 +476,10 @@ def handler(event: dict, context) -> dict:
             cur.close()
             conn.close()
             return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Товар не найден'})}
+
+        brand_upd = (body.get('brand') or '').strip()
+        if brand_upd:
+            cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (brand_upd,))
 
         new_images = body.get('images', [])
         if new_images:

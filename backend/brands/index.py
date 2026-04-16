@@ -48,11 +48,20 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Не авторизован'})}
 
-    if user[2] != 'owner':
-        cur.close(); conn.close()
-        return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав'})}
+    is_owner = user[2] == 'owner'
 
     if method == 'GET':
+        names_only = params.get('names_only') == '1'
+        if names_only:
+            cur.execute("SELECT name FROM brands ORDER BY name")
+            names = [r[0] for r in cur.fetchall()]
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': names})}
+
+        if not is_owner:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав'})}
+
         cur.execute("""
             SELECT brand, COUNT(*) as cnt FROM products
             WHERE brand IS NOT NULL AND brand != ''
@@ -63,7 +72,6 @@ def handler(event: dict, context) -> dict:
             GROUP BY brand
         """)
         rows = cur.fetchall()
-        # Merge counts
         merged = {}
         for r in rows:
             merged[r[0]] = merged.get(r[0], 0) + r[1]
@@ -72,6 +80,9 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': items})}
 
     if method == 'PUT':
+        if not is_owner:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав'})}
         old_name = (body.get('old_name') or '').strip()
         new_name = (body.get('new_name') or '').strip()
         if not old_name or not new_name:
@@ -80,11 +91,16 @@ def handler(event: dict, context) -> dict:
 
         cur.execute("UPDATE products SET brand = %s WHERE brand = %s", (new_name, old_name))
         cur.execute("UPDATE temp_products SET brand = %s WHERE brand = %s", (new_name, old_name))
+        cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (new_name,))
+        cur.execute("DELETE FROM brands WHERE name = %s", (old_name,))
         conn.commit()
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
 
     if method == 'DELETE':
+        if not is_owner:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав'})}
         brand = (body.get('brand') or '').strip()
         replace_with = (body.get('replace_with') or '').strip() or None
         if not brand:
@@ -94,10 +110,12 @@ def handler(event: dict, context) -> dict:
         if replace_with:
             cur.execute("UPDATE products SET brand = %s WHERE brand = %s", (replace_with, brand))
             cur.execute("UPDATE temp_products SET brand = %s WHERE brand = %s", (replace_with, brand))
+            cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (replace_with,))
         else:
             cur.execute("UPDATE products SET brand = NULL WHERE brand = %s", (brand,))
             cur.execute("UPDATE temp_products SET brand = '' WHERE brand = %s", (brand,))
 
+        cur.execute("DELETE FROM brands WHERE name = %s", (brand,))
         conn.commit()
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}

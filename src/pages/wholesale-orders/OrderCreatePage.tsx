@@ -481,13 +481,10 @@ const OrderCreatePage = () => {
   // Load brands for temp product form
   const loadBrands = useCallback(async () => {
     try {
-      const resp = await fetch(`${PRODUCTS_URL}?search=&per_page=200`, { headers: authHeaders });
+      const resp = await fetch(`https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe?names_only=1`, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok && data.items) {
-        const brands = [...new Set<string>(
-          data.items.map((p: ProductSearchItem) => p.brand).filter(Boolean)
-        )].sort() as string[];
-        setAllBrands(brands);
+      if (resp.ok && Array.isArray(data.items)) {
+        setAllBrands(data.items);
       }
     } catch { /* ignore */ }
   }, [token]);

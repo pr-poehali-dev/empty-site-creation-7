@@ -135,6 +135,7 @@ def handler(event: dict, context) -> dict:
             (brand, article, quantity, price, manager_id, barcode)
         )
         row = cur.fetchone()
+        cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (brand,))
         conn.commit()
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
@@ -154,6 +155,9 @@ def handler(event: dict, context) -> dict:
 
         if 'brand' in body:
             updates.append("brand = %s"); args.append(body['brand'])
+            br = (body['brand'] or '').strip()
+            if br:
+                cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (br,))
         if 'article' in body:
             updates.append("article = %s"); args.append(body['article'])
         if 'quantity' in body:
