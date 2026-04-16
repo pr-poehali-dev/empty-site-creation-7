@@ -166,9 +166,9 @@ const Catalog = () => {
 
   const fetchBrands = useCallback(async () => {
     try {
-      const resp = await fetch(BRANDS_URL, { headers: authHeaders });
+      const resp = await fetch(`${BRANDS_URL}?names_only=1`, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok) setAllBrands((data.items || []).map((b: { name: string }) => b.name));
+      if (resp.ok && Array.isArray(data.items)) setAllBrands(data.items);
     } catch { /* ignore */ }
   }, [token]);
 
