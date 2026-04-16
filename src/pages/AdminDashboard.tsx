@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugToggle from "@/components/DebugToggle";
 
 const MANAGERS_URL = "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e";
 
@@ -337,6 +338,7 @@ const AdminDashboard = () => {
           <h1 className="text-lg sm:text-xl font-semibold">Мир Техники плюс</h1>
           <div className="flex items-center gap-2 sm:gap-4">
             <span className="text-xs sm:text-sm text-muted-foreground hidden sm:block">{user.phone}</span>
+            <DebugToggle />
             <Button
               variant="ghost"
               size="sm"

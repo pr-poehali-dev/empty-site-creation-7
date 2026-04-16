@@ -24,12 +24,14 @@ import NewBarcodes from "./pages/NewBarcodes";
 import Brands from "./pages/Brands";
 import ProductGroups from "./pages/ProductGroups";
 import ProtectedRoute from "./components/ProtectedRoute";
+import DebugProvider from "./contexts/DebugContext";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <DebugProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -60,6 +62,7 @@ const App = () => (
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
+    </DebugProvider>
   </QueryClientProvider>
 );
 

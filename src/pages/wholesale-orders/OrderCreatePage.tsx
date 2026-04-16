@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -190,7 +191,7 @@ const OrderCreatePage = () => {
   };
 
   useEffect(() => {
-    const saved = sessionStorage.getItem(DRAFT_KEY);
+    const saved = localStorage.getItem(DRAFT_KEY);
     let rulesPromise: Promise<PricingRule[]> | null = null;
     let savedLines: OrderLine[] = [];
     if (saved) {
@@ -262,12 +263,15 @@ const OrderCreatePage = () => {
 
   useEffect(() => {
     if (!canSaveDraftRef.current) return;
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+    const timer = setTimeout(() => {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+    }, 500);
+    return () => clearTimeout(timer);
   }, [customerName, comment, lines, wholesalerId]);
 
   useEffect(() => {
     if (!editId) return;
-    const draft = sessionStorage.getItem(DRAFT_KEY);
+    const draft = localStorage.getItem(DRAFT_KEY);
     if (draft) {
       try {
         const d = JSON.parse(draft);
@@ -650,7 +654,7 @@ const OrderCreatePage = () => {
       });
       const data = await resp.json();
       if (resp.ok) {
-        sessionStorage.removeItem(DRAFT_KEY);
+        localStorage.removeItem(DRAFT_KEY);
         toast({ title: editId ? "Заявка обновлена" : "Заявка создана" });
         if (!editId && data.id) {
           navigate(`/admin/orders/${data.id}/edit`, { replace: true });
@@ -836,16 +840,18 @@ const OrderCreatePage = () => {
 
         <div className="flex gap-2 mb-3">
           <div className="relative flex-1">
-            <Input
-              placeholder={
-                searchMode === "article" ? "Введите артикул..."
-                : searchMode === "supplier_code" ? "Введите код поставщика..."
-                : "Поиск по названию, артикулу, бренду..."
-              }
-              value={searchQuery}
-              onChange={(e) => handleSearchInput(e.target.value)}
-              className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm pr-8"
-            />
+            <DebugBadge id="OrderCreate:search">
+              <Input
+                placeholder={
+                  searchMode === "article" ? "Введите артикул..."
+                  : searchMode === "supplier_code" ? "Введите код поставщика..."
+                  : "Поиск по названию, артикулу, бренду..."
+                }
+                value={searchQuery}
+                onChange={(e) => handleSearchInput(e.target.value)}
+                className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm pr-8"
+              />
+            </DebugBadge>
             {searching && (
               <Icon name="Loader2" size={14} className="absolute right-3 top-3 animate-spin text-muted-foreground" />
             )}
@@ -1055,14 +1061,15 @@ const OrderCreatePage = () => {
         )}
 
         <div className="flex gap-2 mb-4">
-          <div className="relative flex-1" ref={wholesalerRef}>
-            <Input
-              value={customerName}
-              onChange={(e) => { setCustomerName(e.target.value); setShowWholesalerList(true); }}
-              onFocus={() => setShowWholesalerList(true)}
-              placeholder="Оптовик *"
-              className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
-            />
+          <DebugBadge id="OrderCreate:wholesalerId" className="relative flex-1">
+            <div className="relative" ref={wholesalerRef}>
+              <Input
+                value={customerName}
+                onChange={(e) => { setCustomerName(e.target.value); setShowWholesalerList(true); }}
+                onFocus={() => setShowWholesalerList(true)}
+                placeholder="Оптовик *"
+                className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
+              />
             {showWholesalerList && (customerName === "" || filteredWholesalers.length > 0) && (
               <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                 {filteredWholesalers.map((w) => (
@@ -1076,13 +1083,16 @@ const OrderCreatePage = () => {
                 ))}
               </div>
             )}
-          </div>
-          <Input
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Комментарий"
-            className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm flex-1"
-          />
+            </div>
+          </DebugBadge>
+          <DebugBadge id="OrderCreate:comment" className="flex-1">
+            <Input
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Комментарий"
+              className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
+            />
+          </DebugBadge>
         </div>
 
         {lines.length > 0 && (
@@ -1102,14 +1112,14 @@ const OrderCreatePage = () => {
             {lines.map((line, i) => {
               const isRedLine = line.is_temp === true || (line.product_id && line.has_uuid === false);
               return (
-                <div
-                  key={i}
-                  className={`rounded-lg border p-2.5 ${
-                    isRedLine
-                      ? "border-red-500/30 bg-red-950/20"
-                      : "border-white/[0.08] bg-white/[0.02]"
-                  }`}
-                >
+                <DebugBadge id={`OrderCreate:line[${i}]`} key={i}>
+                  <div
+                    className={`rounded-lg border p-2.5 ${
+                      isRedLine
+                        ? "border-red-500/30 bg-red-950/20"
+                        : "border-white/[0.08] bg-white/[0.02]"
+                    }`}
+                  >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start gap-1.5">
@@ -1162,21 +1172,24 @@ const OrderCreatePage = () => {
                       = {(line.price * line.quantity).toLocaleString()} ₽
                     </span>
                   </div>
-                </div>
+                  </div>
+                </DebugBadge>
               );
             })}
           </div>
         )}
 
         <div className="mt-4">
-          <Button className="w-full h-11 rounded-xl" onClick={handleSave} disabled={saving}>
-            {saving ? (
-              <Icon name="Loader2" size={16} className="animate-spin" />
-            ) : (
-              <Icon name="Check" size={16} />
-            )}
-            <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
-          </Button>
+          <DebugBadge id="OrderCreate:saveBtn">
+            <Button className="w-full h-11 rounded-xl" onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <Icon name="Loader2" size={16} className="animate-spin" />
+              ) : (
+                <Icon name="Check" size={16} />
+              )}
+              <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
+            </Button>
+          </DebugBadge>
         </div>
 
         {editId && orderStatus !== "archived" && orderStatus !== "completed" && (
@@ -1256,7 +1269,7 @@ const OrderCreatePage = () => {
             <AlertDialogAction
               className="rounded-xl bg-destructive hover:bg-destructive/90"
               onClick={() => {
-                sessionStorage.removeItem(DRAFT_KEY);
+                localStorage.removeItem(DRAFT_KEY);
                 navigate("/admin/orders");
               }}
             >
@@ -1266,7 +1279,7 @@ const OrderCreatePage = () => {
               className="rounded-xl"
               onClick={async () => {
                 await handleSave();
-                sessionStorage.removeItem(DRAFT_KEY);
+                localStorage.removeItem(DRAFT_KEY);
                 navigate("/admin/orders");
               }}
             >

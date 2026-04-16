@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Icon from "@/components/ui/icon";
+import DebugToggle from "@/components/DebugToggle";
 
 const ManagerDashboard = () => {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ const ManagerDashboard = () => {
               <p className="text-sm font-medium">{displayName}</p>
               <p className="text-xs text-muted-foreground">{user.role_name}</p>
             </div>
+            <DebugToggle />
             <Button
               variant="ghost"
               size="sm"

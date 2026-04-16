@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 
@@ -150,11 +151,13 @@ const WholesaleOrders = () => {
               Архив
             </button>
             {canCreate && (
-              <Button className="h-9" onClick={() => navigate("/admin/orders/create")}>
-                <Icon name="Plus" size={16} />
-                <span className="ml-1 hidden sm:inline">Создать заявку</span>
-                <span className="ml-1 sm:hidden">Создать</span>
-              </Button>
+              <DebugBadge id="Orders:createBtn">
+                <Button className="h-9" onClick={() => navigate("/admin/orders/create")}>
+                  <Icon name="Plus" size={16} />
+                  <span className="ml-1 hidden sm:inline">Создать заявку</span>
+                  <span className="ml-1 sm:hidden">Создать</span>
+                </Button>
+              </DebugBadge>
             )}
           </div>
         </div>
@@ -174,8 +177,9 @@ const WholesaleOrders = () => {
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {orders.map((order) => {
+          <DebugBadge id="Orders:list">
+            <div className="space-y-2">
+              {orders.map((order) => {
               const st = statusLabels[order.status] || statusLabels.new;
               const ps = paymentStatusLabels[order.payment_status] || paymentStatusLabels.not_paid;
               const isCompleted = order.status === "completed";
@@ -231,8 +235,9 @@ const WholesaleOrders = () => {
                   </div>
                 </div>
               );
-            })}
-          </div>
+              })}
+            </div>
+          </DebugBadge>
         )}
       </main>
 

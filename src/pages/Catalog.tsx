@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 import compressImage from "@/lib/compressImage";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
@@ -840,13 +841,15 @@ const Catalog = () => {
         {/* Main content */}
         <main className="flex-1 p-4 min-w-0">
           <div className="flex items-center gap-2 mb-4">
-            <Input
-              placeholder="Поиск по названию, артикулу, бренду..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
-            />
+            <DebugBadge id="Catalog:search" className="flex-1">
+              <Input
+                placeholder="Поиск по названию, артикулу, бренду..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
+              />
+            </DebugBadge>
             <Button variant="outline" size="sm" className="h-9 px-3 flex-shrink-0" onClick={handleSearch}>
               <Icon name="Search" size={16} />
             </Button>
@@ -992,13 +995,15 @@ const Catalog = () => {
                   </button>
                 )}
               </div>
-              <Input
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder="Холодильник Samsung RB37"
-                disabled={isFieldDisabled("name")}
-                className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-              />
+              <DebugBadge id="Catalog:form.name">
+                <Input
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="Холодильник Samsung RB37"
+                  disabled={isFieldDisabled("name")}
+                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                />
+              </DebugBadge>
               {suggestedCategory && (
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/10 text-xs">
                   <Icon name="Lightbulb" size={14} className="text-primary shrink-0" />
@@ -1016,16 +1021,19 @@ const Catalog = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Артикул</label>
-                <Input
-                  value={formArticle}
-                  onChange={(e) => setFormArticle(e.target.value)}
-                  disabled={isFieldDisabled("article")}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <DebugBadge id="Catalog:form.article">
+                  <Input
+                    value={formArticle}
+                    onChange={(e) => setFormArticle(e.target.value)}
+                    disabled={isFieldDisabled("article")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Бренд</label>
-                <div className="relative" ref={brandDropdownRef}>
+                <DebugBadge id="Catalog:form.brand">
+                  <div className="relative" ref={brandDropdownRef}>
                   <Input
                     value={formBrand}
                     onChange={(e) => { setFormBrand(e.target.value); setShowBrandDropdown(true); }}
@@ -1046,7 +1054,8 @@ const Catalog = () => {
                       ))}
                     </div>
                   )}
-                </div>
+                  </div>
+                </DebugBadge>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1097,13 +1106,14 @@ const Catalog = () => {
             )}
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Категория</label>
-              <div className="relative">
-                <button
-                  type="button"
-                  className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
-                  disabled={isFieldDisabled("category")}
-                  onClick={() => !isFieldDisabled("category") && setCategoryDropdownOpen(!categoryDropdownOpen)}
-                >
+              <DebugBadge id="Catalog:form.category">
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-left text-sm truncate"
+                    disabled={isFieldDisabled("category")}
+                    onClick={() => !isFieldDisabled("category") && setCategoryDropdownOpen(!categoryDropdownOpen)}
+                  >
                   {formCategoryId
                     ? getCategoryPath(Number(formCategoryId))
                     : <span className="text-muted-foreground">Без категории</span>}
@@ -1137,8 +1147,9 @@ const Catalog = () => {
                       ))}
                     </div>
                   </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </DebugBadge>
             </div>
 
             <div className="space-y-2">
@@ -1196,30 +1207,36 @@ const Catalog = () => {
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Цены</label>
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  type="number"
-                  placeholder="Базовая"
-                  value={formPriceBase}
-                  onChange={(e) => setFormPriceBase(e.target.value)}
-                  disabled={isFieldDisabled("price_base")}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
-                <Input
-                  type="number"
-                  placeholder="Розничная"
-                  value={formPriceRetail}
-                  onChange={(e) => setFormPriceRetail(e.target.value)}
-                  disabled={isFieldDisabled("price_retail")}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
-                <Input
-                  type="number"
-                  placeholder="Оптовая"
-                  value={formPriceWholesale}
-                  onChange={(e) => setFormPriceWholesale(e.target.value)}
-                  disabled={isFieldDisabled("price_wholesale")}
-                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <DebugBadge id="Catalog:form.priceBase">
+                  <Input
+                    type="number"
+                    placeholder="Базовая"
+                    value={formPriceBase}
+                    onChange={(e) => setFormPriceBase(e.target.value)}
+                    disabled={isFieldDisabled("price_base")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
+                <DebugBadge id="Catalog:form.priceRetail">
+                  <Input
+                    type="number"
+                    placeholder="Розничная"
+                    value={formPriceRetail}
+                    onChange={(e) => setFormPriceRetail(e.target.value)}
+                    disabled={isFieldDisabled("price_retail")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
+                <DebugBadge id="Catalog:form.priceWholesale">
+                  <Input
+                    type="number"
+                    placeholder="Оптовая"
+                    value={formPriceWholesale}
+                    onChange={(e) => setFormPriceWholesale(e.target.value)}
+                    disabled={isFieldDisabled("price_wholesale")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
                 {isOwner && (
                   <Input
                     type="number"
@@ -1314,14 +1331,16 @@ const Catalog = () => {
               {editingProduct && !editMode ? "Закрыть" : "Отмена"}
             </Button>
             {(!editingProduct || editMode) && (
-              <Button onClick={handleSave} disabled={saving} className="rounded-xl">
-                {saving ? (
-                  <Icon name="Loader2" size={18} className="animate-spin" />
-                ) : (
-                  <Icon name="Check" size={18} />
-                )}
-                <span className="ml-2">{saving ? "Сохранение..." : editingProduct ? "Сохранить" : "Добавить"}</span>
-              </Button>
+              <DebugBadge id="Catalog:form.saveBtn">
+                <Button onClick={handleSave} disabled={saving} className="rounded-xl">
+                  {saving ? (
+                    <Icon name="Loader2" size={18} className="animate-spin" />
+                  ) : (
+                    <Icon name="Check" size={18} />
+                  )}
+                  <span className="ml-2">{saving ? "Сохранение..." : editingProduct ? "Сохранить" : "Добавить"}</span>
+                </Button>
+              </DebugBadge>
             )}
           </DialogFooter>
         </DialogContent>
