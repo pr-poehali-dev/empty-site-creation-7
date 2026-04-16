@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
 
@@ -140,35 +141,39 @@ const Brands = () => {
             </Button>
             <h1 className="text-lg font-semibold">Бренды</h1>
           </div>
-          <Button
-            size="sm"
-            className="h-8 rounded-xl"
-            onClick={() => { setShowAddInput(true); setEditingBrand(null); setDeletingBrand(null); }}
-          >
-            <Icon name="Plus" size={14} />
-            <span className="ml-1">Добавить</span>
-          </Button>
+          <DebugBadge id="Brands:addBtn">
+            <Button
+              size="sm"
+              className="h-8 rounded-xl"
+              onClick={() => { setShowAddInput(true); setEditingBrand(null); setDeletingBrand(null); }}
+            >
+              <Icon name="Plus" size={14} />
+              <span className="ml-1">Добавить</span>
+            </Button>
+          </DebugBadge>
         </div>
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
         {showAddInput && (
           <div className="flex gap-2 mb-3">
-            <Input
-              ref={addInputRef}
-              placeholder="Название бренда..."
-              value={newBrandName}
-              onChange={(e) => setNewBrandName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newBrandName.trim()) {
-                  setBrands(prev => [...prev, { name: newBrandName.trim(), count: 0 }].sort((a, b) => a.name.localeCompare(b.name)));
-                  setNewBrandName("");
-                  setShowAddInput(false);
-                }
-                if (e.key === "Escape") { setShowAddInput(false); setNewBrandName(""); }
-              }}
-              className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
-            />
+            <DebugBadge id="Brands:addInput" className="flex-1">
+              <Input
+                ref={addInputRef}
+                placeholder="Название бренда..."
+                value={newBrandName}
+                onChange={(e) => setNewBrandName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newBrandName.trim()) {
+                    setBrands(prev => [...prev, { name: newBrandName.trim(), count: 0 }].sort((a, b) => a.name.localeCompare(b.name)));
+                    setNewBrandName("");
+                    setShowAddInput(false);
+                  }
+                  if (e.key === "Escape") { setShowAddInput(false); setNewBrandName(""); }
+                }}
+                className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
+              />
+            </DebugBadge>
             <Button
               size="sm"
               className="rounded-xl"
@@ -198,22 +203,25 @@ const Brands = () => {
             <p className="text-muted-foreground">Нет брендов</p>
           </div>
         ) : (
+          <DebugBadge id="Brands:list">
           <div className="space-y-1.5">
             {brands.map((brand) => (
               <div key={brand.name}>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
                   {editingBrand === brand.name ? (
                     <div className="flex gap-2 items-center">
-                      <Input
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveEdit(brand.name);
-                          if (e.key === "Escape") cancelEdit();
-                        }}
-                        className="h-8 rounded-lg bg-secondary border-white/[0.08] text-sm flex-1"
-                        autoFocus
-                      />
+                      <DebugBadge id="Brands:editInput" className="flex-1">
+                        <Input
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveEdit(brand.name);
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          className="h-8 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                          autoFocus
+                        />
+                      </DebugBadge>
                       <Button size="sm" className="h-8 rounded-lg px-2" onClick={() => saveEdit(brand.name)} disabled={saving}>
                         {saving ? <Icon name="Loader2" size={13} className="animate-spin" /> : <Icon name="Check" size={13} />}
                       </Button>
@@ -250,16 +258,18 @@ const Brands = () => {
                     <p className="text-xs text-red-400 mb-2">
                       Бренд используется в {brand.count} товарах. Выберите замену:
                     </p>
-                    <select
-                      value={replaceWith}
-                      onChange={(e) => setReplaceWith(e.target.value)}
-                      className="w-full h-9 rounded-lg bg-secondary border border-white/[0.08] text-sm px-2 mb-2 text-foreground"
-                    >
-                      <option value="">— очистить бренд у товаров —</option>
-                      {otherBrands.map(b => (
-                        <option key={b.name} value={b.name}>{b.name}</option>
-                      ))}
-                    </select>
+                    <DebugBadge id="Brands:replaceSelect">
+                      <select
+                        value={replaceWith}
+                        onChange={(e) => setReplaceWith(e.target.value)}
+                        className="w-full h-9 rounded-lg bg-secondary border border-white/[0.08] text-sm px-2 mb-2 text-foreground"
+                      >
+                        <option value="">— очистить бренд у товаров —</option>
+                        {otherBrands.map(b => (
+                          <option key={b.name} value={b.name}>{b.name}</option>
+                        ))}
+                      </select>
+                    </DebugBadge>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -279,6 +289,7 @@ const Brands = () => {
               </div>
             ))}
           </div>
+          </DebugBadge>
         )}
       </main>
     </div>

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const NEW_BARCODES_URL = "https://functions.poehali.dev/753c16bb-172a-460b-a7b4-2ffc3c26b6f7";
 
@@ -115,23 +116,27 @@ const NewBarcodes = () => {
         {showActions && (
           <div className="flex gap-1.5 flex-shrink-0">
             {!item.confirmed && item.nomenclature_id && (
+              <DebugBadge id="NewBarcodes:confirmBtn">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 rounded-lg text-xs border-green-500/30 text-green-400 hover:text-green-300 px-2"
+                  onClick={() => confirmBarcode(item.id)}
+                >
+                  <Icon name="Check" size={12} />
+                </Button>
+              </DebugBadge>
+            )}
+            <DebugBadge id="NewBarcodes:removeBtn">
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 rounded-lg text-xs border-green-500/30 text-green-400 hover:text-green-300 px-2"
-                onClick={() => confirmBarcode(item.id)}
+                className="h-7 rounded-lg text-xs border-red-500/30 text-red-400 hover:text-red-300 px-2"
+                onClick={() => removeBarcode(item.id)}
               >
-                <Icon name="Check" size={12} />
+                <Icon name="Trash2" size={12} />
               </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 rounded-lg text-xs border-red-500/30 text-red-400 hover:text-red-300 px-2"
-              onClick={() => removeBarcode(item.id)}
-            >
-              <Icon name="Trash2" size={12} />
-            </Button>
+            </DebugBadge>
           </div>
         )}
         {!showActions && (
@@ -176,9 +181,11 @@ const NewBarcodes = () => {
                 <p className="text-muted-foreground">Нет новых штрихкодов</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {activeItems.map((item) => renderItem(item, true))}
-              </div>
+              <DebugBadge id="NewBarcodes:activeList">
+                <div className="space-y-2">
+                  {activeItems.map((item) => renderItem(item, true))}
+                </div>
+              </DebugBadge>
             )}
           </TabsContent>
 
@@ -193,9 +200,11 @@ const NewBarcodes = () => {
                 <p className="text-muted-foreground">История пуста</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {historyItems.map((item) => renderItem(item, false))}
-              </div>
+              <DebugBadge id="NewBarcodes:historyList">
+                <div className="space-y-2">
+                  {historyItems.map((item) => renderItem(item, false))}
+                </div>
+              </DebugBadge>
             )}
           </TabsContent>
         </Tabs>

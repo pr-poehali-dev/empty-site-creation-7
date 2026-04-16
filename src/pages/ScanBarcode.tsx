@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const MAX_VISIBLE = 5;
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -533,14 +534,16 @@ const ScanBarcode = () => {
           <span className="ml-1">Назад</span>
         </Button>
         <p className="text-white text-sm font-medium">Сканирование</p>
-        <Button
-          size="sm"
-          className="h-9"
-          onClick={goBack}
-        >
-          <Icon name="Check" size={16} />
-          <span className="ml-1">Готово{collected.length > 0 ? ` (${collected.length})` : ""}</span>
-        </Button>
+        <DebugBadge id="Scan:doneBtn">
+          <Button
+            size="sm"
+            className="h-9"
+            onClick={goBack}
+          >
+            <Icon name="Check" size={16} />
+            <span className="ml-1">Готово{collected.length > 0 ? ` (${collected.length})` : ""}</span>
+          </Button>
+        </DebugBadge>
       </div>
 
       {status === "unsupported" ? (
@@ -675,13 +678,15 @@ const ScanBarcode = () => {
             </div>
 
             {status === "scanning" && !error && (
-              <button
-                className="w-full h-12 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-semibold flex items-center justify-center gap-2 transition-colors flex-shrink-0"
-                onClick={takePhoto}
-              >
-                <Icon name="ScanBarcode" size={20} />
-                Сканировать
-              </button>
+              <DebugBadge id="Scan:scanBtn">
+                <button
+                  className="w-full h-12 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-semibold flex items-center justify-center gap-2 transition-colors flex-shrink-0"
+                  onClick={takePhoto}
+                >
+                  <Icon name="ScanBarcode" size={20} />
+                  Сканировать
+                </button>
+              </DebugBadge>
             )}
           </div>
         </>
@@ -738,13 +743,15 @@ const ScanBarcode = () => {
               </button>
             </div>
             <div className="relative">
-              <Input
-                placeholder={searchMode === "article" ? "Введите артикул..." : "Название, артикул, бренд..."}
-                value={searchQuery}
-                onChange={(e) => handleSearchInput(e.target.value)}
-                className="h-10 rounded-xl bg-white/[0.08] border-white/[0.12] text-white text-sm pr-8"
-                autoFocus
-              />
+              <DebugBadge id="Scan:searchInput">
+                <Input
+                  placeholder={searchMode === "article" ? "Введите артикул..." : "Название, артикул, бренд..."}
+                  value={searchQuery}
+                  onChange={(e) => handleSearchInput(e.target.value)}
+                  className="h-10 rounded-xl bg-white/[0.08] border-white/[0.12] text-white text-sm pr-8"
+                  autoFocus
+                />
+              </DebugBadge>
               {searching && (
                 <Icon name="Loader2" size={14} className="absolute right-3 top-3 animate-spin text-white/40" />
               )}
@@ -757,13 +764,15 @@ const ScanBarcode = () => {
                 <p className="text-xs text-red-400 mb-2 font-medium">Временный товар</p>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <div className="relative" ref={brandRef}>
-                    <Input
-                      placeholder="Бренд *"
-                      value={tempBrand}
-                      onChange={(e) => { setTempBrand(e.target.value); setShowBrandList(true); }}
-                      onFocus={() => setShowBrandList(true)}
-                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
-                    />
+                    <DebugBadge id="Scan:tempBrand">
+                      <Input
+                        placeholder="Бренд *"
+                        value={tempBrand}
+                        onChange={(e) => { setTempBrand(e.target.value); setShowBrandList(true); }}
+                        onFocus={() => setShowBrandList(true)}
+                        className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                      />
+                    </DebugBadge>
                     {showBrandList && filteredBrands.length > 0 && (
                       <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                         {filteredBrands.map((b) => (
@@ -777,13 +786,15 @@ const ScanBarcode = () => {
                     )}
                   </div>
                   <div className="relative" ref={articleRef}>
-                    <Input
-                      placeholder="Артикул *"
-                      value={tempArticle}
-                      onChange={(e) => { searchArticlesInScan(e.target.value); setShowArticleList(true); }}
-                      onFocus={() => setShowArticleList(true)}
-                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
-                    />
+                    <DebugBadge id="Scan:tempArticle">
+                      <Input
+                        placeholder="Артикул *"
+                        value={tempArticle}
+                        onChange={(e) => { searchArticlesInScan(e.target.value); setShowArticleList(true); }}
+                        onFocus={() => setShowArticleList(true)}
+                        className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                      />
+                    </DebugBadge>
                     {showArticleList && articleSuggestions.length > 0 && (
                       <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                         {articleSuggestions.map((item) => (
@@ -801,20 +812,26 @@ const ScanBarcode = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mb-2">
-                  <Input placeholder="Количество *" type="number" value={tempQty}
-                    onChange={(e) => setTempQty(e.target.value)}
-                    className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
-                  />
-                  <Input placeholder="Цена *" type="number" value={tempPrice}
-                    onChange={(e) => setTempPrice(e.target.value)}
-                    className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
-                  />
+                  <DebugBadge id="Scan:tempQty">
+                    <Input placeholder="Количество *" type="number" value={tempQty}
+                      onChange={(e) => setTempQty(e.target.value)}
+                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                    />
+                  </DebugBadge>
+                  <DebugBadge id="Scan:tempPrice">
+                    <Input placeholder="Цена *" type="number" value={tempPrice}
+                      onChange={(e) => setTempPrice(e.target.value)}
+                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
+                    />
+                  </DebugBadge>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" className="rounded-lg flex-1" onClick={saveTempAndSelect} disabled={savingTemp || !tempBrand.trim() || !tempArticle.trim()}>
-                    {savingTemp ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Check" size={14} />}
-                    <span className="ml-1">Добавить</span>
-                  </Button>
+                  <DebugBadge id="Scan:tempSaveBtn" className="flex-1">
+                    <Button size="sm" className="rounded-lg w-full" onClick={saveTempAndSelect} disabled={savingTemp || !tempBrand.trim() || !tempArticle.trim()}>
+                      {savingTemp ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Check" size={14} />}
+                      <span className="ml-1">Добавить</span>
+                    </Button>
+                  </DebugBadge>
                   <Button size="sm" variant="ghost" className="rounded-lg"
                     onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice(""); }}
                   >Отмена</Button>

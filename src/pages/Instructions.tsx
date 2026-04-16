@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
+import DebugBadge from "@/components/DebugBadge";
 import MODULE_CODE from "@/data/module-form-code";
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
@@ -374,10 +375,12 @@ const Instructions = () => {
           {activeTab === "creation" && renderMarkdown(TAB_CREATION)}
           {activeTab === "code" && (
             <div>
-              <Button onClick={handleCopyCode} className="mb-4 rounded-xl gap-2">
-                <Icon name="Copy" size={16} />
-                Скопировать код
-              </Button>
+              <DebugBadge id="Instructions:copyCodeBtn">
+                <Button onClick={handleCopyCode} className="mb-4 rounded-xl gap-2">
+                  <Icon name="Copy" size={16} />
+                  Скопировать код
+                </Button>
+              </DebugBadge>
               <pre className="bg-black/30 rounded-xl p-4 overflow-x-auto text-xs font-mono text-green-300 whitespace-pre max-h-[70vh] overflow-y-auto">
                 <code>{MODULE_CODE}</code>
               </pre>

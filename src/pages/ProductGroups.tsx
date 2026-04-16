@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 
@@ -58,19 +59,21 @@ const ProductGroups = () => {
             <p className="text-sm text-muted-foreground mt-1">Группы создаются при импорте из 1С</p>
           </div>
         ) : (
-          <div className="space-y-1">
-            {groups.map((g) => (
-              <button
-                key={g.name}
-                className="w-full text-left rounded-xl border border-white/[0.08] bg-card p-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors"
-                onClick={() => navigate(`/admin/catalog?group=${encodeURIComponent(g.name)}`)}
-              >
-                <Icon name="FolderTree" size={18} className="text-muted-foreground flex-shrink-0" />
-                <span className="text-sm font-medium truncate">{g.name}</span>
-              </button>
-            ))}
-            <p className="text-sm text-muted-foreground pt-2">{groups.length} {groups.length === 1 ? "группа" : "групп"}</p>
-          </div>
+          <DebugBadge id="ProductGroups:list">
+            <div className="space-y-1">
+              {groups.map((g) => (
+                <button
+                  key={g.name}
+                  className="w-full text-left rounded-xl border border-white/[0.08] bg-card p-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors"
+                  onClick={() => navigate(`/admin/catalog?group=${encodeURIComponent(g.name)}`)}
+                >
+                  <Icon name="FolderTree" size={18} className="text-muted-foreground flex-shrink-0" />
+                  <span className="text-sm font-medium truncate">{g.name}</span>
+                </button>
+              ))}
+              <p className="text-sm text-muted-foreground pt-2">{groups.length} {groups.length === 1 ? "группа" : "групп"}</p>
+            </div>
+          </DebugBadge>
         )}
       </main>
     </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
 
@@ -52,16 +53,18 @@ const Wholesalers = () => {
             <p className="text-muted-foreground">Оптовики появятся автоматически из заявок</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {items.map((w) => (
-              <div key={w.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">{w.name}</p>
+          <DebugBadge id="Wholesalers:list">
+            <div className="space-y-2">
+              {items.map((w) => (
+                <div key={w.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-sm">{w.name}</p>
+                  </div>
+                  <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
                 </div>
-                <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </DebugBadge>
         )}
       </main>
     </div>

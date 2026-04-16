@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Icon from "@/components/ui/icon";
 import DebugToggle from "@/components/DebugToggle";
+import DebugBadge from "@/components/DebugBadge";
 
 const ManagerDashboard = () => {
   const navigate = useNavigate();
@@ -53,23 +54,27 @@ const ManagerDashboard = () => {
         </div>
 
         <div className="flex gap-2 mb-5">
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/catalog")}
-          >
-            <Icon name="Package" size={20} />
-            <span className="font-medium">Каталог</span>
-          </Button>
-          {canSeeOrders && (
+          <DebugBadge id="Manager:nav.catalog" className="flex-1">
             <Button
               variant="outline"
-              className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-              onClick={() => navigate("/admin/orders")}
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/catalog")}
             >
-              <Icon name="ClipboardList" size={20} />
-              <span className="font-medium">Заявки</span>
+              <Icon name="Package" size={20} />
+              <span className="font-medium">Каталог</span>
             </Button>
+          </DebugBadge>
+          {canSeeOrders && (
+            <DebugBadge id="Manager:nav.orders" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+                onClick={() => navigate("/admin/orders")}
+              >
+                <Icon name="ClipboardList" size={20} />
+                <span className="font-medium">Заявки</span>
+              </Button>
+            </DebugBadge>
           )}
         </div>
       </main>

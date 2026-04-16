@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const AUTH_URL = "https://functions.poehali.dev/4a2cb8d4-f9ea-4107-a828-aced0209a15e";
 const BOT_USERNAME = "mirtehniki_plus_bot";
@@ -150,29 +151,33 @@ export default function AdminLogin() {
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-muted-foreground">Номер телефона</label>
-            <Input
-              type="tel"
-              placeholder="+7XXXXXXXXXX"
-              value={phone}
-              onChange={handlePhoneChange}
-              disabled={step !== "phone"}
-              className="h-11 rounded-xl bg-secondary border-white/[0.08] text-base"
-            />
+            <DebugBadge id="Login:phone">
+              <Input
+                type="tel"
+                placeholder="+7XXXXXXXXXX"
+                value={phone}
+                onChange={handlePhoneChange}
+                disabled={step !== "phone"}
+                className="h-11 rounded-xl bg-secondary border-white/[0.08] text-base"
+              />
+            </DebugBadge>
           </div>
 
           {step === "phone" && (
-            <Button
-              className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
-              onClick={checkPhone}
-              disabled={!isPhoneValid || loading}
-            >
-              {loading ? (
-                <Icon name="Loader2" size={18} className="animate-spin" />
-              ) : (
-                <Icon name="ArrowRight" size={18} />
-              )}
-              <span className="ml-2">{loading ? "Проверка..." : "Продолжить"}</span>
-            </Button>
+            <DebugBadge id="Login:submitBtn">
+              <Button
+                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                onClick={checkPhone}
+                disabled={!isPhoneValid || loading}
+              >
+                {loading ? (
+                  <Icon name="Loader2" size={18} className="animate-spin" />
+                ) : (
+                  <Icon name="ArrowRight" size={18} />
+                )}
+                <span className="ml-2">{loading ? "Проверка..." : "Продолжить"}</span>
+              </Button>
+            </DebugBadge>
           )}
 
           {step === "telegram" && (
@@ -227,27 +232,31 @@ export default function AdminLogin() {
             <div className="space-y-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Код из Telegram</label>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="000000"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  className="h-11 rounded-xl bg-secondary border-white/[0.08] text-center text-xl tracking-[0.3em] font-mono"
-                />
+                <DebugBadge id="Login:code">
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="000000"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="h-11 rounded-xl bg-secondary border-white/[0.08] text-center text-xl tracking-[0.3em] font-mono"
+                  />
+                </DebugBadge>
               </div>
-              <Button
-                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
-                onClick={verifyCode}
-                disabled={code.length < 6 || loading}
-              >
-                {loading ? (
-                  <Icon name="Loader2" size={18} className="animate-spin" />
-                ) : (
-                  <Icon name="LogIn" size={18} />
-                )}
-                <span className="ml-2">{loading ? "Проверка..." : "Войти"}</span>
-              </Button>
+              <DebugBadge id="Login:verifyBtn">
+                <Button
+                  className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                  onClick={verifyCode}
+                  disabled={code.length < 6 || loading}
+                >
+                  {loading ? (
+                    <Icon name="Loader2" size={18} className="animate-spin" />
+                  ) : (
+                    <Icon name="LogIn" size={18} />
+                  )}
+                  <span className="ml-2">{loading ? "Проверка..." : "Войти"}</span>
+                </Button>
+              </DebugBadge>
               <button
                 className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
                 onClick={() => { setStep("phone"); setCode(""); }}

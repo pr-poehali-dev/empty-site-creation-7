@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
@@ -205,44 +206,46 @@ const PricingRulesEdit = () => {
         {rules.length > 0 && (
           <div className="mb-4">
             <p className="text-xs text-muted-foreground mb-2">Исключения (приоритет сверху вниз)</p>
-            <div className="space-y-2">
-              {rules.map((rule, idx) => {
-                const steps = parseFormula(rule.formula);
-                const priceLabel = PRICE_FIELDS.find((p) => p.value === rule.price_field)?.label || rule.price_field;
-                const preview = calcPreview(previewPrice, steps);
-                return (
-                  <div key={rule.id} className="p-3 rounded-xl border border-white/[0.08] bg-card">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">{rule.filter_value}</span>
+            <DebugBadge id="PricingEdit:rulesList">
+              <div className="space-y-2">
+                {rules.map((rule, idx) => {
+                  const steps = parseFormula(rule.formula);
+                  const priceLabel = PRICE_FIELDS.find((p) => p.value === rule.price_field)?.label || rule.price_field;
+                  const preview = calcPreview(previewPrice, steps);
+                  return (
+                    <div key={rule.id} className="p-3 rounded-xl border border-white/[0.08] bg-card">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">{rule.filter_value}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {priceLabel} {rule.formula}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Пример: {previewPrice}₽ → <span className="text-primary font-medium">{preview}₽</span>
+                          </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {priceLabel} {rule.formula}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Пример: {previewPrice}₽ → <span className="text-primary font-medium">{preview}₽</span>
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveRule(idx, -1)} disabled={idx === 0}>
-                          <Icon name="ChevronUp" size={14} />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveRule(idx, 1)} disabled={idx === rules.length - 1}>
-                          <Icon name="ChevronDown" size={14} />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(rule)}>
-                          <Icon name="Pencil" size={14} />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteRule(rule.id)}>
-                          <Icon name="Trash2" size={14} />
-                        </Button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveRule(idx, -1)} disabled={idx === 0}>
+                            <Icon name="ChevronUp" size={14} />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveRule(idx, 1)} disabled={idx === rules.length - 1}>
+                            <Icon name="ChevronDown" size={14} />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(rule)}>
+                            <Icon name="Pencil" size={14} />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteRule(rule.id)}>
+                            <Icon name="Trash2" size={14} />
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </DebugBadge>
           </div>
         )}
 
@@ -252,26 +255,30 @@ const PricingRulesEdit = () => {
 
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Группа товаров</label>
-              <Select value={formGroup} onValueChange={setFormGroup}>
-                <SelectTrigger><SelectValue placeholder="Выберите группу" /></SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectItem key={g} value={g}>{g}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DebugBadge id="PricingEdit:group">
+                <Select value={formGroup} onValueChange={setFormGroup}>
+                  <SelectTrigger><SelectValue placeholder="Выберите группу" /></SelectTrigger>
+                  <SelectContent>
+                    {groups.map((g) => (
+                      <SelectItem key={g} value={g}>{g}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </DebugBadge>
             </div>
 
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Источник цены</label>
-              <Select value={formPriceField} onValueChange={setFormPriceField}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PRICE_FIELDS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DebugBadge id="PricingEdit:priceField">
+                <Select value={formPriceField} onValueChange={setFormPriceField}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PRICE_FIELDS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </DebugBadge>
             </div>
 
             <div>
@@ -279,21 +286,24 @@ const PricingRulesEdit = () => {
               <div className="space-y-2">
                 {formSteps.map((step, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <Select value={step.operator} onValueChange={(v) => updateStep(i, "operator", v)}>
-                      <SelectTrigger className="w-16"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {OPERATORS.map((op) => (
-                          <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      value={step.value}
-                      onChange={(e) => updateStep(i, "value", e.target.value)}
-                      className="flex-1"
-                      placeholder="Число"
-                    />
+                    <DebugBadge id={`PricingEdit:formulaOp[${i}]`}>
+                      <Select value={step.operator} onValueChange={(v) => updateStep(i, "operator", v)}>
+                        <SelectTrigger className="w-16"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {OPERATORS.map((op) => (
+                            <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </DebugBadge>
+                    <DebugBadge id={`PricingEdit:formulaVal[${i}]`} className="flex-1">
+                      <Input
+                        type="number"
+                        value={step.value}
+                        onChange={(e) => updateStep(i, "value", e.target.value)}
+                        placeholder="Число"
+                      />
+                    </DebugBadge>
                     {formSteps.length > 1 && (
                       <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => removeStep(i)}>
                         <Icon name="X" size={14} />
@@ -315,18 +325,22 @@ const PricingRulesEdit = () => {
             </div>
 
             <div className="flex gap-2">
-              <Button className="flex-1" onClick={saveRule}>
-                {editingId ? "Сохранить" : "Добавить"}
-              </Button>
+              <DebugBadge id="PricingEdit:saveBtn" className="flex-1">
+                <Button className="w-full" onClick={saveRule}>
+                  {editingId ? "Сохранить" : "Добавить"}
+                </Button>
+              </DebugBadge>
               <Button variant="outline" onClick={() => { setShowAdd(false); setEditingId(null); resetForm(); }}>
                 Отмена
               </Button>
             </div>
           </div>
         ) : (
-          <Button variant="outline" className="w-full" onClick={() => { resetForm(); setShowAdd(true); }}>
-            <Icon name="Plus" size={16} className="mr-2" /> Добавить исключение
-          </Button>
+          <DebugBadge id="PricingEdit:addBtn">
+            <Button variant="outline" className="w-full" onClick={() => { resetForm(); setShowAdd(true); }}>
+              <Icon name="Plus" size={16} className="mr-2" /> Добавить исключение
+            </Button>
+          </DebugBadge>
         )}
       </main>
     </div>

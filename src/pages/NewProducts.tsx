@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -253,6 +254,7 @@ const NewProducts = () => {
                 <p className="text-muted-foreground">Нет новых товаров</p>
               </div>
             ) : (
+              <DebugBadge id="NewProducts:activeList">
               <div className="space-y-2">
                 {activeItems.map((item) => (
                   <div key={item.id}>
@@ -336,6 +338,7 @@ const NewProducts = () => {
                   </div>
                 ))}
               </div>
+              </DebugBadge>
             )}
           </TabsContent>
 
@@ -350,24 +353,26 @@ const NewProducts = () => {
                 <p className="text-muted-foreground">История пуста</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {historyItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm">{item.brand} {item.article}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {formatDate(item.created_at)}
-                        </p>
+              <DebugBadge id="NewProducts:historyList">
+                <div className="space-y-2">
+                  {historyItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm">{item.brand} {item.article}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {formatDate(item.created_at)}
+                          </p>
+                        </div>
+                        <span className="text-xs text-green-400 flex-shrink-0">добавлен в каталог</span>
                       </div>
-                      <span className="text-xs text-green-400 flex-shrink-0">добавлен в каталог</span>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </DebugBadge>
             )}
           </TabsContent>
         </Tabs>
@@ -382,11 +387,13 @@ const NewProducts = () => {
             <div className="space-y-3">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Название *</p>
-                <Input
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <DebugBadge id="NewProducts:formName">
+                  <Input
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    className="rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -400,13 +407,15 @@ const NewProducts = () => {
               </div>
               <div className="relative">
                 <p className="text-xs text-muted-foreground mb-1">Категория</p>
-                <Input
-                  value={formCategory}
-                  onChange={(e) => { setFormCategory(e.target.value); setFormCategoryId(null); setShowCatList(true); }}
-                  onFocus={() => setShowCatList(true)}
-                  placeholder="Выберите категорию..."
-                  className="rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <DebugBadge id="NewProducts:formCategory">
+                  <Input
+                    value={formCategory}
+                    onChange={(e) => { setFormCategory(e.target.value); setFormCategoryId(null); setShowCatList(true); }}
+                    onFocus={() => setShowCatList(true)}
+                    placeholder="Выберите категорию..."
+                    className="rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
                 {showCatList && filteredCats.length > 0 && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto shadow-lg">
                     {filteredCats.slice(0, 20).map((c) => (
@@ -424,19 +433,27 @@ const NewProducts = () => {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Цена базовая</p>
-                  <Input type="number" value={formPriceBase} onChange={(e) => setFormPriceBase(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  <DebugBadge id="NewProducts:priceBase">
+                    <Input type="number" value={formPriceBase} onChange={(e) => setFormPriceBase(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  </DebugBadge>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Цена розничная</p>
-                  <Input type="number" value={formPriceRetail} onChange={(e) => setFormPriceRetail(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  <DebugBadge id="NewProducts:priceRetail">
+                    <Input type="number" value={formPriceRetail} onChange={(e) => setFormPriceRetail(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  </DebugBadge>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Цена оптовая</p>
-                  <Input type="number" value={formPriceWholesale} onChange={(e) => setFormPriceWholesale(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  <DebugBadge id="NewProducts:priceWholesale">
+                    <Input type="number" value={formPriceWholesale} onChange={(e) => setFormPriceWholesale(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  </DebugBadge>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Цена закупочная</p>
-                  <Input type="number" value={formPricePurchase} onChange={(e) => setFormPricePurchase(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  <DebugBadge id="NewProducts:pricePurchase">
+                    <Input type="number" value={formPricePurchase} onChange={(e) => setFormPricePurchase(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                  </DebugBadge>
                 </div>
               </div>
             </div>
@@ -445,10 +462,12 @@ const NewProducts = () => {
             <Button variant="outline" className="rounded-xl border-white/[0.08]" onClick={() => setAddDialog(null)}>
               Отмена
             </Button>
-            <Button className="rounded-xl" onClick={handleSaveTocatalog} disabled={saving}>
-              {saving ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Check" size={16} />}
-              <span className="ml-2">Добавить в каталог</span>
-            </Button>
+            <DebugBadge id="NewProducts:saveBtn">
+              <Button className="rounded-xl" onClick={handleSaveTocatalog} disabled={saving}>
+                {saving ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Check" size={16} />}
+                <span className="ml-2">Добавить в каталог</span>
+              </Button>
+            </DebugBadge>
           </DialogFooter>
         </DialogContent>
       </Dialog>

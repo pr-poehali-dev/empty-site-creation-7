@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const PAYMENTS_URL = "https://functions.poehali.dev/e4dc8d0d-913c-40e0-84e8-2bd0c73c1d1c";
 
@@ -220,6 +221,7 @@ const OrderPayments = () => {
             </div>
 
             {payments.length > 0 && (
+              <DebugBadge id="Payments:list">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Платежи</label>
                 {payments.map((p) => (
@@ -245,6 +247,7 @@ const OrderPayments = () => {
                   </div>
                 ))}
               </div>
+              </DebugBadge>
             )}
 
             {payments.length === 0 && (
@@ -255,16 +258,18 @@ const OrderPayments = () => {
             )}
 
             {paymentStatus !== "paid" && (
-              <Button
-                className="w-full h-11 rounded-xl"
-                onClick={() => {
-                  setAmount(remaining > 0 ? String(remaining) : "");
-                  setDialogOpen(true);
-                }}
-              >
-                <Icon name="Plus" size={16} />
-                <span className="ml-2">Добавить оплату</span>
-              </Button>
+              <DebugBadge id="Payments:addBtn">
+                <Button
+                  className="w-full h-11 rounded-xl"
+                  onClick={() => {
+                    setAmount(remaining > 0 ? String(remaining) : "");
+                    setDialogOpen(true);
+                  }}
+                >
+                  <Icon name="Plus" size={16} />
+                  <span className="ml-2">Добавить оплату</span>
+                </Button>
+              </DebugBadge>
             )}
           </>
         )}
@@ -278,45 +283,53 @@ const OrderPayments = () => {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Способ оплаты *</label>
-              <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger className="h-10 rounded-xl bg-secondary border-white/[0.08]">
-                  <SelectValue placeholder="Выберите способ" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Наличные</SelectItem>
-                  <SelectItem value="card_transfer">Перевод на карту</SelectItem>
-                  <SelectItem value="bank_account">На р/с</SelectItem>
-                </SelectContent>
-              </Select>
+              <DebugBadge id="Payments:method">
+                <Select value={method} onValueChange={setMethod}>
+                  <SelectTrigger className="h-10 rounded-xl bg-secondary border-white/[0.08]">
+                    <SelectValue placeholder="Выберите способ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Наличные</SelectItem>
+                    <SelectItem value="card_transfer">Перевод на карту</SelectItem>
+                    <SelectItem value="bank_account">На р/с</SelectItem>
+                  </SelectContent>
+                </Select>
+              </DebugBadge>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Сумма, ₽ *</label>
-              <Input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0"
-                className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-              />
+              <DebugBadge id="Payments:amount">
+                <Input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0"
+                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                />
+              </DebugBadge>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Комментарий</label>
-              <Input
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={getCommentPlaceholder()}
-                className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-              />
+              <DebugBadge id="Payments:comment">
+                <Input
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder={getCommentPlaceholder()}
+                  className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                />
+              </DebugBadge>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl border-white/[0.08]">
               Отмена
             </Button>
-            <Button onClick={handleAdd} disabled={saving} className="rounded-xl">
-              {saving ? <Icon name="Loader2" size={18} className="animate-spin" /> : <Icon name="Check" size={18} />}
-              <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
-            </Button>
+            <DebugBadge id="Payments:saveBtn">
+              <Button onClick={handleAdd} disabled={saving} className="rounded-xl">
+                {saving ? <Icon name="Loader2" size={18} className="animate-spin" /> : <Icon name="Check" size={18} />}
+                <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
+              </Button>
+            </DebugBadge>
           </DialogFooter>
         </DialogContent>
       </Dialog>

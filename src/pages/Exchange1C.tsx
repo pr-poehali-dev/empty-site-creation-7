@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import DebugBadge from "@/components/DebugBadge";
 
 const EXCHANGE_URL = "https://functions.poehali.dev/6839fcc9-3788-4a5f-95af-8c1dcb80f890";
 
@@ -122,21 +123,27 @@ const Exchange1C = () => {
               Этот ключ нужно вставить в обработку 1С для авторизации обмена
             </p>
             <div className="flex gap-2">
-              <Input
-                value={loadingKey ? "Загрузка..." : apiKey || "Ключ не сгенерирован"}
-                readOnly
-                className="font-mono text-sm"
-              />
+              <DebugBadge id="Exchange1C:apiKey" className="flex-1">
+                <Input
+                  value={loadingKey ? "Загрузка..." : apiKey || "Ключ не сгенерирован"}
+                  readOnly
+                  className="font-mono text-sm"
+                />
+              </DebugBadge>
               {apiKey && (
-                <Button variant="outline" size="icon" onClick={copyKey} title="Копировать">
-                  <Icon name="Copy" size={16} />
-                </Button>
+                <DebugBadge id="Exchange1C:copyKeyBtn">
+                  <Button variant="outline" size="icon" onClick={copyKey} title="Копировать">
+                    <Icon name="Copy" size={16} />
+                  </Button>
+                </DebugBadge>
               )}
             </div>
-            <Button onClick={generateKey} disabled={generatingKey} className="w-full">
-              <Icon name="RefreshCw" size={16} />
-              {generatingKey ? "Генерация..." : apiKey ? "Сгенерировать новый ключ" : "Сгенерировать ключ"}
-            </Button>
+            <DebugBadge id="Exchange1C:generateBtn">
+              <Button onClick={generateKey} disabled={generatingKey} className="w-full">
+                <Icon name="RefreshCw" size={16} />
+                {generatingKey ? "Генерация..." : apiKey ? "Сгенерировать новый ключ" : "Сгенерировать ключ"}
+              </Button>
+            </DebugBadge>
             {apiKey && (
               <p className="text-xs text-yellow-400">
                 При генерации нового ключа старый перестанет работать. Обновите ключ в обработке 1С.
@@ -152,15 +159,17 @@ const Exchange1C = () => {
             <p className="text-sm text-muted-foreground">
               Скачать JSON-файл со всеми товарами для загрузки в 1С
             </p>
-            <Button
-              onClick={exportProducts}
-              disabled={exporting || !apiKey}
-              variant="outline"
-              className="w-full"
-            >
-              <Icon name="FileJson" size={16} />
-              {exporting ? "Выгрузка..." : "Выгрузить товары"}
-            </Button>
+            <DebugBadge id="Exchange1C:exportBtn">
+              <Button
+                onClick={exportProducts}
+                disabled={exporting || !apiKey}
+                variant="outline"
+                className="w-full"
+              >
+                <Icon name="FileJson" size={16} />
+                {exporting ? "Выгрузка..." : "Выгрузить товары"}
+              </Button>
+            </DebugBadge>
             {!apiKey && (
               <p className="text-xs text-muted-foreground">
                 Сначала сгенерируйте API-ключ
@@ -182,18 +191,22 @@ const Exchange1C = () => {
               Укажите этот адрес в настройках обработки 1С
             </p>
             <div className="flex gap-2">
-              <Input value={EXCHANGE_URL} readOnly className="font-mono text-xs" />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  navigator.clipboard.writeText(EXCHANGE_URL);
-                  toast({ title: "Скопировано" });
-                }}
-                title="Копировать"
-              >
-                <Icon name="Copy" size={16} />
-              </Button>
+              <DebugBadge id="Exchange1C:urlField" className="flex-1">
+                <Input value={EXCHANGE_URL} readOnly className="font-mono text-xs" />
+              </DebugBadge>
+              <DebugBadge id="Exchange1C:copyUrlBtn">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    navigator.clipboard.writeText(EXCHANGE_URL);
+                    toast({ title: "Скопировано" });
+                  }}
+                  title="Копировать"
+                >
+                  <Icon name="Copy" size={16} />
+                </Button>
+              </DebugBadge>
             </div>
           </div>
         </div>

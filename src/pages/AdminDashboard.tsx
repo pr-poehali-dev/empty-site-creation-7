@@ -21,6 +21,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import DebugToggle from "@/components/DebugToggle";
+import DebugBadge from "@/components/DebugBadge";
 
 const MANAGERS_URL = "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e";
 
@@ -328,7 +329,7 @@ const AdminDashboard = () => {
     if (list.length === 0) {
       return <p className="text-center text-muted-foreground py-8">{emptyText}</p>;
     }
-    return <div className="space-y-2">{list.map(renderManagerCard)}</div>;
+    return <DebugBadge id="Admin:managersList"><div className="space-y-2">{list.map(renderManagerCard)}</div></DebugBadge>;
   };
 
   return (
@@ -354,86 +355,106 @@ const AdminDashboard = () => {
 
       <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
         <div className="flex gap-2 mb-5 sm:mb-6 flex-wrap">
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/catalog")}
-          >
-            <Icon name="Package" size={20} />
-            <span className="font-medium">Каталог</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/orders")}
-          >
-            <Icon name="ClipboardList" size={20} />
-            <span className="font-medium">Заявки</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/exchange-1c")}
-          >
-            <Icon name="RefreshCw" size={20} />
-            <span className="font-medium">Обмен с 1С</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/wholesalers")}
-          >
-            <Icon name="Users" size={20} />
-            <span className="font-medium">Оптовики</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/pricing")}
-          >
-            <Icon name="Calculator" size={20} />
-            <span className="font-medium">Определение цен</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/instructions")}
-          >
-            <Icon name="BookOpen" size={20} />
-            <span className="font-medium">Инструкции от Юры</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-red-500/30 justify-start gap-3 text-red-400 hover:text-red-300 hover:border-red-500/50"
-            onClick={() => navigate("/admin/new-products")}
-          >
-            <Icon name="PackagePlus" size={20} />
-            <span className="font-medium">Новые товары</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-red-500/30 justify-start gap-3 text-red-400 hover:text-red-300 hover:border-red-500/50"
-            onClick={() => navigate("/admin/new-barcodes")}
-          >
-            <Icon name="ScanLine" size={20} />
-            <span className="font-medium">Новые штрихкоды</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/brands")}
-          >
-            <Icon name="Tag" size={20} />
-            <span className="font-medium">Бренды</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-            onClick={() => navigate("/admin/product-groups")}
-          >
-            <Icon name="FolderTree" size={20} />
-            <span className="font-medium">Группы</span>
-          </Button>
+          <DebugBadge id="Admin:nav.catalog" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/catalog")}
+            >
+              <Icon name="Package" size={20} />
+              <span className="font-medium">Каталог</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.orders" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/orders")}
+            >
+              <Icon name="ClipboardList" size={20} />
+              <span className="font-medium">Заявки</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.exchange" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/exchange-1c")}
+            >
+              <Icon name="RefreshCw" size={20} />
+              <span className="font-medium">Обмен с 1С</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.wholesalers" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/wholesalers")}
+            >
+              <Icon name="Users" size={20} />
+              <span className="font-medium">Оптовики</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.pricing" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/pricing")}
+            >
+              <Icon name="Calculator" size={20} />
+              <span className="font-medium">Определение цен</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.instructions" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/instructions")}
+            >
+              <Icon name="BookOpen" size={20} />
+              <span className="font-medium">Инструкции от Юры</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.newProducts" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-red-500/30 justify-start gap-3 text-red-400 hover:text-red-300 hover:border-red-500/50"
+              onClick={() => navigate("/admin/new-products")}
+            >
+              <Icon name="PackagePlus" size={20} />
+              <span className="font-medium">Новые товары</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.newBarcodes" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-red-500/30 justify-start gap-3 text-red-400 hover:text-red-300 hover:border-red-500/50"
+              onClick={() => navigate("/admin/new-barcodes")}
+            >
+              <Icon name="ScanLine" size={20} />
+              <span className="font-medium">Новые штрихкоды</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.brands" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/brands")}
+            >
+              <Icon name="Tag" size={20} />
+              <span className="font-medium">Бренды</span>
+            </Button>
+          </DebugBadge>
+          <DebugBadge id="Admin:nav.groups" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/product-groups")}
+            >
+              <Icon name="FolderTree" size={20} />
+              <span className="font-medium">Группы</span>
+            </Button>
+          </DebugBadge>
         </div>
 
         <div className="flex items-center justify-between mb-5 sm:mb-6">
@@ -481,27 +502,31 @@ const AdminDashboard = () => {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Номер телефона</label>
-              <Input
-                type="tel"
-                placeholder="+7XXXXXXXXXX"
-                value={newPhone}
-                onChange={handlePhoneInput}
-                className="h-11 rounded-xl bg-secondary border-white/[0.08]"
-              />
+              <DebugBadge id="Admin:addPhone">
+                <Input
+                  type="tel"
+                  placeholder="+7XXXXXXXXXX"
+                  value={newPhone}
+                  onChange={handlePhoneInput}
+                  className="h-11 rounded-xl bg-secondary border-white/[0.08]"
+                />
+              </DebugBadge>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setAddDialogOpen(false)} className="rounded-xl border-white/[0.08]">
               Отмена
             </Button>
-            <Button onClick={addManager} disabled={adding} className="rounded-xl bg-primary hover:bg-primary/90">
-              {adding ? (
-                <Icon name="Loader2" size={18} className="animate-spin" />
-              ) : (
-                <Icon name="UserPlus" size={18} />
-              )}
-              <span className="ml-2">{adding ? "Добавление..." : "Добавить"}</span>
-            </Button>
+            <DebugBadge id="Admin:addBtn">
+              <Button onClick={addManager} disabled={adding} className="rounded-xl bg-primary hover:bg-primary/90">
+                {adding ? (
+                  <Icon name="Loader2" size={18} className="animate-spin" />
+                ) : (
+                  <Icon name="UserPlus" size={18} />
+                )}
+                <span className="ml-2">{adding ? "Добавление..." : "Добавить"}</span>
+              </Button>
+            </DebugBadge>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -595,34 +620,40 @@ const AdminDashboard = () => {
               <p className="text-sm text-muted-foreground">{editManager.phone}</p>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Имя</label>
-                <Input
-                  value={editFirstName}
-                  onChange={(e) => setEditFirstName(e.target.value)}
-                  className="h-11 rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <DebugBadge id="Admin:edit.firstName">
+                  <Input
+                    value={editFirstName}
+                    onChange={(e) => setEditFirstName(e.target.value)}
+                    className="h-11 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Фамилия</label>
-                <Input
-                  value={editLastName}
-                  onChange={(e) => setEditLastName(e.target.value)}
-                  className="h-11 rounded-xl bg-secondary border-white/[0.08]"
-                />
+                <DebugBadge id="Admin:edit.lastName">
+                  <Input
+                    value={editLastName}
+                    onChange={(e) => setEditLastName(e.target.value)}
+                    className="h-11 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </DebugBadge>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Роль</label>
-                <Select value={editRoleId} onValueChange={setEditRoleId}>
-                  <SelectTrigger className="h-11 rounded-xl bg-secondary border-white/[0.08]">
-                    <SelectValue placeholder="Выберите роль" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROLES.map((role) => (
-                      <SelectItem key={role.id} value={String(role.id)}>
-                        {role.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <DebugBadge id="Admin:edit.role">
+                  <Select value={editRoleId} onValueChange={setEditRoleId}>
+                    <SelectTrigger className="h-11 rounded-xl bg-secondary border-white/[0.08]">
+                      <SelectValue placeholder="Выберите роль" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((role) => (
+                        <SelectItem key={role.id} value={String(role.id)}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </DebugBadge>
               </div>
             </div>
           )}
