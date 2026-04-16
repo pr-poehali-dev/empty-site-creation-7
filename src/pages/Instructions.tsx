@@ -313,10 +313,47 @@ const renderMarkdown = (text: string) => {
   return elements;
 };
 
+const TAB_HOSTING = `# Перенос сайта на свой хостинг
+
+## 1. Скачать код
+Скачать → Скачать код (исходники React) или Скачать → Скачать билд (готовый HTML+JS+CSS). Либо подключить GitHub: Скачать → Подключить GitHub.
+
+## 2. Фронтенд (сайт)
+- Любой хостинг со статикой: VPS с Nginx, Vercel, Netlify, обычный shared-хостинг
+- Собрать билд: \`npm install && npm run build\` → папку \`dist\` закинуть на сервер
+- Настроить, чтобы все URL отдавали \`index.html\` (SPA-роутинг)
+
+## 3. Бэкенд (функции)
+Python-функции находятся в папке \`/backend/\`. Варианты:
+- **Самый простой** — обернуть каждую функцию в Flask/FastAPI на VPS
+- Каждая функция принимает \`event\` (httpMethod, headers, body, queryStringParameters) и возвращает \`{statusCode, headers, body}\`
+- Нужно будет поменять URL-ы вызовов в фронтенде (сейчас они берутся из \`func2url.json\`)
+
+## 4. База данных
+- PostgreSQL — развернуть на своём сервере или взять managed (Supabase, Neon, любой VPS)
+- Применить все миграции из папки \`db_migrations/\` по порядку
+- Прописать \`DATABASE_URL\` в переменные окружения бэкенда
+
+## 5. Хранилище файлов (S3)
+- Любой S3-совместимый сервис: MinIO на своём сервере, Yandex Object Storage, AWS S3
+- Прописать \`AWS_ACCESS_KEY_ID\` и \`AWS_SECRET_ACCESS_KEY\`
+- Поменять \`endpoint_url\` в коде бэкенда на свой
+
+## 6. Секреты (переменные окружения)
+Все ключи, которые сейчас в секретах платформы, нужно прописать как ENV-переменные на своём сервере. Список можно посмотреть в Ядро → Секреты.
+
+## 7. Домен + SSL
+- Направить домен на свой сервер
+- Let's Encrypt / Cloudflare для SSL
+
+## Минимальный набор
+VPS за 500-1000₽/мес + PostgreSQL + Nginx + Python. Всё поместится на одном сервере.`;
+
 const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting">("menu");
   const [activeTab, setActiveTab] = useState("creation");
 
   if (user.role !== "owner") {
@@ -324,7 +361,7 @@ const Instructions = () => {
     return null;
   }
 
-  const tabs = [
+  const tabs1c = [
     { key: "creation", label: "Создание обработки" },
     { key: "code", label: "Текст модуля" },
     { key: "usage", label: "Инструкция пользования" },
@@ -336,6 +373,8 @@ const Instructions = () => {
     });
   };
 
+  const sectionTitle = section === "1c" ? "Обмен с 1С" : section === "hosting" ? "Перенос сайта" : "Инструкции от Юры";
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
@@ -345,49 +384,88 @@ const Instructions = () => {
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 hover:bg-white/[0.06]"
-              onClick={() => navigate("/admin/dashboard")}
+              onClick={() => section === "menu" ? navigate("/admin/dashboard") : setSection("menu")}
             >
               <Icon name="ArrowLeft" size={18} />
             </Button>
-            <h1 className="text-lg sm:text-xl font-semibold">Инструкции от Юры</h1>
+            <h1 className="text-lg sm:text-xl font-semibold">{sectionTitle}</h1>
           </div>
         </div>
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
-        <div className="flex gap-2 mb-4 overflow-x-auto">
-          {tabs.map((tab) => (
+        {section === "menu" && (
+          <div className="grid gap-4 sm:grid-cols-2">
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                activeTab === tab.key
-                  ? "bg-primary/20 text-primary font-medium"
-                  : "text-muted-foreground hover:bg-white/[0.06]"
-              }`}
+              onClick={() => setSection("1c")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
             >
-              {tab.label}
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                  <Icon name="RefreshCw" size={20} className="text-primary" />
+                </div>
+                <span className="text-lg font-semibold">Обмен с 1С</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Создание обработки, модуль формы и инструкция по использованию</p>
             </button>
-          ))}
-        </div>
+            <button
+              onClick={() => setSection("hosting")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <Icon name="Server" size={20} className="text-blue-400" />
+                </div>
+                <span className="text-lg font-semibold">Перенос сайта</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Как перенести проект на свой хостинг: фронт, бэк, БД, S3</p>
+            </button>
+          </div>
+        )}
 
-        <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
-          {activeTab === "creation" && renderMarkdown(TAB_CREATION)}
-          {activeTab === "code" && (
-            <div>
-              <DebugBadge id="Instructions:copyCodeBtn">
-                <Button onClick={handleCopyCode} className="mb-4 rounded-xl gap-2">
-                  <Icon name="Copy" size={16} />
-                  Скопировать код
-                </Button>
-              </DebugBadge>
-              <pre className="bg-black/30 rounded-xl p-4 overflow-x-auto text-xs font-mono text-green-300 whitespace-pre max-h-[70vh] overflow-y-auto">
-                <code>{MODULE_CODE}</code>
-              </pre>
+        {section === "1c" && (
+          <>
+            <div className="flex gap-2 mb-4 overflow-x-auto">
+              {tabs1c.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                    activeTab === tab.key
+                      ? "bg-primary/20 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-          )}
-          {activeTab === "usage" && renderMarkdown(TAB_USAGE)}
-        </div>
+
+            <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+              {activeTab === "creation" && renderMarkdown(TAB_CREATION)}
+              {activeTab === "code" && (
+                <div>
+                  <DebugBadge id="Instructions:copyCodeBtn">
+                    <Button onClick={handleCopyCode} className="mb-4 rounded-xl gap-2">
+                      <Icon name="Copy" size={16} />
+                      Скопировать код
+                    </Button>
+                  </DebugBadge>
+                  <pre className="bg-black/30 rounded-xl p-4 overflow-x-auto text-xs font-mono text-green-300 whitespace-pre max-h-[70vh] overflow-y-auto">
+                    <code>{MODULE_CODE}</code>
+                  </pre>
+                </div>
+              )}
+              {activeTab === "usage" && renderMarkdown(TAB_USAGE)}
+            </div>
+          </>
+        )}
+
+        {section === "hosting" && (
+          <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+            {renderMarkdown(TAB_HOSTING)}
+          </div>
+        )}
       </main>
     </div>
   );
