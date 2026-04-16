@@ -381,7 +381,7 @@ const OrderCreatePage = () => {
     } finally {
       setSearching(false);
     }
-  }, [token]);
+  }, [token, selectedGroup]);
 
   const handleSearchInput = (value: string) => {
     setSearchQuery(value);
