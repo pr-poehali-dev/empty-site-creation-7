@@ -75,3 +75,88 @@
 - `src/pages/Catalog.tsx` — в списке: `thumbnail_url || url` (fallback на оригинал)
 - Интерфейс `ProductImage` расширен полем `thumbnail_url?: string`
 - GET бэкенда включает `thumbnail_url` в ответ
+
+## План для истории заявок
+
+### 1. БД — новая таблица `order_history`
+Миграция V0045:
+```sql
+CREATE TABLE order_history (
+    id BIGSERIAL PRIMARY KEY,
+    order_id INTEGER NOT NULL REFERENCES wholesale_orders(id) ON DELETE CASCADE,
+    user_id INTEGER,
+    user_name VARCHAR(255),
+    action VARCHAR(50) NOT NULL,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX idx_order_history_order ON order_history(order_id, created_at DESC);
+```
+JSONB → автосжатие (TOAST).
+
+### 2. Бэкенд — запись событий
+**2.1. Хелпер `log_history()`** в каждой функции, меняющей заявку (`wholesale-orders`, `order-payments`, при необходимости `temp-products`):
+```python
+def log_history(cur, order_id, user_id, user_name, action, details=None):
+    cur.execute(
+        "INSERT INTO order_history (order_id, user_id, user_name, action, details) VALUES (%s,%s,%s,%s,%s)",
+        (order_id, user_id, user_name, action, json.dumps(details) if details else None)
+    )
+```
+
+**2.2. Точки записи** (в той же транзакции, что и изменение):
+- POST /wholesale-orders → `create`
+- PUT позиции: `item_add`, `item_remove`, `item_qty` (before/after), `item_price` (before/after)
+- смена статуса → `status` (from/to)
+- платежи → `payment` (сумма, тип)
+- комментарий → `comment`
+- шапка (покупатель, дата и т.п.) → `header_edit`
+
+**2.3. Батчинг массовых операций** — одно событие `bulk_add` с массивом в details, а не по событию на товар.
+
+**2.4. Не писать пустые правки** (было = стало).
+
+### 3. Производительность
+- Только INSERT в текущую транзакцию (без доп. HTTP).
+- Один индекс (order_id + created_at).
+- При создании заявки с N позициями = 2 INSERT (create + bulk_add), независимо от N.
+- Без триггеров в БД — всё явно в коде.
+- Оверхед ~5–10 мс даже на 500 позициях.
+
+### 4. Новая функция `order-history` (чтение)
+`/backend/order-history/index.py`:
+- GET `?order_id=X` → массив событий (owner only, иначе 403).
+- Пагинация `?page=1&per_page=100`.
+- `user_name` хранится снапшотом, джойн не нужен.
+- tests.json с 401/403/200.
+
+### 5. Фронтенд
+**5.1. Кнопка «История»** в шапке заявки справа от названия (только если `user.role === 'owner'`). Ведёт на `/wholesale-orders/:id/history`.
+
+**5.2. Страница `OrderHistoryPage.tsx`**:
+- Роут `/wholesale-orders/:id/history` в `App.tsx`.
+- Guard: не owner → редирект на заявку.
+- Шапка: «История заявки №X», кнопка «Назад».
+- Таблица/лента: Время | Пользователь | Действие | Детали.
+- Словарь action → человекочитаемая строка.
+- Бесконечная подгрузка или «Показать ещё».
+
+**5.3. URL** из `func2url.json` после `sync_backend`.
+
+### 6. Порядок работ
+1. Миграция V0045 (таблица + индекс).
+2. Хелпер `log_history` + интеграция в `wholesale-orders`.
+3. Интеграция в `order-payments`.
+4. Функция `order-history` (GET) + тесты + sync_backend.
+5. Страница `OrderHistoryPage.tsx` + роут + словарь.
+6. Кнопка «История» в шапке (owner only).
+7. Проверка: создание заявки на ~50 позициях не тормозит.
+
+### 7. На будущее
+- Архивация истории старше 2 лет.
+- Фильтр по типу события/пользователю.
+- Экспорт в PDF/Excel.
+
+### Открытые вопросы
+- Нужна ли история для комментариев и смены статусов (есть ли сейчас в проекте)?
+- «Шапка заявки» — кнопку ставить на страницу просмотра, редактирования или обе?
