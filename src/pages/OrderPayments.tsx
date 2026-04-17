@@ -195,13 +195,13 @@ const OrderPayments = () => {
             <div className="rounded-xl border border-white/[0.08] bg-card p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Сумма заявки</span>
-                <span className="text-lg font-semibold">{totalAmount.toLocaleString()} ₽</span>
+                <span className="text-lg font-semibold">{totalAmount.toLocaleString()} Br</span>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Оплачено</span>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{paidAmount.toLocaleString()} ₽</span>
+                    <span className="font-medium">{paidAmount.toLocaleString()} Br</span>
                     <Badge className={`${statusBadge.className} text-xs`}>{statusBadge.label}</Badge>
                   </div>
                 </div>
@@ -215,7 +215,7 @@ const OrderPayments = () => {
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{pct}%</span>
-                  {remaining > 0 && <span>Остаток: {remaining.toLocaleString()} ₽</span>}
+                  {remaining > 0 && <span>Остаток: {remaining.toLocaleString()} Br</span>}
                 </div>
               </div>
             </div>
@@ -229,7 +229,7 @@ const OrderPayments = () => {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">{p.amount.toLocaleString()} ₽</span>
+                          <span className="font-medium text-sm">{p.amount.toLocaleString()} Br</span>
                           <span className="text-xs text-muted-foreground px-2 py-0.5 rounded-md bg-white/[0.04]">
                             {METHOD_LABELS[p.method] || p.method}
                           </span>
@@ -297,7 +297,7 @@ const OrderPayments = () => {
               </DebugBadge>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Сумма, ₽ *</label>
+              <label className="text-sm font-medium text-muted-foreground">Сумма, Br *</label>
               <DebugBadge id="Payments:amount">
                 <Input
                   type="number"

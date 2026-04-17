@@ -92,16 +92,16 @@ const OrderViewDialog = ({
                       <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                         <span>{line.quantity} шт</span>
                         <span>×</span>
-                        <span>{line.price.toLocaleString()} ₽</span>
+                        <span>{line.price.toLocaleString()} Br</span>
                         <span className="ml-auto font-medium text-foreground">
-                          {(line.price * line.quantity).toLocaleString()} ₽
+                          {(line.price * line.quantity).toLocaleString()} Br
                         </span>
                       </div>
                     </div>
                   ))}
                 </div>
                 <div className="flex justify-end pt-2 border-t border-white/[0.08]">
-                  <p className="text-base font-semibold">Итого: {viewTotal.toLocaleString()} ₽</p>
+                  <p className="text-base font-semibold">Итого: {viewTotal.toLocaleString()} Br</p>
                 </div>
               </div>
               </DebugBadge>

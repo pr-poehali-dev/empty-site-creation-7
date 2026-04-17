@@ -347,7 +347,7 @@ Python-функции находятся в папке \`/backend/\`. Вариа
 - Let's Encrypt / Cloudflare для SSL
 
 ## Минимальный набор
-VPS за 500-1000₽/мес + PostgreSQL + Nginx + Python. Всё поместится на одном сервере.`;
+VPS за 500-1000Br/мес + PostgreSQL + Nginx + Python. Всё поместится на одном сервере.`;
 
 const Instructions = () => {
   const navigate = useNavigate();

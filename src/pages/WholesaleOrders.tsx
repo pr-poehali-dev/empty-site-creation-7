@@ -221,7 +221,7 @@ const WholesaleOrders = () => {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <p className="text-sm sm:text-base font-semibold">
-                        {order.total_amount.toLocaleString()} ₽
+                        {order.total_amount.toLocaleString()} Br
                       </p>
                       {isOwner && (
                         <button
@@ -247,7 +247,7 @@ const WholesaleOrders = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить заявку?</AlertDialogTitle>
             <AlertDialogDescription>
-              Заявка «{deleteTarget?.customer_name}» на сумму {deleteTarget?.total_amount.toLocaleString()} ₽ будет удалена безвозвратно. Это действие нельзя отменить.
+              Заявка «{deleteTarget?.customer_name}» на сумму {deleteTarget?.total_amount.toLocaleString()} Br будет удалена безвозвратно. Это действие нельзя отменить.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

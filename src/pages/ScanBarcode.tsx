@@ -663,7 +663,7 @@ const ScanBarcode = () => {
                         <p className="text-[10px] text-white/30">{item.barcode}</p>
                       </div>
                       {item.found && item.price > 0 && (
-                        <span className="text-xs text-green-400 font-medium flex-shrink-0">{item.price.toLocaleString()} ₽</span>
+                        <span className="text-xs text-green-400 font-medium flex-shrink-0">{item.price.toLocaleString()} Br</span>
                       )}
                       <button
                         className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10 flex-shrink-0"
@@ -848,7 +848,7 @@ const ScanBarcode = () => {
                     >
                       <p className="text-white text-sm truncate">{tp.brand} {tp.article}</p>
                       <p className="text-amber-400 text-xs flex items-center gap-1">
-                        <Icon name="AlertTriangle" size={10} /> временный · {tp.price ? `${tp.price.toLocaleString()} ₽` : "—"}
+                        <Icon name="AlertTriangle" size={10} /> временный · {tp.price ? `${tp.price.toLocaleString()} Br` : "—"}
                       </p>
                     </button>
                   ))}

@@ -266,7 +266,7 @@ const NewProducts = () => {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-sm">{item.brand} {item.article}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {item.price ? `${item.price.toLocaleString()} ₽` : "—"} · {formatDate(item.created_at)}
+                            {item.price ? `${item.price.toLocaleString()} Br` : "—"} · {formatDate(item.created_at)}
                             {item.usage_count > 0 && <span className="ml-2 text-amber-400">в {item.usage_count} заявках</span>}
                           </p>
                         </div>
@@ -302,7 +302,7 @@ const NewProducts = () => {
                               >
                                 <span>{r.name}</span>
                                 {r.is_temp && <span className="text-amber-400 text-xs ml-1">временный</span>}
-                                <span className="text-xs text-muted-foreground ml-2">{r.price_wholesale ? `${r.price_wholesale.toLocaleString()} ₽` : ""}</span>
+                                <span className="text-xs text-muted-foreground ml-2">{r.price_wholesale ? `${r.price_wholesale.toLocaleString()} Br` : ""}</span>
                               </button>
                             ))}
                           </div>
@@ -311,7 +311,7 @@ const NewProducts = () => {
                           <div className="mb-2 p-2 rounded-lg bg-white/[0.04]">
                             <p className="text-xs mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
                             <p className="text-xs text-muted-foreground">
-                              Текущая цена: {item.price.toLocaleString()} ₽ · Цена замены: {replaceSelected.price.toLocaleString()} ₽
+                              Текущая цена: {item.price.toLocaleString()} Br · Цена замены: {replaceSelected.price.toLocaleString()} Br
                             </p>
                           </div>
                         )}

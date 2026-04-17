@@ -910,7 +910,7 @@ const OrderCreatePage = () => {
                       </span>
                     </div>
                     <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                      {tp.price ? `${tp.price.toLocaleString()} ₽` : "—"}
+                      {tp.price ? `${tp.price.toLocaleString()} Br` : "—"}
                     </span>
                   </button>
                 ))}
@@ -929,7 +929,7 @@ const OrderCreatePage = () => {
                       </span>
                     </div>
                     <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                      {item.price_wholesale ? `${item.price_wholesale.toLocaleString()} ₽` : "—"}
+                      {item.price_wholesale ? `${item.price_wholesale.toLocaleString()} Br` : "—"}
                     </span>
                   </button>
                 ))}
@@ -1077,7 +1077,7 @@ const OrderCreatePage = () => {
                         </span>
                       </div>
                       <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                        {item.price_wholesale ? `${item.price_wholesale.toLocaleString()} ₽` : "—"}
+                        {item.price_wholesale ? `${item.price_wholesale.toLocaleString()} Br` : "—"}
                       </span>
                     </button>
                   ))}
@@ -1138,7 +1138,7 @@ const OrderCreatePage = () => {
         {lines.length > 0 && (
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-muted-foreground">Позиции ({lines.length})</p>
-            <p className="text-sm font-semibold">Итого: {totalAmount.toLocaleString()} ₽</p>
+            <p className="text-sm font-semibold">Итого: {totalAmount.toLocaleString()} Br</p>
           </div>
         )}
 
@@ -1206,10 +1206,10 @@ const OrderCreatePage = () => {
                         onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
                         className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
                       />
-                      <span className="text-xs text-muted-foreground">₽</span>
+                      <span className="text-xs text-muted-foreground">Br</span>
                     </div>
                     <span className="text-xs font-medium flex-shrink-0">
-                      = {(line.price * line.quantity).toLocaleString()} ₽
+                      = {(line.price * line.quantity).toLocaleString()} Br
                     </span>
                   </div>
                   </div>

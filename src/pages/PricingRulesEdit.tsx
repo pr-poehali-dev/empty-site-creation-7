@@ -260,14 +260,14 @@ const PricingRulesEdit = () => {
                           </div>
                           {rule.condition_price_field && rule.condition_operator && rule.condition_value != null && (
                             <p className="text-xs text-orange-300 mb-0.5">
-                              Условие: {PRICE_FIELDS.find((p) => p.value === rule.condition_price_field)?.label} {CONDITION_OPERATORS.find((o) => o.value === rule.condition_operator)?.label} {rule.condition_value}₽
+                              Условие: {PRICE_FIELDS.find((p) => p.value === rule.condition_price_field)?.label} {CONDITION_OPERATORS.find((o) => o.value === rule.condition_operator)?.label} {rule.condition_value}Br
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground">
                             {priceLabel} {rule.formula}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Пример: {previewPrice}₽ → <span className="text-primary font-medium">{preview}₽</span>
+                            Пример: {previewPrice}Br → <span className="text-primary font-medium">{preview}Br</span>
                           </p>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
@@ -401,9 +401,9 @@ const PricingRulesEdit = () => {
             </div>
 
             <div className="p-3 rounded-lg bg-white/[0.04]">
-              <p className="text-xs text-muted-foreground">Превью: {PRICE_FIELDS.find((p) => p.value === formPriceField)?.label} = {previewPrice}₽</p>
+              <p className="text-xs text-muted-foreground">Превью: {PRICE_FIELDS.find((p) => p.value === formPriceField)?.label} = {previewPrice}Br</p>
               <p className="text-sm font-medium text-primary">
-                Результат: {calcPreview(previewPrice, formSteps)}₽
+                Результат: {calcPreview(previewPrice, formSteps)}Br
               </p>
             </div>
 

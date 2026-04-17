@@ -920,16 +920,16 @@ const Catalog = () => {
                     )}
                     <div className="flex flex-wrap gap-3 mt-2 text-xs">
                       {item.price_base != null && (
-                        <span>Базовая: <span className="text-foreground font-medium">{item.price_base.toLocaleString()} ₽</span></span>
+                        <span>Базовая: <span className="text-foreground font-medium">{item.price_base.toLocaleString()} Br</span></span>
                       )}
                       {item.price_retail != null && (
-                        <span>Розница: <span className="text-foreground font-medium">{item.price_retail.toLocaleString()} ₽</span></span>
+                        <span>Розница: <span className="text-foreground font-medium">{item.price_retail.toLocaleString()} Br</span></span>
                       )}
                       {item.price_wholesale != null && (
-                        <span>Опт: <span className="text-foreground font-medium">{item.price_wholesale.toLocaleString()} ₽</span></span>
+                        <span>Опт: <span className="text-foreground font-medium">{item.price_wholesale.toLocaleString()} Br</span></span>
                       )}
                       {isOwner && item.price_purchase != null && (
-                        <span className="text-yellow-400">Закуп: <span className="font-medium">{item.price_purchase.toLocaleString()} ₽</span></span>
+                        <span className="text-yellow-400">Закуп: <span className="font-medium">{item.price_purchase.toLocaleString()} Br</span></span>
                       )}
                     </div>
                   </div>
