@@ -1,21 +1,22 @@
 {
   "tests": [
     {
-      "name": "Webhook receives update",
+      "name": "Reject without secret header",
       "method": "POST",
       "path": "/",
       "body": {"message": {"text": "/start", "chat": {"id": 123}}},
-      "expectedStatus": 200,
-      "expectedBody": {"ok": true},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Forbidden"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Empty body",
+      "name": "Reject wrong secret",
       "method": "POST",
       "path": "/",
-      "body": {},
-      "expectedStatus": 200,
-      "expectedBody": {"ok": true},
+      "headers": {"X-Telegram-Bot-Api-Secret-Token": "wrong-secret-value"},
+      "body": {"message": {"text": "/start", "chat": {"id": 123}}},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Forbidden"},
       "bodyMatcher": "partial"
     }
   ]

@@ -41,8 +41,12 @@ def handler(event: dict, context) -> dict:
         if not webhook_url:
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите webhook_url'})}
 
+        webhook_secret = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+        if not webhook_secret:
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'TELEGRAM_WEBHOOK_SECRET не настроен'})}
+
         url = f'https://api.telegram.org/bot{bot_token}/setWebhook'
-        payload = json.dumps({'url': webhook_url}).encode()
+        payload = json.dumps({'url': webhook_url, 'secret_token': webhook_secret}).encode()
         req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:

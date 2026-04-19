@@ -1,5 +1,6 @@
 import json
 import os
+import hmac
 import psycopg2
 
 def get_db():
@@ -13,7 +14,7 @@ def handler(event: dict, context) -> dict:
             'headers': {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Headers': 'Content-Type, X-Telegram-Bot-Api-Secret-Token',
                 'Access-Control-Max-Age': '86400'
             },
             'body': ''
@@ -23,6 +24,20 @@ def handler(event: dict, context) -> dict:
 
     if event.get('httpMethod') != 'POST':
         return {'statusCode': 405, 'headers': headers, 'body': json.dumps({'error': 'Method not allowed'})}
+
+    expected_secret = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+    if not expected_secret:
+        return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Webhook secret not configured'})}
+
+    req_headers = event.get('headers') or {}
+    received_secret = ''
+    for k, v in req_headers.items():
+        if k.lower() == 'x-telegram-bot-api-secret-token':
+            received_secret = v or ''
+            break
+
+    if not received_secret or not hmac.compare_digest(received_secret, expected_secret):
+        return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Forbidden'})}
 
     body = json.loads(event.get('body') or '{}')
     message = body.get('message', {})
