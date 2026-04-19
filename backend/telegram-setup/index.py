@@ -35,6 +35,23 @@ def handler(event: dict, context) -> dict:
         except Exception as e:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
 
+    if method == 'GET' and action == 'webhook_info':
+        url = f'https://api.telegram.org/bot{bot_token}/getWebhookInfo'
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            info = data.get('result', {})
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
+                'url': info.get('url', ''),
+                'has_custom_certificate': info.get('has_custom_certificate', False),
+                'pending_update_count': info.get('pending_update_count', 0),
+                'last_error_date': info.get('last_error_date'),
+                'last_error_message': info.get('last_error_message', ''),
+                'ip_address': info.get('ip_address', '')
+            })}
+        except Exception as e:
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
+
     if method == 'POST' and action == 'set_webhook':
         body = json.loads(event.get('body') or '{}')
         webhook_url = body.get('webhook_url', '')

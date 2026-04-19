@@ -66,6 +66,8 @@ const AdminDashboard = () => {
   const [editRoleId, setEditRoleId] = useState("");
   const [editing, setEditing] = useState(false);
   const [resettingWebhook, setResettingWebhook] = useState(false);
+  const [webhookStatus, setWebhookStatus] = useState<"loading" | "ok" | "error" | "unset">("loading");
+  const [webhookError, setWebhookError] = useState<string>("");
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -216,6 +218,38 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchWebhookStatus = useCallback(async () => {
+    setWebhookStatus("loading");
+    try {
+      const resp = await fetch(`${TELEGRAM_SETUP_URL}/?action=webhook_info`);
+      const data = await resp.json();
+      if (!resp.ok) {
+        setWebhookStatus("error");
+        setWebhookError(data.error || "Ошибка запроса");
+        return;
+      }
+      if (!data.url) {
+        setWebhookStatus("unset");
+        setWebhookError("Webhook не установлен");
+        return;
+      }
+      if (data.last_error_message) {
+        setWebhookStatus("error");
+        setWebhookError(data.last_error_message);
+        return;
+      }
+      setWebhookStatus("ok");
+      setWebhookError("");
+    } catch {
+      setWebhookStatus("error");
+      setWebhookError("Нет связи");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user.role === "owner") fetchWebhookStatus();
+  }, [fetchWebhookStatus]);
+
   const handleResetWebhook = async () => {
     setResettingWebhook(true);
     try {
@@ -227,6 +261,7 @@ const AdminDashboard = () => {
       const data = await resp.json();
       if (resp.ok && (data.ok || data.result === true)) {
         toast({ title: "Telegram webhook переустановлен", description: "Бот готов принимать команды" });
+        fetchWebhookStatus();
       } else {
         toast({
           title: "Ошибка",
@@ -371,17 +406,26 @@ const AdminDashboard = () => {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 hover:bg-white/[0.06]"
+              className="h-8 hover:bg-white/[0.06] gap-2"
               onClick={handleResetWebhook}
               disabled={resettingWebhook}
-              title="Переустановить Telegram webhook"
+              title={
+                webhookStatus === "ok"
+                  ? "Telegram webhook активен. Нажмите, чтобы переустановить"
+                  : webhookStatus === "loading"
+                  ? "Проверка статуса…"
+                  : `Проблема: ${webhookError || "нажмите, чтобы переустановить"}`
+              }
             >
-              {resettingWebhook ? (
+              {resettingWebhook || webhookStatus === "loading" ? (
                 <Icon name="Loader2" size={16} className="animate-spin" />
+              ) : webhookStatus === "ok" ? (
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
               ) : (
-                <Icon name="RefreshCw" size={16} />
+                <span className="inline-block w-2 h-2 rounded-full bg-red-500" />
               )}
-              <span className="hidden sm:inline ml-2">Telegram webhook</span>
+              <span className="hidden sm:inline">Telegram</span>
+              <Icon name="RefreshCw" size={14} className="opacity-60" />
             </Button>
             <Button
               variant="ghost"

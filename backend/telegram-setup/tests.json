@@ -7,6 +7,14 @@
       "expectedStatus": 200,
       "expectedBody": {"bot": {"username": "string"}},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get webhook info",
+      "method": "GET",
+      "path": "/?action=webhook_info",
+      "expectedStatus": 200,
+      "expectedBody": {"url": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }
