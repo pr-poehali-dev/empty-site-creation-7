@@ -24,6 +24,8 @@ import DebugToggle from "@/components/DebugToggle";
 import DebugBadge from "@/components/DebugBadge";
 
 const MANAGERS_URL = "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e";
+const TELEGRAM_SETUP_URL = "https://functions.poehali.dev/6db3cf7c-812a-4ed9-94a2-5df8405a458c";
+const TELEGRAM_WEBHOOK_URL = "https://functions.poehali.dev/c5134d29-4cd5-49a8-8385-f44995f8721e";
 
 const ROLES = [
   { id: 1, name: "Управляющий" },
@@ -63,6 +65,7 @@ const AdminDashboard = () => {
   const [editLastName, setEditLastName] = useState("");
   const [editRoleId, setEditRoleId] = useState("");
   const [editing, setEditing] = useState(false);
+  const [resettingWebhook, setResettingWebhook] = useState(false);
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -213,6 +216,31 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleResetWebhook = async () => {
+    setResettingWebhook(true);
+    try {
+      const resp = await fetch(`${TELEGRAM_SETUP_URL}/?action=set_webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhook_url: TELEGRAM_WEBHOOK_URL }),
+      });
+      const data = await resp.json();
+      if (resp.ok && (data.ok || data.result === true)) {
+        toast({ title: "Telegram webhook переустановлен", description: "Бот готов принимать команды" });
+      } else {
+        toast({
+          title: "Ошибка",
+          description: data.description || data.error || "Не удалось переустановить",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({ title: "Ошибка сети", description: "Не удалось связаться с сервером", variant: "destructive" });
+    } finally {
+      setResettingWebhook(false);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
@@ -340,6 +368,21 @@ const AdminDashboard = () => {
           <div className="flex items-center gap-2 sm:gap-4">
             <span className="text-xs sm:text-sm text-muted-foreground hidden sm:block">{user.phone}</span>
             <DebugToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 hover:bg-white/[0.06]"
+              onClick={handleResetWebhook}
+              disabled={resettingWebhook}
+              title="Переустановить Telegram webhook"
+            >
+              {resettingWebhook ? (
+                <Icon name="Loader2" size={16} className="animate-spin" />
+              ) : (
+                <Icon name="RefreshCw" size={16} />
+              )}
+              <span className="hidden sm:inline ml-2">Telegram webhook</span>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
