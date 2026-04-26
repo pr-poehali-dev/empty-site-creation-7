@@ -243,11 +243,15 @@ def handler(event: dict, context) -> dict:
         offset = (page - 1) * per_page
 
         show_archived = params.get('archived', 'false') == 'true'
+        only_new = params.get('is_new', '') == 'true'
         conditions = []
         values = []
 
         conditions.append("p.is_archived = %s")
         values.append(show_archived)
+
+        if only_new:
+            conditions.append("p.is_new = TRUE")
 
         if category_id:
             conditions.append("p.category_id = %s")

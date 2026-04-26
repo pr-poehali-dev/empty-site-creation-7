@@ -625,12 +625,6 @@ const Catalog = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("auth_user");
-    navigate("/admin");
-  };
-
   const goBack = () => {
     if (isOwner) navigate("/admin/dashboard");
     else navigate("/admin/manager");
@@ -740,8 +734,8 @@ const Catalog = () => {
                 <span className="ml-1 hidden sm:inline">{showArchive ? "Каталог" : "Архив"}</span>
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleLogout}>
-              <Icon name="LogOut" size={16} />
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/catalog/new")} title="Новые товары в каталоге">
+              <Icon name="Sparkles" size={16} />
             </Button>
           </div>
         </div>

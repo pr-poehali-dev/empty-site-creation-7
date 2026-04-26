@@ -10,6 +10,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AuthorizeManager from "./pages/AuthorizeManager";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import Catalog from "./pages/Catalog";
+import CatalogNewProducts from "./pages/CatalogNewProducts";
 import WholesaleOrders from "./pages/WholesaleOrders";
 import OrderPayments from "./pages/OrderPayments";
 import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
@@ -44,6 +45,7 @@ const App = () => (
           <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />
           <Route path="/admin/manager" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
           <Route path="/admin/catalog" element={<ProtectedRoute><Catalog /></ProtectedRoute>} />
+          <Route path="/admin/catalog/new" element={<ProtectedRoute><CatalogNewProducts /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute><WholesaleOrders /></ProtectedRoute>} />
           <Route path="/admin/orders/:orderId/payments" element={<ProtectedRoute><OrderPayments /></ProtectedRoute>} />
           <Route path="/admin/orders/create" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
