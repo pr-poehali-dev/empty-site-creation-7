@@ -1172,13 +1172,19 @@ const OrderCreatePage = () => {
                 <DebugBadge id={`OrderCreate:line[${i}]`} key={i}>
                   <div
                     className={`rounded-lg p-2.5 ${
-                      zeroPrice
-                        ? "border-2 border-red-500 bg-red-950/20"
-                        : isRedLine
-                        ? "border border-red-500/30 bg-red-950/20"
+                      isRedLine
+                        ? "bg-red-950/20"
                         : isBlueLine
-                        ? "border border-blue-500/30 bg-blue-950/20"
-                        : "border border-white/[0.08] bg-white/[0.02]"
+                        ? "bg-blue-950/20"
+                        : "bg-white/[0.02]"
+                    } ${
+                      zeroPrice
+                        ? "border-2 border-red-500"
+                        : isRedLine
+                        ? "border border-red-500/30"
+                        : isBlueLine
+                        ? "border border-blue-500/30"
+                        : "border border-white/[0.08]"
                     }`}
                   >
                   <div className="flex items-start justify-between gap-2">
