@@ -84,6 +84,8 @@ const OrderCreatePage = () => {
   const { id } = useParams<{ id: string }>();
   const editId = id ? parseInt(id) : null;
   const token = localStorage.getItem("auth_token") || "";
+  const authUser = JSON.parse(localStorage.getItem("auth_user") || "{}");
+  const isOwner = authUser.role === "owner";
   const { toast } = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -968,16 +970,18 @@ const OrderCreatePage = () => {
           >
             <Icon name="ScanBarcode" size={18} />
           </button>
-          <button
-            className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors"
-            onClick={() => {
-              localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
-              navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste");
-            }}
-            title="Вставить списком (пакетный ввод)"
-          >
-            <Icon name="ClipboardPaste" size={18} />
-          </button>
+          {isOwner && (
+            <button
+              className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors"
+              onClick={() => {
+                localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+                navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste");
+              }}
+              title="Вставить списком (пакетный ввод)"
+            >
+              <Icon name="ClipboardPaste" size={18} />
+            </button>
+          )}
         </div>
 
         {/* Temp product form */}
@@ -1037,6 +1041,7 @@ const OrderCreatePage = () => {
                 type="number"
                 value={tempPrice}
                 onChange={(e) => setTempPrice(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
                 className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
               />
             </div>
@@ -1206,6 +1211,7 @@ const OrderCreatePage = () => {
                         type="number"
                         value={line.quantity}
                         onChange={(e) => updateQty(i, parseFloat(e.target.value) || 1)}
+                        onFocus={(e) => e.currentTarget.select()}
                         className="w-12 h-6 text-center text-xs p-0 bg-white/[0.04] border-white/[0.08] rounded"
                       />
                       <button
@@ -1221,6 +1227,7 @@ const OrderCreatePage = () => {
                         type="number"
                         value={line.price}
                         onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
+                        onFocus={(e) => e.currentTarget.select()}
                         className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
                       />
                       <span className="text-xs text-muted-foreground">Br</span>

@@ -149,7 +149,12 @@ const OrderBulkPastePage = () => {
         cells.forEach((cell, ci) => {
           const targetCol = colIdx + ci;
           if (targetCol < cols.length) {
-            row[cols[targetCol]] = cell.trim();
+            const colName = cols[targetCol];
+            let value = cell.trim();
+            if (colName === "qty" || colName === "price") {
+              value = value.replace(/[\s\u00A0]/g, "").replace(",", ".");
+            }
+            row[colName] = value;
           }
         });
         next[targetRow] = row;
@@ -291,7 +296,7 @@ const OrderBulkPastePage = () => {
     }
     setNpSaving(true);
     try {
-      const price = parseFloat(npPrice || "0") || 0;
+      const price = parseFloat((npPrice || "0").replace(/[\s\u00A0]/g, "").replace(",", ".")) || 0;
       const brandTrim = npBrand.trim();
       const articleTrim = npArticle.trim();
 
@@ -375,8 +380,8 @@ const OrderBulkPastePage = () => {
         if (res.status !== "found") return;
         const row = rows[rowIdx];
         if (!row) return;
-        const qty = parseFloat(row.qty.replace(",", ".")) || 1;
-        const manualPrice = parseFloat((row.price || "").replace(",", "."));
+        const qty = parseFloat(row.qty.replace(/[\s\u00A0]/g, "").replace(",", ".")) || 1;
+        const manualPrice = parseFloat((row.price || "").replace(/[\s\u00A0]/g, "").replace(",", "."));
         const price = !isNaN(manualPrice) && manualPrice > 0 ? manualPrice : (res.price || 0);
         newLines.push({
           product_id: res.is_temp ? null : (res.product_id || null),
