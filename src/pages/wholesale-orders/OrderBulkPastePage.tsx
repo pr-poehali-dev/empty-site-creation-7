@@ -432,7 +432,12 @@ const OrderBulkPastePage = () => {
         <select
           className="bg-secondary border border-yellow-500/40 rounded px-1 py-0.5 text-xs w-full"
           onChange={(e) => {
-            const id = parseInt(e.target.value);
+            const val = e.target.value;
+            if (val === "__create__") {
+              openNewProductForm(rowIdx);
+              return;
+            }
+            const id = parseInt(val);
             const c = res.candidates?.find((x) => x.product_id === id);
             if (c) pickCandidate(rowIdx, c);
           }}
@@ -442,6 +447,7 @@ const OrderBulkPastePage = () => {
           {res.candidates?.map((c) => (
             <option key={c.product_id} value={c.product_id}>{c.name}</option>
           ))}
+          <option value="__create__">+ Создать новый товар</option>
         </select>
       );
     }
