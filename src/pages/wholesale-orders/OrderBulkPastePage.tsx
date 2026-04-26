@@ -8,6 +8,7 @@ import Icon from "@/components/ui/icon";
 const BULK_RESOLVE_URL = "https://functions.poehali.dev/793352cf-67e1-4127-8a2a-a47efa5e2630";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
+const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
 
 interface RowInput {
   article: string;
@@ -70,6 +71,9 @@ const OrderBulkPastePage = () => {
   const [npArticle, setNpArticle] = useState("");
   const [npPrice, setNpPrice] = useState("");
   const [npSaving, setNpSaving] = useState(false);
+  const [allBrands, setAllBrands] = useState<string[]>([]);
+  const [showBrandList, setShowBrandList] = useState(false);
+  const brandRef = useRef<HTMLDivElement>(null);
 
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -82,6 +86,27 @@ const OrderBulkPastePage = () => {
       } catch { /* ignore */ }
     }
   }, [DRAFT_KEY]);
+
+  useEffect(() => {
+    fetch(`${BRANDS_URL}?names_only=1`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.items)) setAllBrands(d.items); })
+      .catch(() => { /* ignore */ });
+  }, [token]);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (brandRef.current && !brandRef.current.contains(e.target as Node)) {
+        setShowBrandList(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const filteredBrands = allBrands.filter((b) =>
+    b.toLowerCase().includes(npBrand.toLowerCase())
+  ).slice(0, 50);
 
   const setCell = (rowIdx: number, field: keyof RowInput, value: string) => {
     setRows((prev) => {
@@ -552,9 +577,28 @@ const OrderBulkPastePage = () => {
               </button>
             </div>
             <div className="space-y-2">
-              <div>
+              <div className="relative" ref={brandRef}>
                 <label className="text-xs text-muted-foreground">Бренд</label>
-                <Input value={npBrand} onChange={(e) => setNpBrand(e.target.value)} placeholder="Бренд" />
+                <Input
+                  value={npBrand}
+                  onChange={(e) => { setNpBrand(e.target.value); setShowBrandList(true); }}
+                  onFocus={() => setShowBrandList(true)}
+                  placeholder="Бренд"
+                />
+                {showBrandList && filteredBrands.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-40 overflow-y-auto shadow-lg">
+                    {filteredBrands.map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                        onClick={() => { setNpBrand(b); setShowBrandList(false); }}
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Артикул</label>
