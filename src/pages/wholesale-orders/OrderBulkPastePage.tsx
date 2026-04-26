@@ -152,7 +152,7 @@ const OrderBulkPastePage = () => {
             const colName = cols[targetCol];
             let value = cell.trim();
             if (colName === "qty" || colName === "price") {
-              value = value.replace(/[\s\u00A0]/g, "").replace(",", ".");
+              value = value.replace(/[\s\u00A0]/g, "");
             }
             row[colName] = value;
           }
