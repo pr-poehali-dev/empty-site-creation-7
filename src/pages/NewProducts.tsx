@@ -429,6 +429,10 @@ const NewProducts = () => {
           </DialogHeader>
           {addDialog && editMode && (
             <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">Данные товара</p>
+                <p className="text-xs text-muted-foreground"># {addDialog.id}</p>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Бренд *</p>
@@ -454,7 +458,10 @@ const NewProducts = () => {
           {addDialog && !editMode && (
             <div className="space-y-3">
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Название *</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs text-muted-foreground">Название *</p>
+                  <p className="text-xs text-muted-foreground"># {addDialog.id}</p>
+                </div>
                 <DebugBadge id="NewProducts:formName">
                   <Input
                     value={formName}

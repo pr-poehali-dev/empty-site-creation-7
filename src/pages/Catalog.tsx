@@ -982,8 +982,13 @@ const Catalog = () => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-muted-foreground">Название *</label>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-muted-foreground">Название *</label>
+                  {editingProduct && (
+                    <span className="text-sm font-medium text-muted-foreground"># {editingProduct.id}</span>
+                  )}
+                </div>
                 {!isFieldDisabled("name") && (
                   <button
                     type="button"
