@@ -84,8 +84,6 @@ const OrderCreatePage = () => {
   const { id } = useParams<{ id: string }>();
   const editId = id ? parseInt(id) : null;
   const token = localStorage.getItem("auth_token") || "";
-  const authUser = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const isOwner = authUser.role === "owner";
   const { toast } = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const barcodeInputRef = useRef<HTMLInputElement>(null);
