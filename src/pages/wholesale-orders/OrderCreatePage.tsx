@@ -1165,8 +1165,8 @@ const OrderCreatePage = () => {
         ) : (
           <div className="space-y-1.5">
             {lines.map((line, i) => {
-              const isRedLine = line.is_temp === true || (line.product_id && line.has_uuid === false);
-              const isBlueLine = !isRedLine && line.from_bulk === true;
+              const isBlueLine = line.from_bulk === true && line.is_temp !== true;
+              const isRedLine = !isBlueLine && (line.is_temp === true || (line.product_id && line.has_uuid === false));
               return (
                 <DebugBadge id={`OrderCreate:line[${i}]`} key={i}>
                   <div
