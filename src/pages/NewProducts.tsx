@@ -51,6 +51,12 @@ const NewProducts = () => {
   const [loading, setLoading] = useState(true);
 
   const [addDialog, setAddDialog] = useState<TempProduct | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editBrand, setEditBrand] = useState("");
+  const [editArticle, setEditArticle] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editQuantity, setEditQuantity] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [formName, setFormName] = useState("");
   const [formCategory, setFormCategory] = useState("");
@@ -103,6 +109,7 @@ const NewProducts = () => {
 
   const openAddDialog = (item: TempProduct) => {
     setAddDialog(item);
+    setEditMode(false);
     setFormName(`${item.brand} ${item.article}`);
     setFormCategory("");
     setFormCategoryId(null);
@@ -110,6 +117,43 @@ const NewProducts = () => {
     setFormPriceRetail("");
     setFormPriceWholesale(String(item.price || ""));
     setFormPricePurchase("");
+    setEditBrand(item.brand);
+    setEditArticle(item.article);
+    setEditPrice(String(item.price || ""));
+    setEditQuantity(String(item.quantity || ""));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!addDialog) return;
+    if (!editBrand.trim() || !editArticle.trim()) {
+      toast({ title: "Бренд и артикул обязательны", variant: "destructive" });
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const resp = await fetch(`${TEMP_PRODUCTS_URL}?id=${addDialog.id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          brand: editBrand.trim(),
+          article: editArticle.trim(),
+          price: parseFloat(editPrice || "0") || 0,
+          quantity: parseFloat(editQuantity || "0") || 0,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Изменения сохранены" });
+        setAddDialog(null);
+        loadData();
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleSaveTocatalog = async () => {
@@ -381,9 +425,33 @@ const NewProducts = () => {
       <Dialog open={!!addDialog} onOpenChange={(o) => !o && setAddDialog(null)}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
           <DialogHeader>
-            <DialogTitle>Добавить в каталог</DialogTitle>
+            <DialogTitle>{editMode ? "Редактировать товар" : "Добавить в каталог"}</DialogTitle>
           </DialogHeader>
-          {addDialog && (
+          {addDialog && editMode && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Бренд *</p>
+                  <Input value={editBrand} onChange={(e) => setEditBrand(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Артикул *</p>
+                  <Input value={editArticle} onChange={(e) => setEditArticle(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Цена</p>
+                  <Input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Количество</p>
+                  <Input type="number" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
+                </div>
+              </div>
+            </div>
+          )}
+          {addDialog && !editMode && (
             <div className="space-y-3">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Название *</p>
@@ -458,16 +526,29 @@ const NewProducts = () => {
               </div>
             </div>
           )}
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 flex-wrap">
             <Button variant="outline" className="rounded-xl border-white/[0.08]" onClick={() => setAddDialog(null)}>
               Отмена
             </Button>
-            <DebugBadge id="NewProducts:saveBtn">
-              <Button className="rounded-xl" onClick={handleSaveTocatalog} disabled={saving}>
-                {saving ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Check" size={16} />}
-                <span className="ml-2">Добавить в каталог</span>
+            {!editMode && (
+              <Button variant="outline" className="rounded-xl border-white/[0.08]" onClick={() => setEditMode(true)}>
+                <Icon name="Pencil" size={16} />
+                <span className="ml-2">Редактировать</span>
               </Button>
-            </DebugBadge>
+            )}
+            {editMode ? (
+              <Button className="rounded-xl" onClick={handleSaveEdit} disabled={editSaving}>
+                {editSaving ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Save" size={16} />}
+                <span className="ml-2">Сохранить изменения</span>
+              </Button>
+            ) : (
+              <DebugBadge id="NewProducts:saveBtn">
+                <Button className="rounded-xl" onClick={handleSaveTocatalog} disabled={saving}>
+                  {saving ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Check" size={16} />}
+                  <span className="ml-2">Добавить в каталог</span>
+                </Button>
+              </DebugBadge>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -157,6 +157,23 @@ def handler(event: dict, context) -> dict:
         }
         return calc_price(rules, pm, p['product_group'])
 
+    # Поиск среди временных товаров для артикулов, не найденных в products
+    not_found_lower = [a.lower() for a in articles_clean if a and a.lower() not in products_by_article]
+    temps_by_article = {}
+    if not_found_lower:
+        cur.execute(
+            """SELECT id, brand, article, price
+               FROM temp_products
+               WHERE lower(article) = ANY(%s)""",
+            (list(set(not_found_lower)),)
+        )
+        for row in cur.fetchall():
+            key = (row[2] or '').lower()
+            temps_by_article.setdefault(key, []).append({
+                'id': row[0], 'brand': row[1], 'article': row[2],
+                'price': float(row[3] or 0)
+            })
+
     results = []
     for art in articles_clean:
         if not art:
@@ -164,7 +181,27 @@ def handler(event: dict, context) -> dict:
             continue
         matches = products_by_article.get(art.lower(), [])
         if len(matches) == 0:
-            results.append({'article': art, 'status': 'not_found'})
+            temp_matches = temps_by_article.get(art.lower(), [])
+            if len(temp_matches) == 0:
+                results.append({'article': art, 'status': 'not_found'})
+            elif len(temp_matches) == 1:
+                t = temp_matches[0]
+                results.append({
+                    'article': art, 'status': 'found',
+                    'temp_product_id': t['id'],
+                    'name': f"{t['brand']} {t['article']}",
+                    'price': t['price'],
+                    'is_temp': True
+                })
+            else:
+                results.append({
+                    'article': art, 'status': 'ambiguous',
+                    'candidates': [
+                        {'temp_product_id': t['id'], 'name': f"{t['brand']} {t['article']}",
+                         'article': t['article'], 'price': t['price'], 'is_temp': True}
+                        for t in temp_matches
+                    ]
+                })
         elif len(matches) == 1:
             p = matches[0]
             results.append({

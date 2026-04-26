@@ -17,10 +17,12 @@ interface RowInput {
 }
 
 interface Candidate {
-  product_id: number;
+  product_id?: number;
+  temp_product_id?: number;
   name: string;
   article: string | null;
   price: number;
+  is_temp?: boolean;
 }
 
 interface RowResult {
@@ -213,18 +215,22 @@ const OrderBulkPastePage = () => {
         article: string;
         status: "found" | "ambiguous" | "not_found" | "empty";
         product_id?: number;
+        temp_product_id?: number;
         name?: string;
         price?: number;
         candidates?: Candidate[];
+        is_temp?: boolean;
       };
       ((data.results as ApiResult[]) || []).forEach((res, i) => {
         const rowIdx = filledRows[i].idx;
         if (res.status === "found") {
           newResults[rowIdx] = {
             status: "found",
-            product_id: res.product_id,
+            product_id: res.is_temp ? null : res.product_id,
+            temp_product_id: res.is_temp ? res.temp_product_id : null,
             name: res.name,
             price: res.price,
+            is_temp: !!res.is_temp,
           };
         } else if (res.status === "ambiguous") {
           newResults[rowIdx] = {
@@ -248,9 +254,11 @@ const OrderBulkPastePage = () => {
       ...prev,
       [rowIdx]: {
         status: "found",
-        product_id: c.product_id,
+        product_id: c.is_temp ? null : (c.product_id || null),
+        temp_product_id: c.is_temp ? (c.temp_product_id || null) : null,
         name: c.name,
         price: c.price,
+        is_temp: !!c.is_temp,
       },
     }));
   };
@@ -285,25 +293,51 @@ const OrderBulkPastePage = () => {
     try {
       const qty = parseFloat(rows[newProductForRow]?.qty || "1") || 1;
       const price = parseFloat(npPrice || "0") || 0;
-      const resp = await fetch(TEMP_PRODUCTS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          brand: npBrand.trim(),
-          article: npArticle.trim(),
-          quantity: qty,
-          price: price,
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        toast({ title: "Ошибка", description: data.error || "Не удалось создать товар", variant: "destructive" });
-        return;
+      const brandTrim = npBrand.trim();
+      const articleTrim = npArticle.trim();
+
+      // Проверка дубля: ищем уже существующий temp с таким же brand+article
+      let tempId: number | null = null;
+      let usedExisting = false;
+      try {
+        const dupResp = await fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(articleTrim)}&per_page=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const dupData = await dupResp.json();
+        if (dupResp.ok && Array.isArray(dupData.items)) {
+          const existing = dupData.items.find((it: { brand: string; article: string; id: number }) =>
+            (it.brand || "").trim().toLowerCase() === brandTrim.toLowerCase() &&
+            (it.article || "").trim().toLowerCase() === articleTrim.toLowerCase()
+          );
+          if (existing) {
+            tempId = existing.id;
+            usedExisting = true;
+          }
+        }
+      } catch { /* ignore */ }
+
+      if (!tempId) {
+        const resp = await fetch(TEMP_PRODUCTS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            brand: brandTrim,
+            article: articleTrim,
+            quantity: qty,
+            price: price,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          toast({ title: "Ошибка", description: data.error || "Не удалось создать товар", variant: "destructive" });
+          return;
+        }
+        tempId = data.id || data.item?.id;
       }
-      const tempId = data.id || data.item?.id;
+
       setRows((prev) => {
         const next = [...prev];
-        next[newProductForRow] = { ...next[newProductForRow], article: npArticle.trim(), price: String(price) };
+        next[newProductForRow] = { ...next[newProductForRow], article: articleTrim, price: String(price) };
         return next;
       });
       setResults((prev) => ({
@@ -311,13 +345,13 @@ const OrderBulkPastePage = () => {
         [newProductForRow]: {
           status: "found",
           temp_product_id: tempId,
-          name: `${npBrand.trim()} ${npArticle.trim()}`,
+          name: `${brandTrim} ${articleTrim}`,
           price: price,
           is_temp: true,
         },
       }));
       setNewProductForRow(null);
-      toast({ title: "Товар создан" });
+      toast({ title: usedExisting ? "Использован существующий товар" : "Товар создан" });
     } catch {
       toast({ title: "Ошибка сети", variant: "destructive" });
     } finally {
