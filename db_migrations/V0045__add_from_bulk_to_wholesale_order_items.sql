@@ -1,0 +1,1 @@
+ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS from_bulk BOOLEAN NOT NULL DEFAULT false;

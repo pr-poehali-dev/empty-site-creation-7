@@ -152,7 +152,7 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
 
             cur.execute(
-                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount, oi.temp_product_id, oi.item_name
+                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount, oi.temp_product_id, oi.item_name, oi.from_bulk
                    FROM wholesale_order_items oi
                    JOIN products p ON p.id = oi.product_id
                    WHERE oi.order_id = %s
@@ -170,7 +170,8 @@ def handler(event: dict, context) -> dict:
                     'id': r[0], 'product_id': r[1] if r[1] != 19 else None, 'name': display_name,
                     'article': r[3] if r[3] != '__TEMP__' else None,
                     'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6]),
-                    'is_temp': is_temp, 'temp_product_id': r[7], 'has_uuid': False if is_temp else bool(r[3])
+                    'is_temp': is_temp, 'temp_product_id': r[7], 'has_uuid': False if is_temp else bool(r[3]),
+                    'from_bulk': bool(r[9])
                 })
 
             order = {
@@ -272,10 +273,11 @@ def handler(event: dict, context) -> dict:
             pid = item.get('product_id') or TEMP_PRODUCT_ID
             temp_pid = item.get('temp_product_id')
             item_name = item.get('name')
+            from_bulk = bool(item.get('from_bulk'))
             cur.execute(
-                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id, item_name)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (order_id, pid, qty, price, amount, temp_pid, item_name)
+                """INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk)
             )
 
         conn.commit()
@@ -350,9 +352,10 @@ def handler(event: dict, context) -> dict:
                 total += amount
                 temp_pid = item.get('temp_product_id')
                 item_name = item.get('name')
+                from_bulk = bool(item.get('from_bulk'))
                 cur.execute(
-                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id, item_name) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                    (order_id, pid, qty, price, amount, temp_pid, item_name)
+                    "INSERT INTO wholesale_order_items (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk)
                 )
             cur.execute("UPDATE wholesale_orders SET total_amount = %s WHERE id = %s", (total, order_id))
 

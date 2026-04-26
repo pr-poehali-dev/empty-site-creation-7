@@ -34,6 +34,7 @@ interface OrderLine {
   price: number;
   is_temp?: boolean;
   has_uuid?: boolean;
+  from_bulk?: boolean;
 }
 
 interface ProductSearchItem {
@@ -337,6 +338,7 @@ const OrderCreatePage = () => {
               is_temp: item.is_temp,
               temp_product_id: item.temp_product_id,
               has_uuid: item.has_uuid,
+              from_bulk: item.from_bulk,
             }))
           );
           const wResp = await fetch(WHOLESALERS_URL, { headers: authHeaders });
@@ -664,6 +666,7 @@ const OrderCreatePage = () => {
             is_temp: l.is_temp || false,
             temp_product_id: l.temp_product_id || null,
             has_uuid: l.has_uuid || false,
+            from_bulk: l.from_bulk || false,
           })),
         }),
       });
@@ -970,7 +973,10 @@ const OrderCreatePage = () => {
           </button>
           <button
             className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors"
-            onClick={() => navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste")}
+            onClick={() => {
+              localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+              navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste");
+            }}
             title="Вставить списком (пакетный ввод)"
           >
             <Icon name="ClipboardPaste" size={18} />
@@ -1160,12 +1166,15 @@ const OrderCreatePage = () => {
           <div className="space-y-1.5">
             {lines.map((line, i) => {
               const isRedLine = line.is_temp === true || (line.product_id && line.has_uuid === false);
+              const isBlueLine = !isRedLine && line.from_bulk === true;
               return (
                 <DebugBadge id={`OrderCreate:line[${i}]`} key={i}>
                   <div
                     className={`rounded-lg border p-2.5 ${
                       isRedLine
                         ? "border-red-500/30 bg-red-950/20"
+                        : isBlueLine
+                        ? "border-blue-500/30 bg-blue-950/20"
                         : "border-white/[0.08] bg-white/[0.02]"
                     }`}
                   >

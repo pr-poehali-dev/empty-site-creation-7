@@ -7,6 +7,7 @@ import Icon from "@/components/ui/icon";
 
 const BULK_RESOLVE_URL = "https://functions.poehali.dev/793352cf-67e1-4127-8a2a-a47efa5e2630";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
+const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 
 interface RowInput {
   article: string;
@@ -41,6 +42,7 @@ interface DraftLine {
   price: number;
   is_temp?: boolean;
   has_uuid?: boolean;
+  from_bulk?: boolean;
 }
 
 const EMPTY_ROW: RowInput = { article: "", qty: "", price: "" };
@@ -300,7 +302,7 @@ const OrderBulkPastePage = () => {
 
   const readyCount = Object.values(results).filter((r) => r.status === "found").length;
 
-  const transferToOrder = () => {
+  const transferToOrder = async () => {
     if (readyCount === 0) {
       toast({ title: "Нет готовых строк для переноса", variant: "destructive" });
       return;
@@ -308,9 +310,12 @@ const OrderBulkPastePage = () => {
     setTransferring(true);
     try {
       const newLines: DraftLine[] = [];
-      Object.entries(results).forEach(([k, res]) => {
+      const sortedKeys = Object.keys(results)
+        .map((k) => parseInt(k))
+        .sort((a, b) => a - b);
+      sortedKeys.forEach((rowIdx) => {
+        const res = results[rowIdx];
         if (res.status !== "found") return;
-        const rowIdx = parseInt(k);
         const row = rows[rowIdx];
         if (!row) return;
         const qty = parseFloat(row.qty.replace(",", ".")) || 1;
@@ -325,14 +330,54 @@ const OrderBulkPastePage = () => {
           price: price,
           is_temp: !!res.is_temp,
           has_uuid: false,
+          from_bulk: true,
         });
       });
 
+      // Порядок как при ручном добавлении: последняя строка пакета — сверху
+      const reversedNew = [...newLines].reverse();
+
+      // Базовые строки: при редактировании сохранённой заявки — берём из БД,
+      // чтобы не потерять существующие позиции, иначе из черновика
+      let existingLines: DraftLine[] = [];
       const draft = localStorage.getItem(DRAFT_KEY);
       let parsed: Record<string, unknown> = {};
       try { parsed = draft ? JSON.parse(draft) : {}; } catch { parsed = {}; }
-      const existingLines: DraftLine[] = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
-      parsed.lines = [...newLines, ...existingLines];
+
+      if (editId) {
+        try {
+          const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await resp.json();
+          if (resp.ok && data.order) {
+            const draftLines: DraftLine[] = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
+            const orderLines: DraftLine[] = (data.order.items || []).map((item: {
+              product_id: number | null; name: string; article: string | null;
+              quantity: number; price: number; is_temp?: boolean;
+              temp_product_id?: number | null; has_uuid?: boolean; from_bulk?: boolean;
+            }) => ({
+              product_id: item.product_id,
+              name: item.name,
+              article: item.article,
+              quantity: item.quantity,
+              price: item.price,
+              is_temp: item.is_temp,
+              temp_product_id: item.temp_product_id,
+              has_uuid: item.has_uuid,
+              from_bulk: item.from_bulk,
+            }));
+            // Если в черновике больше строк, чем в БД — пользователь редактировал; берём черновик
+            existingLines = draftLines.length >= orderLines.length ? draftLines : orderLines;
+          }
+        } catch {
+          existingLines = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
+        }
+      } else {
+        existingLines = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
+      }
+
+      parsed.lines = [...reversedNew, ...existingLines];
       localStorage.setItem(DRAFT_KEY, JSON.stringify(parsed));
 
       toast({ title: `Перенесено: ${newLines.length}` });
@@ -430,7 +475,7 @@ const OrderBulkPastePage = () => {
 
         <div className="overflow-x-auto border border-white/[0.08] rounded-lg">
           <table className="w-full text-sm">
-            <thead className="bg-white/[0.04] sticky top-[57px] z-10">
+            <thead className="bg-white/[0.04]">
               <tr>
                 <th className="text-left px-2 py-2 w-10 text-xs text-muted-foreground">#</th>
                 <th className="text-left px-2 py-2 w-40 text-xs text-muted-foreground">Артикул</th>
