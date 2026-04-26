@@ -1,4 +1,5 @@
 {
+  "wholesale-orders-bulk-resolve": "https://functions.poehali.dev/793352cf-67e1-4127-8a2a-a47efa5e2630",
   "export-order": "https://functions.poehali.dev/9a93a221-e083-4f2d-9e96-1d086b30243b",
   "brands": "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe",
   "temp-products": "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63",

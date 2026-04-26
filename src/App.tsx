@@ -13,6 +13,7 @@ import Catalog from "./pages/Catalog";
 import WholesaleOrders from "./pages/WholesaleOrders";
 import OrderPayments from "./pages/OrderPayments";
 import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
+import OrderBulkPastePage from "./pages/wholesale-orders/OrderBulkPastePage";
 import ScanBarcode from "./pages/ScanBarcode";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
@@ -46,7 +47,9 @@ const App = () => (
           <Route path="/admin/orders" element={<ProtectedRoute><WholesaleOrders /></ProtectedRoute>} />
           <Route path="/admin/orders/:orderId/payments" element={<ProtectedRoute><OrderPayments /></ProtectedRoute>} />
           <Route path="/admin/orders/create" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
+          <Route path="/admin/orders/create/bulk-paste" element={<ProtectedRoute><OrderBulkPastePage /></ProtectedRoute>} />
           <Route path="/admin/orders/:id/edit" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
+          <Route path="/admin/orders/:id/bulk-paste" element={<ProtectedRoute><OrderBulkPastePage /></ProtectedRoute>} />
           <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />

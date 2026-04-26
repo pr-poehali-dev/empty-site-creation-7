@@ -892,6 +892,7 @@ const OrderCreatePage = () => {
                 className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm pr-8"
               />
             </DebugBadge>
+
             {searching && (
               <Icon name="Loader2" size={14} className="absolute right-3 top-3 animate-spin text-muted-foreground" />
             )}
@@ -963,8 +964,16 @@ const OrderCreatePage = () => {
               setShowBarcode(!showBarcode);
               if (!showBarcode) setTimeout(() => barcodeInputRef.current?.focus(), 100);
             }}
+            title="Сканер штрихкодов"
           >
             <Icon name="ScanBarcode" size={18} />
+          </button>
+          <button
+            className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors"
+            onClick={() => navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste")}
+            title="Вставить списком (пакетный ввод)"
+          >
+            <Icon name="ClipboardPaste" size={18} />
           </button>
         </div>
 
