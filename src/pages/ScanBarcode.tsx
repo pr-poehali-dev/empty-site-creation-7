@@ -86,7 +86,6 @@ const ScanBarcode = () => {
   const [showTempForm, setShowTempForm] = useState(false);
   const [tempBrand, setTempBrand] = useState("");
   const [tempArticle, setTempArticle] = useState("");
-  const [tempQty, setTempQty] = useState("1");
   const [tempPrice, setTempPrice] = useState("");
   const [savingTemp, setSavingTemp] = useState(false);
   const [allBrands, setAllBrands] = useState<string[]>([]);
@@ -356,7 +355,6 @@ const ScanBarcode = () => {
         body: JSON.stringify({
           brand: tempBrand.trim(),
           article: tempArticle.trim(),
-          quantity: parseFloat(tempQty) || 1,
           price: parseFloat(tempPrice) || 0,
           barcode: searchItem.barcode,
         }),
@@ -378,7 +376,7 @@ const ScanBarcode = () => {
         });
         setSearchItem(null);
         setShowTempForm(false);
-        setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice("");
+        setTempBrand(""); setTempArticle(""); setTempPrice("");
         fetch(NEW_BARCODES_URL, {
           method: "POST",
           headers: authHeaders,
@@ -811,13 +809,7 @@ const ScanBarcode = () => {
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <DebugBadge id="Scan:tempQty">
-                    <Input placeholder="Количество *" type="number" value={tempQty}
-                      onChange={(e) => setTempQty(e.target.value)}
-                      className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
-                    />
-                  </DebugBadge>
+                <div className="mb-2">
                   <DebugBadge id="Scan:tempPrice">
                     <Input placeholder="Цена *" type="number" value={tempPrice}
                       onChange={(e) => setTempPrice(e.target.value)}
@@ -833,7 +825,7 @@ const ScanBarcode = () => {
                     </Button>
                   </DebugBadge>
                   <Button size="sm" variant="ghost" className="rounded-lg"
-                    onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice(""); }}
+                    onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempPrice(""); }}
                   >Отмена</Button>
                 </div>
               </div>

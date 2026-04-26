@@ -291,7 +291,6 @@ const OrderBulkPastePage = () => {
     }
     setNpSaving(true);
     try {
-      const qty = parseFloat(rows[newProductForRow]?.qty || "1") || 1;
       const price = parseFloat(npPrice || "0") || 0;
       const brandTrim = npBrand.trim();
       const articleTrim = npArticle.trim();
@@ -323,7 +322,6 @@ const OrderBulkPastePage = () => {
           body: JSON.stringify({
             brand: brandTrim,
             article: articleTrim,
-            quantity: qty,
             price: price,
           }),
         });

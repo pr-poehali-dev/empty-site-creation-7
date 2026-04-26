@@ -1,0 +1,1 @@
+UPDATE temp_products SET quantity = 0 WHERE created_at::date = CURRENT_DATE;

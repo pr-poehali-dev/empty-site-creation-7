@@ -128,7 +128,6 @@ const OrderCreatePage = () => {
   const [showTempForm, setShowTempForm] = useState(false);
   const [tempBrand, setTempBrand] = useState("");
   const [tempArticle, setTempArticle] = useState("");
-  const [tempQty, setTempQty] = useState("1");
   const [tempPrice, setTempPrice] = useState("");
   const [allBrands, setAllBrands] = useState<string[]>([]);
   const [showBrandList, setShowBrandList] = useState(false);
@@ -515,7 +514,7 @@ const OrderCreatePage = () => {
   };
 
   const saveTempProduct = async () => {
-    if (!tempBrand.trim() || !tempArticle.trim() || !tempQty || !tempPrice) {
+    if (!tempBrand.trim() || !tempArticle.trim() || !tempPrice) {
       toast({ title: "Заполните все поля", variant: "destructive" });
       return;
     }
@@ -527,7 +526,6 @@ const OrderCreatePage = () => {
         body: JSON.stringify({
           brand: tempBrand.trim(),
           article: tempArticle.trim(),
-          quantity: parseFloat(tempQty),
           price: parseFloat(tempPrice),
         }),
       });
@@ -544,7 +542,7 @@ const OrderCreatePage = () => {
             name: `${tempBrand.trim()} ${tempArticle.trim()}`,
             article: tempArticle.trim(),
             brand: tempBrand.trim(),
-            quantity: parseFloat(tempQty),
+            quantity: 1,
             price: parseFloat(tempPrice),
             is_temp: true,
             has_uuid: false,
@@ -554,7 +552,6 @@ const OrderCreatePage = () => {
         setShowTempForm(false);
         setTempBrand("");
         setTempArticle("");
-        setTempQty("1");
         setTempPrice("");
         setSearchQuery("");
       } else {
@@ -1034,14 +1031,7 @@ const OrderCreatePage = () => {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <Input
-                placeholder="Количество *"
-                type="number"
-                value={tempQty}
-                onChange={(e) => setTempQty(e.target.value)}
-                className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm"
-              />
+            <div className="mb-2">
               <Input
                 placeholder="Цена *"
                 type="number"
@@ -1055,7 +1045,7 @@ const OrderCreatePage = () => {
                 {savingTemp ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="Check" size={14} />}
                 <span className="ml-1">Добавить</span>
               </Button>
-              <Button size="sm" variant="ghost" className="rounded-lg" onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempQty("1"); setTempPrice(""); }}>
+              <Button size="sm" variant="ghost" className="rounded-lg" onClick={() => { setShowTempForm(false); setTempBrand(""); setTempArticle(""); setTempPrice(""); }}>
                 Отмена
               </Button>
             </div>

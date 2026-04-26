@@ -55,7 +55,6 @@ const NewProducts = () => {
   const [editBrand, setEditBrand] = useState("");
   const [editArticle, setEditArticle] = useState("");
   const [editPrice, setEditPrice] = useState("");
-  const [editQuantity, setEditQuantity] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [formName, setFormName] = useState("");
@@ -120,7 +119,6 @@ const NewProducts = () => {
     setEditBrand(item.brand);
     setEditArticle(item.article);
     setEditPrice(String(item.price || ""));
-    setEditQuantity(String(item.quantity || ""));
   };
 
   const handleSaveEdit = async () => {
@@ -138,7 +136,6 @@ const NewProducts = () => {
           brand: editBrand.trim(),
           article: editArticle.trim(),
           price: parseFloat(editPrice || "0") || 0,
-          quantity: parseFloat(editQuantity || "0") || 0,
         }),
       });
       const data = await resp.json();
@@ -443,15 +440,9 @@ const NewProducts = () => {
                   <Input value={editArticle} onChange={(e) => setEditArticle(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Цена</p>
-                  <Input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Количество</p>
-                  <Input type="number" value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
-                </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Цена</p>
+                <Input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className="rounded-xl bg-secondary border-white/[0.08]" />
               </div>
             </div>
           )}
