@@ -152,9 +152,14 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Заявка не найдена'})}
 
             cur.execute(
-                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount, oi.temp_product_id, oi.item_name, oi.from_bulk
+                """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount,
+                          oi.temp_product_id, oi.item_name, oi.from_bulk,
+                          tp.brand, tp.article, tp.nomenclature_id,
+                          np.name, np.article, np.brand
                    FROM wholesale_order_items oi
                    JOIN products p ON p.id = oi.product_id
+                   LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
+                   LEFT JOIN products np ON np.id = tp.nomenclature_id
                    WHERE oi.order_id = %s
                    ORDER BY oi.id""",
                 (order_id,)
@@ -162,13 +167,24 @@ def handler(event: dict, context) -> dict:
             items = []
             for r in cur.fetchall():
                 is_temp = r[7] is not None or r[1] == 19
+                tp_brand, tp_article, tp_nom_id = r[10], r[11], r[12]
+                np_name, np_article, np_brand = r[13], r[14], r[15]
                 if is_temp:
-                    display_name = r[8] or r[2]
+                    if tp_nom_id and np_name:
+                        display_name = np_name
+                        display_article = np_article
+                    elif tp_brand or tp_article:
+                        display_name = f"{tp_brand or ''} {tp_article or ''}".strip()
+                        display_article = tp_article
+                    else:
+                        display_name = r[8] or r[2]
+                        display_article = None
                 else:
                     display_name = r[2]
+                    display_article = r[3] if r[3] != '__TEMP__' else None
                 items.append({
                     'id': r[0], 'product_id': r[1] if r[1] != 19 else None, 'name': display_name,
-                    'article': r[3] if r[3] != '__TEMP__' else None,
+                    'article': display_article,
                     'quantity': r[4], 'price': float(r[5]), 'amount': float(r[6]),
                     'is_temp': is_temp, 'temp_product_id': r[7], 'has_uuid': False if is_temp else bool(r[3]),
                     'from_bulk': bool(r[9])

@@ -67,9 +67,13 @@ def handler(event: dict, context) -> dict:
     cur.execute(
         """SELECT oi.product_id, COALESCE(oi.item_name, p.name), p.article, oi.quantity, oi.price, oi.temp_product_id,
                   (SELECT pb.barcode FROM product_barcodes pb WHERE pb.product_id = oi.product_id LIMIT 1),
-                  COALESCE(p.product_group, '')
+                  COALESCE(p.product_group, ''),
+                  tp.brand, tp.article, tp.nomenclature_id,
+                  np.name, np.article
            FROM wholesale_order_items oi
            JOIN products p ON p.id = oi.product_id
+           LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
+           LEFT JOIN products np ON np.id = tp.nomenclature_id
            WHERE oi.order_id = %s
            ORDER BY oi.id""",
         (order_id,)
@@ -81,14 +85,29 @@ def handler(event: dict, context) -> dict:
     merged = {}
     for item in raw_items:
         is_temp = item[5] is not None or item[0] == 19
-        key = (item[0], float(item[4]))
+        tp_brand, tp_article, tp_nom_id = item[8], item[9], item[10]
+        np_name, np_article = item[11], item[12]
+        if is_temp:
+            if tp_nom_id and np_name:
+                disp_name = np_name
+                disp_article = np_article or ''
+            elif tp_brand or tp_article:
+                disp_name = f"{tp_brand or ''} {tp_article or ''}".strip()
+                disp_article = tp_article or ''
+            else:
+                disp_name = item[1]
+                disp_article = item[2] if item[2] != '__TEMP__' else ''
+        else:
+            disp_name = item[1]
+            disp_article = item[2] if item[2] != '__TEMP__' else ''
+        key = (item[0], float(item[4]), disp_name)
         if key in merged:
             merged[key]['qty'] += item[3]
         else:
             merged[key] = {
                 'product_id': item[0],
-                'name': item[1],
-                'article': item[2] if item[2] != '__TEMP__' else '',
+                'name': disp_name,
+                'article': disp_article,
                 'qty': item[3],
                 'price': float(item[4]),
                 'is_temp': is_temp,
