@@ -11,6 +11,7 @@ export interface Order {
   payment_status: string;
   paid_amount: number;
   is_restored: boolean;
+  has_zero_price?: boolean;
 }
 
 export interface OrderLine {

@@ -186,10 +186,12 @@ const WholesaleOrders = () => {
               return (
                 <div
                   key={order.id}
-                  className={`rounded-xl border p-3 sm:p-4 cursor-pointer hover:bg-white/[0.02] transition-colors ${
-                    order.is_restored
-                      ? "bg-purple-500/5 border-purple-500/15"
-                      : "bg-card border-white/[0.08]"
+                  className={`rounded-xl p-3 sm:p-4 cursor-pointer hover:bg-white/[0.02] transition-colors ${
+                    order.has_zero_price
+                      ? "border-2 border-red-500 bg-card"
+                      : order.is_restored
+                      ? "border bg-purple-500/5 border-purple-500/15"
+                      : "border bg-card border-white/[0.08]"
                   }`}
                   onClick={() => navigate(`/admin/orders/${order.id}/edit`)}
                 >

@@ -200,7 +200,8 @@ def handler(event: dict, context) -> dict:
 
         cur.execute(
             f"""SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
-                       o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored
+                       o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored,
+                       EXISTS(SELECT 1 FROM wholesale_order_items i WHERE i.order_id = o.id AND (i.price IS NULL OR i.price = 0)) AS has_zero_price
                 FROM wholesale_orders o
                 JOIN managers m ON m.id = o.created_by
                 {where}
@@ -215,7 +216,7 @@ def handler(event: dict, context) -> dict:
                 'status': r[3], 'total_amount': float(r[4]),
                 'created_at': str(r[5]), 'created_by': f"{r[6]} {r[7]}",
                 'payment_status': r[8], 'paid_amount': float(r[9]),
-                'is_restored': r[10]
+                'is_restored': r[10], 'has_zero_price': bool(r[11])
             })
 
         cur.close()

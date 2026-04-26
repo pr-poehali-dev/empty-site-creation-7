@@ -1167,15 +1167,18 @@ const OrderCreatePage = () => {
             {lines.map((line, i) => {
               const isBlueLine = line.from_bulk === true && line.is_temp !== true;
               const isRedLine = !isBlueLine && (line.is_temp === true || (line.product_id && line.has_uuid === false));
+              const zeroPrice = !line.price || line.price === 0;
               return (
                 <DebugBadge id={`OrderCreate:line[${i}]`} key={i}>
                   <div
-                    className={`rounded-lg border p-2.5 ${
-                      isRedLine
-                        ? "border-red-500/30 bg-red-950/20"
+                    className={`rounded-lg p-2.5 ${
+                      zeroPrice
+                        ? "border-2 border-red-500 bg-red-950/20"
+                        : isRedLine
+                        ? "border border-red-500/30 bg-red-950/20"
                         : isBlueLine
-                        ? "border-blue-500/30 bg-blue-950/20"
-                        : "border-white/[0.08] bg-white/[0.02]"
+                        ? "border border-blue-500/30 bg-blue-950/20"
+                        : "border border-white/[0.08] bg-white/[0.02]"
                     }`}
                   >
                   <div className="flex items-start justify-between gap-2">

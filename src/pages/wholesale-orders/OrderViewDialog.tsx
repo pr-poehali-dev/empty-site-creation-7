@@ -78,10 +78,16 @@ const OrderViewDialog = ({
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Позиции</label>
                 <div className="space-y-1.5">
-                  {viewLines.map((line) => (
+                  {viewLines.map((line) => {
+                    const zeroPrice = !line.price || line.price === 0;
+                    return (
                     <div
                       key={line.product_id}
-                      className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5"
+                      className={`rounded-lg p-2.5 bg-white/[0.02] ${
+                        zeroPrice
+                          ? "border-2 border-red-500"
+                          : "border border-white/[0.08]"
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 flex-1">
@@ -98,7 +104,8 @@ const OrderViewDialog = ({
                         </span>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="flex justify-end pt-2 border-t border-white/[0.08]">
                   <p className="text-base font-semibold">Итого: {viewTotal.toLocaleString()} Br</p>
