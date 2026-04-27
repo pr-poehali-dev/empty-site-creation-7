@@ -139,7 +139,8 @@ def handler(event: dict, context) -> dict:
         if order_id:
             cur.execute(
                 """SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
-                          o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored
+                          o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored,
+                          o.created_by_owner
                    FROM wholesale_orders o
                    JOIN managers m ON m.id = o.created_by
                    WHERE o.id = %s""",
@@ -190,10 +191,11 @@ def handler(event: dict, context) -> dict:
                     'from_bulk': bool(r[9])
                 })
 
+            created_by_str = "Владелец" if row[11] else f"{row[6]} {row[7]}"
             order = {
                 'id': row[0], 'customer_name': row[1], 'comment': row[2],
                 'status': row[3], 'total_amount': float(row[4]),
-                'created_at': str(row[5]), 'created_by': f"{row[6]} {row[7]}",
+                'created_at': str(row[5]), 'created_by': created_by_str,
                 'payment_status': row[8], 'paid_amount': float(row[9]),
                 'is_restored': row[10],
                 'items': items
@@ -217,7 +219,8 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"""SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
                        o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored,
-                       EXISTS(SELECT 1 FROM wholesale_order_items i WHERE i.order_id = o.id AND (i.price IS NULL OR i.price = 0)) AS has_zero_price
+                       EXISTS(SELECT 1 FROM wholesale_order_items i WHERE i.order_id = o.id AND (i.price IS NULL OR i.price = 0)) AS has_zero_price,
+                       o.created_by_owner
                 FROM wholesale_orders o
                 JOIN managers m ON m.id = o.created_by
                 {where}
@@ -227,10 +230,11 @@ def handler(event: dict, context) -> dict:
         )
         orders = []
         for r in cur.fetchall():
+            created_by_str = "Владелец" if r[12] else f"{r[6]} {r[7]}"
             orders.append({
                 'id': r[0], 'customer_name': r[1], 'comment': r[2],
                 'status': r[3], 'total_amount': float(r[4]),
-                'created_at': str(r[5]), 'created_by': f"{r[6]} {r[7]}",
+                'created_at': str(r[5]), 'created_by': created_by_str,
                 'payment_status': r[8], 'paid_amount': float(r[9]),
                 'is_restored': r[10], 'has_zero_price': bool(r[11])
             })
@@ -240,15 +244,21 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'orders': orders})}
 
     if method == 'POST':
-        if is_owner:
-            cur.close()
-            conn.close()
-            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Владелец не может создавать заявки'})}
-
-        if role_name not in CAN_CREATE_ROLES:
+        if not is_owner and role_name not in CAN_CREATE_ROLES:
             cur.close()
             conn.close()
             return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав на создание заявок'})}
+
+        # Для владельца используем id любого менеджера (created_by NOT NULL),
+        # реальный автор-владелец маркируется через created_by_owner.
+        if is_owner:
+            cur.execute("SELECT id FROM managers ORDER BY id LIMIT 1")
+            row = cur.fetchone()
+            if not row:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нет ни одного менеджера в системе'})}
+            manager_id = row[0]
 
         customer_name = body.get('customer_name', '').strip()
         comment = (body.get('comment') or '').strip() or None
@@ -274,9 +284,9 @@ def handler(event: dict, context) -> dict:
             total += amount
 
         cur.execute(
-            """INSERT INTO wholesale_orders (customer_name, comment, total_amount, created_by)
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (customer_name, comment, total, manager_id)
+            """INSERT INTO wholesale_orders (customer_name, comment, total_amount, created_by, created_by_owner)
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+            (customer_name, comment, total, manager_id, bool(is_owner))
         )
         order_id = cur.fetchone()[0]
 

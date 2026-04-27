@@ -51,7 +51,7 @@ const WholesaleOrders = () => {
   const token = localStorage.getItem("auth_token") || "";
   const { toast } = useToast();
   const isOwner = user.role === "owner";
-  const canCreate = !isOwner;
+  const canCreate = true;
 
   const authHeaders = {
     "Content-Type": "application/json",
