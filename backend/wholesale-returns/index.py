@@ -158,7 +158,9 @@ def handler(event: dict, context) -> dict:
 
         cur.execute(
             f"""SELECT r.id, r.customer_name, r.comment, r.status, r.total_amount,
-                       r.created_at, r.accepted_at, m.first_name, m.last_name
+                       r.created_at, r.accepted_at, m.first_name, m.last_name,
+                       COALESCE((SELECT SUM(op.amount) FROM order_payments op
+                                 WHERE op.return_id = r.id AND op.method = 'return_offset'), 0) AS used
                 FROM wholesale_returns r
                 JOIN managers m ON m.id = r.created_by
                 {where}
@@ -167,12 +169,16 @@ def handler(event: dict, context) -> dict:
         )
         returns = []
         for r in cur.fetchall():
+            used = float(r[9])
+            total = float(r[4])
             returns.append({
                 'id': r[0], 'customer_name': r[1], 'comment': r[2],
-                'status': r[3], 'total_amount': float(r[4]),
+                'status': r[3], 'total_amount': total,
                 'created_at': str(r[5]),
                 'accepted_at': str(r[6]) if r[6] else None,
-                'created_by': f"{r[7]} {r[8]}"
+                'created_by': f"{r[7]} {r[8]}",
+                'used_amount': used,
+                'remaining_amount': max(0.0, round(total - used, 2))
             })
         cur.close()
         conn.close()

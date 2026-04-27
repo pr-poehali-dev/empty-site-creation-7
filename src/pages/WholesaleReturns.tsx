@@ -27,6 +27,8 @@ interface ReturnItem {
   created_at: string;
   accepted_at: string | null;
   created_by: string;
+  used_amount?: number;
+  remaining_amount?: number;
 }
 
 const statusLabels: Record<string, { label: string; className: string }> = {
@@ -190,6 +192,15 @@ const WholesaleReturns = () => {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-semibold text-sm sm:text-base">{r.total_amount.toLocaleString()} Br</p>
+                        {r.status === "accepted" && r.remaining_amount !== undefined && (
+                          <p className={`text-xs mt-0.5 ${
+                            r.remaining_amount > 0 ? "text-emerald-400" : "text-muted-foreground"
+                          }`}>
+                            {r.remaining_amount > 0
+                              ? `Остаток: ${r.remaining_amount.toLocaleString()} Br`
+                              : "Зачтён полностью"}
+                          </p>
+                        )}
                         {isOwner && (
                           <button
                             className="mt-2 w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors"
