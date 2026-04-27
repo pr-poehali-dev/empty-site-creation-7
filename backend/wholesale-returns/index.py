@@ -81,7 +81,8 @@ def handler(event: dict, context) -> dict:
         if return_id:
             cur.execute(
                 """SELECT r.id, r.customer_name, r.comment, r.status, r.total_amount,
-                          r.created_at, r.accepted_at, m.first_name, m.last_name
+                          r.created_at, r.accepted_at, m.first_name, m.last_name,
+                          r.created_by_owner
                    FROM wholesale_returns r
                    JOIN managers m ON m.id = r.created_by
                    WHERE r.id = %s""",
@@ -132,12 +133,13 @@ def handler(event: dict, context) -> dict:
                     'from_bulk': bool(r[9])
                 })
 
+            created_by_str = "Владелец" if row[9] else f"{row[7]} {row[8]}"
             ret = {
                 'id': row[0], 'customer_name': row[1], 'comment': row[2],
                 'status': row[3], 'total_amount': float(row[4]),
                 'created_at': str(row[5]),
                 'accepted_at': str(row[6]) if row[6] else None,
-                'created_by': f"{row[7]} {row[8]}",
+                'created_by': created_by_str,
                 'items': items
             }
             cur.close()
@@ -160,7 +162,8 @@ def handler(event: dict, context) -> dict:
             f"""SELECT r.id, r.customer_name, r.comment, r.status, r.total_amount,
                        r.created_at, r.accepted_at, m.first_name, m.last_name,
                        COALESCE((SELECT SUM(op.amount) FROM order_payments op
-                                 WHERE op.return_id = r.id AND op.method = 'return_offset'), 0) AS used
+                                 WHERE op.return_id = r.id AND op.method = 'return_offset'), 0) AS used,
+                       r.created_by_owner
                 FROM wholesale_returns r
                 JOIN managers m ON m.id = r.created_by
                 {where}
@@ -171,12 +174,13 @@ def handler(event: dict, context) -> dict:
         for r in cur.fetchall():
             used = float(r[9])
             total = float(r[4])
+            created_by_str = "Владелец" if r[10] else f"{r[7]} {r[8]}"
             returns.append({
                 'id': r[0], 'customer_name': r[1], 'comment': r[2],
                 'status': r[3], 'total_amount': total,
                 'created_at': str(r[5]),
                 'accepted_at': str(r[6]) if r[6] else None,
-                'created_by': f"{r[7]} {r[8]}",
+                'created_by': created_by_str,
                 'used_amount': used,
                 'remaining_amount': max(0.0, round(total - used, 2))
             })
@@ -223,9 +227,9 @@ def handler(event: dict, context) -> dict:
             total += amount
 
         cur.execute(
-            """INSERT INTO wholesale_returns (customer_name, comment, total_amount, created_by)
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (customer_name, comment, total, manager_id)
+            """INSERT INTO wholesale_returns (customer_name, comment, total_amount, created_by, created_by_owner)
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+            (customer_name, comment, total, manager_id, bool(is_owner))
         )
         return_id = cur.fetchone()[0]
 
