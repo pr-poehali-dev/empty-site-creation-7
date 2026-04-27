@@ -18,6 +18,8 @@ import OrderBulkPastePage from "./pages/wholesale-orders/OrderBulkPastePage";
 import WholesaleReturns from "./pages/WholesaleReturns";
 import ReturnCreatePage from "./pages/wholesale-returns/ReturnCreatePage";
 import ScanBarcode from "./pages/ScanBarcode";
+import BarcodeScanPage from "./pages/shared/BarcodeScanPage";
+import BulkPastePage from "./pages/shared/BulkPastePage";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
 import Wholesalers from "./pages/Wholesalers";
@@ -58,6 +60,8 @@ const App = () => (
           <Route path="/admin/returns/create" element={<ProtectedRoute><ReturnCreatePage /></ProtectedRoute>} />
           <Route path="/admin/returns/:id/edit" element={<ProtectedRoute><ReturnCreatePage /></ProtectedRoute>} />
           <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
+          <Route path="/admin/shared/scan" element={<ProtectedRoute><BarcodeScanPage /></ProtectedRoute>} />
+          <Route path="/admin/shared/bulk-paste" element={<ProtectedRoute><BulkPastePage /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />
           <Route path="/admin/wholesalers" element={<ProtectedRoute><Wholesalers /></ProtectedRoute>} />

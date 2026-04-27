@@ -292,6 +292,71 @@ const OrderCreatePage = () => {
   }, [customerName, comment, lines, wholesalerId]);
 
   useEffect(() => {
+    const raw = sessionStorage.getItem("resolve_result");
+    if (!raw) return;
+    sessionStorage.removeItem("resolve_result");
+    try {
+      const parsed = JSON.parse(raw) as {
+        source: "scan" | "bulk";
+        items: Array<{
+          product_id: number | null;
+          temp_product_id?: number | null;
+          name: string;
+          article: string | null;
+          brand?: string | null;
+          base_price: number;
+          is_temp: boolean;
+          has_uuid?: boolean;
+          quantity: number;
+          from_bulk?: boolean;
+          product_group?: string | null;
+          price_base?: number | null;
+          price_retail?: number | null;
+          price_wholesale?: number | null;
+          price_purchase?: number | null;
+        }>;
+      };
+      if (!parsed.items?.length) return;
+      const newLines: OrderLine[] = parsed.items.map((it) => {
+        let price = it.base_price;
+        if (parsed.source === "scan" && !it.is_temp && it.product_group !== undefined) {
+          const pseudoItem = {
+            id: it.product_id || 0,
+            name: it.name,
+            article: it.article,
+            brand: it.brand || null,
+            supplier_code: null,
+            price_base: it.price_base ?? null,
+            price_retail: it.price_retail ?? null,
+            price_wholesale: it.price_wholesale ?? null,
+            price_purchase: it.price_purchase ?? null,
+            product_group: it.product_group ?? null,
+            external_id: it.has_uuid ? "x" : null,
+          } as ProductSearchItem;
+          const calc = calcPrice(pseudoItem, pricingRules);
+          if (calc > 0) price = calc;
+        }
+        return {
+          product_id: it.product_id,
+          temp_product_id: it.temp_product_id ?? null,
+          name: it.name,
+          article: it.article,
+          brand: it.brand,
+          quantity: it.quantity,
+          price,
+          is_temp: it.is_temp,
+          has_uuid: it.has_uuid,
+          from_bulk: it.from_bulk,
+        };
+      });
+      setLines((prev) => [...newLines, ...prev]);
+      toast({ title: `Добавлено: ${newLines.length}` });
+    } catch {
+      /* ignore */
+    }
+  }, [pricingRules]);
+
+  useEffect(() => {
     if (!editId) return;
     const draft = localStorage.getItem(DRAFT_KEY);
     if (draft) {
@@ -1472,6 +1537,48 @@ const OrderCreatePage = () => {
               {statusUpdating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="ArchiveRestore" size={16} />}
               <span className="ml-2">Вернуть в работу</span>
             </Button>
+          </div>
+        )}
+
+        {isOwner && (
+          <div className="mt-6 pt-4 border-t border-red-500/30 space-y-2">
+            <p className="text-xs text-red-400 font-semibold">ТЕСТ (только для владельца)</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
+                onClick={() => {
+                  localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+                  sessionStorage.setItem("resolve_request", JSON.stringify({
+                    returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
+                    context: "order",
+                    wholesalerId,
+                    customerName,
+                    authHeaders,
+                  }));
+                  navigate("/admin/shared/scan");
+                }}
+              >
+                <Icon name="ScanLine" size={16} />
+                <span className="ml-2">ТЕСТ: Сканер</span>
+              </Button>
+              <Button
+                className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
+                onClick={() => {
+                  localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+                  sessionStorage.setItem("resolve_request", JSON.stringify({
+                    returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
+                    context: "order",
+                    wholesalerId,
+                    customerName,
+                    authHeaders,
+                  }));
+                  navigate("/admin/shared/bulk-paste");
+                }}
+              >
+                <Icon name="ClipboardPaste" size={16} />
+                <span className="ml-2">ТЕСТ: Список</span>
+              </Button>
+            </div>
           </div>
         )}
       </main>

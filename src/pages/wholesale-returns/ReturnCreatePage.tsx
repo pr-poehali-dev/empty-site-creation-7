@@ -147,6 +147,44 @@ const ReturnCreatePage = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Приём результата от sharedscan/bulkpaste
+  useEffect(() => {
+    const raw = sessionStorage.getItem("resolve_result");
+    if (!raw) return;
+    sessionStorage.removeItem("resolve_result");
+    try {
+      const parsed = JSON.parse(raw) as {
+        source: "scan" | "bulk";
+        items: Array<{
+          product_id: number | null;
+          temp_product_id?: number | null;
+          name: string;
+          article: string | null;
+          brand?: string | null;
+          base_price: number;
+          is_temp: boolean;
+          has_uuid?: boolean;
+          quantity: number;
+        }>;
+      };
+      if (!parsed.items?.length) return;
+      const newLines: ReturnLine[] = parsed.items.map((it) => ({
+        product_id: it.product_id,
+        temp_product_id: it.temp_product_id ?? null,
+        name: it.name,
+        article: it.article,
+        quantity: it.quantity,
+        price: it.base_price,
+        is_temp: it.is_temp,
+        has_uuid: it.has_uuid,
+      }));
+      setLines((prev) => [...newLines, ...prev]);
+      toast({ title: `Добавлено: ${newLines.length}` });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const searchProducts = useCallback(async (query: string) => {
     if (!query.trim() || query.trim().length < 2) {
       setSearchResults([]);
@@ -498,6 +536,46 @@ const ReturnCreatePage = () => {
             </DebugBadge>
           )}
         </div>
+
+        {isOwner && (
+          <div className="mt-6 pt-4 border-t border-red-500/30 space-y-2">
+            <p className="text-xs text-red-400 font-semibold">ТЕСТ (только для владельца)</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
+                onClick={() => {
+                  sessionStorage.setItem("resolve_request", JSON.stringify({
+                    returnTo: editId ? `/admin/returns/${editId}/edit` : "/admin/returns/create",
+                    context: "return",
+                    wholesalerId,
+                    customerName,
+                    authHeaders,
+                  }));
+                  navigate("/admin/shared/scan");
+                }}
+              >
+                <Icon name="ScanLine" size={18} />
+                <span className="ml-2">ТЕСТ: Сканер</span>
+              </Button>
+              <Button
+                className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
+                onClick={() => {
+                  sessionStorage.setItem("resolve_request", JSON.stringify({
+                    returnTo: editId ? `/admin/returns/${editId}/edit` : "/admin/returns/create",
+                    context: "return",
+                    wholesalerId,
+                    customerName,
+                    authHeaders,
+                  }));
+                  navigate("/admin/shared/bulk-paste");
+                }}
+              >
+                <Icon name="ClipboardPaste" size={18} />
+                <span className="ml-2">ТЕСТ: Список</span>
+              </Button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
