@@ -23,6 +23,7 @@ const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const EXPORT_URL = "https://functions.poehali.dev/9a93a221-e083-4f2d-9e96-1d086b30243b";
+const RETURNS_URL = "https://functions.poehali.dev/57193003-9226-4238-83dd-4f87ff8cd5ad";
 
 interface OrderLine {
   product_id: number | null;
@@ -123,6 +124,9 @@ const OrderCreatePage = () => {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [applyingPricing, setApplyingPricing] = useState(false);
+  const [copyMode, setCopyMode] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState<Set<number>>(new Set());
+  const [creatingReturn, setCreatingReturn] = useState(false);
 
   // Temp product form state
   const [showTempForm, setShowTempForm] = useState(false);
@@ -692,6 +696,78 @@ const OrderCreatePage = () => {
     }
   };
 
+  const enterCopyMode = () => {
+    setSelectedIdx(new Set());
+    setCopyMode(true);
+  };
+
+  const exitCopyMode = () => {
+    setCopyMode(false);
+    setSelectedIdx(new Set());
+  };
+
+  const toggleLineSelected = (i: number) => {
+    setSelectedIdx((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
+  const toggleAllSelected = () => {
+    if (selectedIdx.size === lines.length) {
+      setSelectedIdx(new Set());
+    } else {
+      setSelectedIdx(new Set(lines.map((_, i) => i)));
+    }
+  };
+
+  const copyToReturn = async () => {
+    if (selectedIdx.size === 0) {
+      toast({ title: "Выберите товары", description: "Отметьте позиции для переноса в возврат", variant: "destructive" });
+      return;
+    }
+    if (!customerName.trim()) {
+      toast({ title: "Ошибка", description: "У заявки не указан оптовик", variant: "destructive" });
+      return;
+    }
+    const items = lines
+      .filter((_, i) => selectedIdx.has(i))
+      .map((l) => ({
+        product_id: l.product_id,
+        temp_product_id: l.temp_product_id || null,
+        name: l.name,
+        quantity: l.quantity,
+        price: l.price,
+        from_bulk: !!l.from_bulk,
+      }));
+
+    setCreatingReturn(true);
+    try {
+      const resp = await fetch(RETURNS_URL, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          customer_name: customerName.trim(),
+          comment: comment.trim() || null,
+          items,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: `Возврат #${data.id} создан` });
+        navigate(`/admin/returns/${data.id}/edit`);
+      } else {
+        toast({ title: "Ошибка", description: data.error || "Не удалось создать возврат", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось создать возврат", variant: "destructive" });
+    } finally {
+      setCreatingReturn(false);
+    }
+  };
+
   const updateOrderStatus = async (newStatus: string) => {
     if (!editId) return;
     setStatusUpdating(true);
@@ -1144,8 +1220,22 @@ const OrderCreatePage = () => {
         </div>
 
         {lines.length > 0 && (
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-muted-foreground">Позиции ({lines.length})</p>
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {copyMode && (
+                <input
+                  type="checkbox"
+                  checked={selectedIdx.size === lines.length && lines.length > 0}
+                  onChange={toggleAllSelected}
+                  className="w-4 h-4 rounded border-white/20 bg-white/[0.04] flex-shrink-0 cursor-pointer"
+                />
+              )}
+              <p className="text-sm text-muted-foreground">
+                {copyMode
+                  ? `Выбрано: ${selectedIdx.size} из ${lines.length}`
+                  : `Позиции (${lines.length})`}
+              </p>
+            </div>
             <p className="text-sm font-semibold">Итого: {totalAmount.toLocaleString()} Br</p>
           </div>
         )}
@@ -1183,6 +1273,14 @@ const OrderCreatePage = () => {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start gap-1.5">
+                        {copyMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIdx.has(i)}
+                            onChange={() => toggleLineSelected(i)}
+                            className="w-4 h-4 rounded border-white/20 bg-white/[0.04] flex-shrink-0 mt-0.5 cursor-pointer"
+                          />
+                        )}
                         <p className="text-sm break-words min-w-0"><span className="text-muted-foreground">{lines.length - i}.</span> {line.name}</p>
                         {isRedLine && (
                           <span className="text-xs text-red-400 flex-shrink-0 mt-0.5">новый</span>
@@ -1242,19 +1340,66 @@ const OrderCreatePage = () => {
         )}
 
         <div className="mt-4">
-          <DebugBadge id="OrderCreate:saveBtn">
-            <Button className="w-full h-11 rounded-xl" onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <Icon name="Loader2" size={16} className="animate-spin" />
-              ) : (
-                <Icon name="Check" size={16} />
-              )}
-              <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
-            </Button>
-          </DebugBadge>
+          {copyMode ? (
+            <div className="flex gap-2">
+              <DebugBadge id="OrderCreate:copyToReturnBtn" className="flex-1">
+                <Button
+                  className="w-full h-11 rounded-xl"
+                  onClick={copyToReturn}
+                  disabled={creatingReturn || selectedIdx.size === 0}
+                >
+                  {creatingReturn ? (
+                    <Icon name="Loader2" size={16} className="animate-spin" />
+                  ) : (
+                    <Icon name="Undo2" size={16} />
+                  )}
+                  <span className="ml-2">
+                    {creatingReturn
+                      ? "Создание..."
+                      : `Копировать в возврат${selectedIdx.size > 0 ? ` (${selectedIdx.size})` : ""}`}
+                  </span>
+                </Button>
+              </DebugBadge>
+              <Button
+                variant="outline"
+                className="h-11 rounded-xl border-white/[0.08]"
+                onClick={exitCopyMode}
+                disabled={creatingReturn}
+              >
+                <Icon name="X" size={16} />
+                <span className="ml-2">Отмена</span>
+              </Button>
+            </div>
+          ) : (
+            <DebugBadge id="OrderCreate:saveBtn">
+              <Button className="w-full h-11 rounded-xl" onClick={handleSave} disabled={saving}>
+                {saving ? (
+                  <Icon name="Loader2" size={16} className="animate-spin" />
+                ) : (
+                  <Icon name="Check" size={16} />
+                )}
+                <span className="ml-2">{saving ? "Сохранение..." : "Сохранить"}</span>
+              </Button>
+            </DebugBadge>
+          )}
         </div>
 
-        {editId && orderStatus !== "archived" && orderStatus !== "completed" && (
+        {editId && !copyMode && (
+          <div className="mt-4">
+            <DebugBadge id="OrderCreate:createReturnBtn">
+              <Button
+                variant="outline"
+                className="w-full h-11 rounded-xl border-white/[0.08]"
+                onClick={enterCopyMode}
+              >
+                <Icon name="Undo2" size={16} />
+                <span className="ml-2">Создать возврат</span>
+              </Button>
+            </DebugBadge>
+          </div>
+        )}
+
+        {editId && !copyMode && orderStatus !== "archived" && orderStatus !== "completed" && (
           <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               {NEXT_STATUS[orderStatus] && (
