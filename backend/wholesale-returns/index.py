@@ -185,15 +185,21 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'returns': returns})}
 
     if method == 'POST':
-        if is_owner:
-            cur.close()
-            conn.close()
-            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Владелец не может создавать возвраты'})}
-
-        if role_name not in CAN_CREATE_ROLES:
+        if not is_owner and role_name not in CAN_CREATE_ROLES:
             cur.close()
             conn.close()
             return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав на создание возвратов'})}
+
+        # Для владельца используем id любого менеджера (created_by NOT NULL),
+        # фактический автор-владелец будет отображаться корректно ниже.
+        if is_owner:
+            cur.execute("SELECT id FROM managers ORDER BY id LIMIT 1")
+            row = cur.fetchone()
+            if not row:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нет ни одного менеджера в системе'})}
+            manager_id = row[0]
 
         customer_name = body.get('customer_name', '').strip()
         comment = (body.get('comment') or '').strip() or None
