@@ -15,6 +15,8 @@ import WholesaleOrders from "./pages/WholesaleOrders";
 import OrderPayments from "./pages/OrderPayments";
 import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
 import OrderBulkPastePage from "./pages/wholesale-orders/OrderBulkPastePage";
+import WholesaleReturns from "./pages/WholesaleReturns";
+import ReturnCreatePage from "./pages/wholesale-returns/ReturnCreatePage";
 import ScanBarcode from "./pages/ScanBarcode";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
@@ -52,6 +54,9 @@ const App = () => (
           <Route path="/admin/orders/create/bulk-paste" element={<ProtectedRoute><OrderBulkPastePage /></ProtectedRoute>} />
           <Route path="/admin/orders/:id/edit" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
           <Route path="/admin/orders/:id/bulk-paste" element={<ProtectedRoute><OrderBulkPastePage /></ProtectedRoute>} />
+          <Route path="/admin/returns" element={<ProtectedRoute><WholesaleReturns /></ProtectedRoute>} />
+          <Route path="/admin/returns/create" element={<ProtectedRoute><ReturnCreatePage /></ProtectedRoute>} />
+          <Route path="/admin/returns/:id/edit" element={<ProtectedRoute><ReturnCreatePage /></ProtectedRoute>} />
           <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />

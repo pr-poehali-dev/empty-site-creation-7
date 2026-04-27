@@ -37,6 +37,7 @@ const METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
   card_transfer: "Перевод на карту",
   bank_account: "На р/с",
+  return_offset: "Зачёт возврата",
 };
 
 const PAYMENT_STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -79,6 +80,9 @@ const OrderPayments = () => {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [returnBalance, setReturnBalance] = useState(0);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
   const fetchPayments = useCallback(async () => {
     setLoading(true);
     try {
@@ -101,6 +105,37 @@ const OrderPayments = () => {
     fetchPayments();
   }, []);
 
+  const fetchReturnBalance = useCallback(async () => {
+    setBalanceLoading(true);
+    try {
+      const resp = await fetch(`${PAYMENTS_URL}?order_id=${orderId}&action=return_balance`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setReturnBalance(data.balance || 0);
+    } catch {
+      setReturnBalance(0);
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [orderId, token]);
+
+  const handleMethodChange = (newMethod: string) => {
+    setMethod(newMethod);
+    if (newMethod === "return_offset") {
+      fetchReturnBalance().then(() => {
+        // Автозаполнение: min(остаток к оплате заявки, доступный зачёт)
+        // используем актуальный balance после fetch — берём из state в следующем тике через useEffect ниже
+      });
+    }
+  };
+
+  // Автозаполнение суммы при изменении баланса/выборе метода return_offset
+  useEffect(() => {
+    if (method === "return_offset" && !balanceLoading) {
+      const auto = Math.min(returnBalance, remaining);
+      setAmount(auto > 0 ? String(auto) : "0");
+    }
+  }, [method, returnBalance, balanceLoading]);
+
   const handleAdd = async () => {
     const numAmount = parseFloat(amount);
     if (!numAmount || numAmount <= 0) {
@@ -110,6 +145,20 @@ const OrderPayments = () => {
     if (!method) {
       toast({ title: "Ошибка", description: "Выберите способ оплаты", variant: "destructive" });
       return;
+    }
+    if (method === "return_offset") {
+      if (returnBalance <= 0) {
+        toast({ title: "Ошибка", description: "Нет доступной суммы зачёта по этому оптовику", variant: "destructive" });
+        return;
+      }
+      if (numAmount > returnBalance + 0.001) {
+        toast({
+          title: "Ошибка",
+          description: `Сумма превышает доступный остаток зачёта (${returnBalance.toLocaleString()} Br)`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -125,6 +174,7 @@ const OrderPayments = () => {
         setMethod("");
         setAmount("");
         setComment("");
+        setReturnBalance(0);
         fetchPayments();
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
@@ -284,7 +334,7 @@ const OrderPayments = () => {
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Способ оплаты *</label>
               <DebugBadge id="Payments:method">
-                <Select value={method} onValueChange={setMethod}>
+                <Select value={method} onValueChange={handleMethodChange}>
                   <SelectTrigger className="h-10 rounded-xl bg-secondary border-white/[0.08]">
                     <SelectValue placeholder="Выберите способ" />
                   </SelectTrigger>
@@ -292,9 +342,19 @@ const OrderPayments = () => {
                     <SelectItem value="cash">Наличные</SelectItem>
                     <SelectItem value="card_transfer">Перевод на карту</SelectItem>
                     <SelectItem value="bank_account">На р/с</SelectItem>
+                    <SelectItem value="return_offset">Зачёт возврата</SelectItem>
                   </SelectContent>
                 </Select>
               </DebugBadge>
+              {method === "return_offset" && (
+                <p className="text-xs text-muted-foreground">
+                  {balanceLoading
+                    ? "Расчёт доступной суммы..."
+                    : returnBalance > 0
+                    ? `Доступно к зачёту: ${returnBalance.toLocaleString()} Br`
+                    : "По этому оптовику нет принятых возвратов с остатком"}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Сумма, Br *</label>

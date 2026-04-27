@@ -76,6 +76,18 @@ const ManagerDashboard = () => {
               </Button>
             </DebugBadge>
           )}
+          {canSeeOrders && (
+            <DebugBadge id="Manager:nav.returns" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+                onClick={() => navigate("/admin/returns")}
+              >
+                <Icon name="Undo2" size={20} />
+                <span className="font-medium">Возвраты</span>
+              </Button>
+            </DebugBadge>
+          )}
         </div>
       </main>
     </div>
