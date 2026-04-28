@@ -14,6 +14,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 
@@ -548,6 +549,37 @@ const OrderCreatePage = () => {
     }
   };
 
+  const handleHardwareScan = useCallback(async (code: string) => {
+    if (!code.trim()) return;
+    try {
+      const resp = await fetch(`${PRODUCTS_URL}?barcode=${encodeURIComponent(code)}`, {
+        headers: authHeaders,
+      });
+      const data = await resp.json();
+      const product: ProductSearchItem | null =
+        (resp.ok && Array.isArray(data.items) && data.items.length > 0)
+          ? data.items[0]
+          : (resp.ok && data.item) ? data.item : null;
+      if (product) {
+        addItem(product);
+        toast({ title: "Добавлено", description: product.name });
+      } else {
+        toast({
+          title: "Штрихкод не найден",
+          description: `${code} — добавь через камеру для привязки`,
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({ title: "Ошибка сканирования", variant: "destructive" });
+    }
+  }, [token]);
+
+  const { isActive: scannerActive } = useBarcodeScanner({
+    enabled: !loading,
+    onScan: handleHardwareScan,
+  });
+
   const searchBarcodePartial = useCallback(async (query: string) => {
     if (!query.trim() || query.trim().length < 2) {
       setBarcodeResults([]);
@@ -982,6 +1014,15 @@ const OrderCreatePage = () => {
               <Badge className={`${(statusLabels[orderStatus] || statusLabels.new).className} text-xs`}>
                 {(statusLabels[orderStatus] || statusLabels.new).label}
               </Badge>
+            )}
+            {scannerActive && (
+              <span
+                title="Сканер штрихкодов активен"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/30 text-[10px] font-medium"
+              >
+                <Icon name="ScanLine" size={12} />
+                Сканер
+              </span>
             )}
           </div>
         </div>
