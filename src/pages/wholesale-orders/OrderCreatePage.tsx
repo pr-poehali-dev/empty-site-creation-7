@@ -279,6 +279,76 @@ const OrderCreatePage = () => {
       } catch { /* ignore */ }
     }
 
+    const resolveRaw = sessionStorage.getItem("resolve_result");
+    if (resolveRaw) {
+      sessionStorage.removeItem("resolve_result");
+      try {
+        const parsed = JSON.parse(resolveRaw) as {
+          source: "scan" | "bulk";
+          items: Array<{
+            product_id: number | null;
+            temp_product_id?: number | null;
+            name: string;
+            article: string | null;
+            brand?: string | null;
+            base_price: number;
+            is_temp: boolean;
+            has_uuid?: boolean;
+            quantity: number;
+            from_bulk?: boolean;
+            product_group?: string | null;
+            price_base?: number | null;
+            price_retail?: number | null;
+            price_wholesale?: number | null;
+            price_purchase?: number | null;
+          }>;
+        };
+        if (parsed.items?.length) {
+          const applyResolve = async () => {
+            const rules = rulesPromise ? await rulesPromise : pricingRules;
+            const newLines: OrderLine[] = parsed.items.map((it) => {
+              let price = it.base_price;
+              if (parsed.source === "scan" && !it.is_temp && it.product_group !== undefined) {
+                const pseudoItem = {
+                  id: it.product_id || 0,
+                  name: it.name,
+                  article: it.article,
+                  brand: it.brand || null,
+                  supplier_code: null,
+                  price_base: it.price_base ?? null,
+                  price_retail: it.price_retail ?? null,
+                  price_wholesale: it.price_wholesale ?? null,
+                  price_purchase: it.price_purchase ?? null,
+                  product_group: it.product_group ?? null,
+                  external_id: it.has_uuid ? "x" : null,
+                } as ProductSearchItem;
+                const calc = calcPrice(pseudoItem, rules);
+                if (calc > 0) price = calc;
+              }
+              return {
+                product_id: it.product_id,
+                temp_product_id: it.temp_product_id ?? null,
+                name: it.name,
+                article: it.article,
+                brand: it.brand,
+                quantity: it.quantity,
+                price,
+                is_temp: it.is_temp,
+                has_uuid: it.has_uuid,
+                from_bulk: it.from_bulk,
+              };
+            });
+            const ordered = parsed.source === "bulk" ? [...newLines].reverse() : newLines;
+            setLines([...ordered, ...savedLines]);
+            toast({ title: `Добавлено: ${newLines.length}` });
+            if (!editId) canSaveDraftRef.current = true;
+          };
+          applyResolve();
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+
     if (!editId && savedLines.length > 0) setLines(savedLines);
     if (!editId) canSaveDraftRef.current = true;
   }, []);
@@ -291,71 +361,6 @@ const OrderCreatePage = () => {
     return () => clearTimeout(timer);
   }, [customerName, comment, lines, wholesalerId]);
 
-  useEffect(() => {
-    const raw = sessionStorage.getItem("resolve_result");
-    if (!raw) return;
-    sessionStorage.removeItem("resolve_result");
-    try {
-      const parsed = JSON.parse(raw) as {
-        source: "scan" | "bulk";
-        items: Array<{
-          product_id: number | null;
-          temp_product_id?: number | null;
-          name: string;
-          article: string | null;
-          brand?: string | null;
-          base_price: number;
-          is_temp: boolean;
-          has_uuid?: boolean;
-          quantity: number;
-          from_bulk?: boolean;
-          product_group?: string | null;
-          price_base?: number | null;
-          price_retail?: number | null;
-          price_wholesale?: number | null;
-          price_purchase?: number | null;
-        }>;
-      };
-      if (!parsed.items?.length) return;
-      const newLines: OrderLine[] = parsed.items.map((it) => {
-        let price = it.base_price;
-        if (parsed.source === "scan" && !it.is_temp && it.product_group !== undefined) {
-          const pseudoItem = {
-            id: it.product_id || 0,
-            name: it.name,
-            article: it.article,
-            brand: it.brand || null,
-            supplier_code: null,
-            price_base: it.price_base ?? null,
-            price_retail: it.price_retail ?? null,
-            price_wholesale: it.price_wholesale ?? null,
-            price_purchase: it.price_purchase ?? null,
-            product_group: it.product_group ?? null,
-            external_id: it.has_uuid ? "x" : null,
-          } as ProductSearchItem;
-          const calc = calcPrice(pseudoItem, pricingRules);
-          if (calc > 0) price = calc;
-        }
-        return {
-          product_id: it.product_id,
-          temp_product_id: it.temp_product_id ?? null,
-          name: it.name,
-          article: it.article,
-          brand: it.brand,
-          quantity: it.quantity,
-          price,
-          is_temp: it.is_temp,
-          has_uuid: it.has_uuid,
-          from_bulk: it.from_bulk,
-        };
-      });
-      const ordered = parsed.source === "bulk" ? [...newLines].reverse() : newLines;
-      setLines((prev) => [...ordered, ...prev]);
-      toast({ title: `Добавлено: ${newLines.length}` });
-    } catch {
-      /* ignore */
-    }
-  }, [pricingRules]);
 
   useEffect(() => {
     if (!editId) return;
