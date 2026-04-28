@@ -1025,6 +1025,22 @@ const OrderCreatePage = () => {
               </span>
             )}
           </div>
+          <Button
+            size="sm"
+            className="h-9 rounded-lg px-3 sm:px-4"
+            onClick={handleSave}
+            disabled={saving}
+            title="Сохранить заявку"
+          >
+            {saving ? (
+              <Icon name="Loader2" size={16} className="animate-spin" />
+            ) : (
+              <Icon name="Check" size={16} />
+            )}
+            <span className="ml-2 hidden sm:inline">
+              {saving ? "Сохранение..." : "Сохранить"}
+            </span>
+          </Button>
         </div>
       </header>
 
