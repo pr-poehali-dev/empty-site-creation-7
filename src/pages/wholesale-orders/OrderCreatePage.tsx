@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
+import UnknownBarcodeDialog from "@/components/wholesale/UnknownBarcodeDialog";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -128,6 +129,7 @@ const OrderCreatePage = () => {
   const [copyMode, setCopyMode] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<Set<number>>(new Set());
   const [creatingReturn, setCreatingReturn] = useState(false);
+  const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
 
   // Temp product form state
   const [showTempForm, setShowTempForm] = useState(false);
@@ -540,7 +542,8 @@ const OrderCreatePage = () => {
         addItem(data.item);
         setBarcodeValue("");
       } else {
-        toast({ title: "Не найдено", description: "Штрихкод не найден в каталоге", variant: "destructive" });
+        setUnknownBarcode(code);
+        setBarcodeValue("");
       }
     } catch {
       toast({ title: "Ошибка", variant: "destructive" });
@@ -564,11 +567,7 @@ const OrderCreatePage = () => {
         addItem(product);
         toast({ title: "Добавлено", description: product.name });
       } else {
-        toast({
-          title: "Штрихкод не найден",
-          description: `${code} — добавь через камеру для привязки`,
-          variant: "destructive",
-        });
+        setUnknownBarcode(code);
       }
     } catch {
       toast({ title: "Ошибка сканирования", variant: "destructive" });
@@ -1694,6 +1693,18 @@ const OrderCreatePage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <UnknownBarcodeDialog
+        barcode={unknownBarcode}
+        token={token}
+        onClose={() => setUnknownBarcode(null)}
+        onProductSelected={(product) => addItem(product)}
+        onCreateTemp={(code) => {
+          setShowBarcode(true);
+          setBarcodeValue(code);
+          setShowTempForm(true);
+        }}
+      />
     </div>
   );
 };
