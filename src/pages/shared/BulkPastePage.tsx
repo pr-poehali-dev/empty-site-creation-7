@@ -386,7 +386,33 @@ const BulkPastePage = () => {
       });
     });
 
-    sessionStorage.setItem("resolve_result", JSON.stringify({ source: "bulk", items }));
+    const returnTo = req.returnTo || "";
+    const isOrder = returnTo.includes("/admin/orders/");
+    if (isOrder) {
+      const editMatch = returnTo.match(/\/admin\/orders\/(\d+)/);
+      const draftKey = editMatch ? `order_draft_${editMatch[1]}` : "order_draft_new";
+      const draftRaw = localStorage.getItem(draftKey);
+      let parsed: Record<string, unknown> = {};
+      try { parsed = draftRaw ? JSON.parse(draftRaw) : {}; } catch { parsed = {}; }
+      const existingLines = Array.isArray(parsed.lines) ? (parsed.lines as Array<Record<string, unknown>>) : [];
+      const newLines = items.map((it) => ({
+        product_id: it.product_id,
+        temp_product_id: it.temp_product_id ?? null,
+        name: it.name,
+        article: it.article,
+        brand: it.brand ?? null,
+        quantity: it.quantity,
+        price: it.base_price,
+        is_temp: it.is_temp,
+        has_uuid: it.has_uuid,
+        from_bulk: true,
+      }));
+      const reversed = [...newLines].reverse();
+      parsed.lines = [...reversed, ...existingLines];
+      localStorage.setItem(draftKey, JSON.stringify(parsed));
+    } else {
+      sessionStorage.setItem("resolve_result", JSON.stringify({ source: "bulk", items }));
+    }
     sessionStorage.removeItem("resolve_request");
     toast({ title: `Перенесено: ${items.length}` });
     navigate(req.returnTo);
