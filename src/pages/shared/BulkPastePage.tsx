@@ -115,6 +115,23 @@ const BulkPastePage = () => {
   ).slice(0, 50);
 
   const setCell = (rowIdx: number, field: keyof RowInput, value: string) => {
+    if (value.includes("\n")) {
+      const cleaned = value.replace(/\n/g, "");
+      setRows((prev) => {
+        const next = [...prev];
+        while (next.length <= rowIdx) next.push({ ...EMPTY_ROW });
+        next[rowIdx] = { ...next[rowIdx], [field]: cleaned };
+        while (next.length < INITIAL_ROWS) next.push({ ...EMPTY_ROW });
+        const last = next[next.length - 1];
+        if (last.article || last.qty || last.price) {
+          next.push({ ...EMPTY_ROW });
+        }
+        return next;
+      });
+      const colIdx = field === "article" ? 0 : field === "qty" ? 1 : 2;
+      setTimeout(() => moveOnEnter(rowIdx, colIdx), 0);
+      return;
+    }
     setRows((prev) => {
       const next = [...prev];
       while (next.length <= rowIdx) next.push({ ...EMPTY_ROW });
@@ -193,14 +210,6 @@ const BulkPastePage = () => {
         ref.focus();
         ref.select();
       }, 0);
-    }
-  };
-
-  const handleBeforeInput = (rowIdx: number, colIdx: number, e: React.FormEvent<HTMLInputElement>) => {
-    const ne = e.nativeEvent as InputEvent;
-    if (ne.inputType === "insertLineBreak") {
-      e.preventDefault();
-      moveOnEnter(rowIdx, colIdx);
     }
   };
 
@@ -563,7 +572,6 @@ const BulkPastePage = () => {
                           onChange={(e) => setCell(rowIdx, field, e.target.value)}
                           onPaste={(e) => handlePaste(rowIdx, colIdx, e)}
                           onKeyDown={(e) => handleKeyDown(rowIdx, colIdx, e)}
-                          onBeforeInput={(e) => handleBeforeInput(rowIdx, colIdx, e)}
                           className="w-full bg-transparent border border-white/[0.06] rounded px-2 py-1 text-sm focus:outline-none focus:border-primary"
                         />
                       </td>
