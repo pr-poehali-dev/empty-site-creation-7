@@ -240,24 +240,29 @@ const OrderCreatePage = () => {
         if (entries.length > 0) {
           const loadScanned = async () => {
             const rules = rulesPromise ? await rulesPromise : pricingRules;
-            const newLines: OrderLine[] = [];
-            for (const entry of entries) {
-              if (entry.product_id) {
-                try {
+            const settled = await Promise.allSettled(
+              entries.map(async (entry) => {
+                if (entry.product_id) {
                   const resp = await fetch(`${PRODUCTS_URL}?id=${entry.product_id}`, { headers: authHeaders });
                   const data = await resp.json();
-                  const product = data.item;
-                  if (product) {
-                    newLines.push({
-                      product_id: product.id,
-                      name: product.name,
-                      article: product.article,
-                      quantity: 1,
-                      price: (entry.price && entry.price > 0) ? entry.price : calcPrice(product, rules),
-                      has_uuid: !!product.external_id,
-                    });
-                  }
-                } catch { /* ignore */ }
+                  return { entry, product: data?.item || null };
+                }
+                return { entry, product: null };
+              })
+            );
+            const newLines: OrderLine[] = [];
+            settled.forEach((res, i) => {
+              const entry = entries[i];
+              if (res.status === "fulfilled" && res.value.product) {
+                const product = res.value.product;
+                newLines.push({
+                  product_id: product.id,
+                  name: product.name,
+                  article: product.article,
+                  quantity: 1,
+                  price: (entry.price && entry.price > 0) ? entry.price : calcPrice(product, rules),
+                  has_uuid: !!product.external_id,
+                });
               } else if (entry.name) {
                 newLines.push({
                   product_id: null,
@@ -268,9 +273,22 @@ const OrderCreatePage = () => {
                   is_temp: true,
                   has_uuid: false,
                 });
+              } else {
+                newLines.push({
+                  product_id: null,
+                  name: `Штрихкод ${entry.barcode}`,
+                  article: entry.barcode,
+                  quantity: 1,
+                  price: entry.price || 0,
+                  is_temp: true,
+                  has_uuid: false,
+                });
               }
-            }
+            });
             setLines([...newLines, ...savedLines]);
+            if (newLines.length < entries.length) {
+              toast({ title: `Добавлено ${newLines.length} из ${entries.length}`, variant: "destructive" });
+            }
             if (!editId) canSaveDraftRef.current = true;
           };
           loadScanned();
@@ -1243,7 +1261,7 @@ const OrderCreatePage = () => {
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
                 onClick={() => {
-                  sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
+                  localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                   const returnTo = editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create";
                   const wParam = wholesalerId ? `&wholesalerId=${wholesalerId}` : "";
                   navigate(`/admin/scan?returnTo=${returnTo}&key=scanned_order_barcodes${wParam}`);
