@@ -349,7 +349,8 @@ const OrderCreatePage = () => {
           from_bulk: it.from_bulk,
         };
       });
-      setLines((prev) => [...newLines, ...prev]);
+      const ordered = parsed.source === "bulk" ? [...newLines].reverse() : newLines;
+      setLines((prev) => [...ordered, ...prev]);
       toast({ title: `Добавлено: ${newLines.length}` });
     } catch {
       /* ignore */
