@@ -31,6 +31,7 @@ import Brands from "./pages/Brands";
 import ProductGroups from "./pages/ProductGroups";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DebugProvider from "./contexts/DebugContext";
+import KeyboardFab from "./components/KeyboardFab";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,6 +42,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <KeyboardFab />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
