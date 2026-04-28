@@ -176,7 +176,20 @@ const BulkPastePage = () => {
     const key = e.key;
     let nextRow = rowIdx;
     let nextCol = colIdx;
-    if (key === "Enter" || key === "ArrowDown") {
+    if (key === "Enter") {
+      if (colIdx < 2) {
+        nextCol = colIdx + 1;
+        if (nextCol === 1) {
+          const currentQty = rows[rowIdx]?.qty ?? "";
+          if (currentQty.trim() === "") {
+            setCell(rowIdx, "qty", "1");
+          }
+        }
+      } else {
+        nextRow = rowIdx + 1;
+        nextCol = 0;
+      }
+    } else if (key === "ArrowDown") {
       nextRow = rowIdx + 1;
     } else if (key === "ArrowUp") {
       nextRow = Math.max(0, rowIdx - 1);
