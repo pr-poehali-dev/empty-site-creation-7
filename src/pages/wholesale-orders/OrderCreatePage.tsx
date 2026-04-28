@@ -573,7 +573,7 @@ const OrderCreatePage = () => {
     } catch {
       toast({ title: "Ошибка сканирования", variant: "destructive" });
     }
-  }, [token]);
+  }, [token, pricingRules]);
 
   const { isActive: scannerActive } = useBarcodeScanner({
     enabled: !loading,
