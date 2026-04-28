@@ -1699,11 +1699,6 @@ const OrderCreatePage = () => {
         token={token}
         onClose={() => setUnknownBarcode(null)}
         onProductSelected={(product) => addItem(product)}
-        onCreateTemp={(code) => {
-          setShowBarcode(true);
-          setBarcodeValue(code);
-          setShowTempForm(true);
-        }}
       />
     </div>
   );
