@@ -83,6 +83,7 @@ def handler(event: dict, context) -> dict:
     body = json.loads(event.get('body') or '{}')
     articles_raw = body.get('articles') or []
     customer_name = body.get('customer_name') or ''
+    search_in_names = bool(body.get('search_in_names'))
 
     if not isinstance(articles_raw, list):
         return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'articles должен быть массивом'})}
@@ -118,24 +119,39 @@ def handler(event: dict, context) -> dict:
         s = str(a).strip()
         articles_clean.append(s)
 
-    unique_lower = list({a.lower() for a in articles_clean if a})
+    unique_queries = list({a.lower() for a in articles_clean if a})
 
-    products_by_article = {}
-    if unique_lower:
-        cur.execute(
-            """SELECT id, name, article, price_base, price_retail, price_wholesale, price_purchase, product_group
-               FROM products
-               WHERE lower(article) = ANY(%s) AND COALESCE(is_archived, false) = false""",
-            (unique_lower,)
-        )
-        for row in cur.fetchall():
-            key = (row[2] or '').lower()
-            products_by_article.setdefault(key, []).append({
-                'id': row[0], 'name': row[1], 'article': row[2],
-                'price_base': row[3], 'price_retail': row[4],
-                'price_wholesale': row[5], 'price_purchase': row[6],
-                'product_group': row[7]
-            })
+    # Подстрочный поиск: для каждого запроса находим все товары, у которых
+    # артикул содержит эту строку (или имя — если включён режим search_in_names).
+    products_by_query = {q: [] for q in unique_queries}
+    if unique_queries:
+        for q in unique_queries:
+            like_pattern = f"%{q}%"
+            if search_in_names:
+                cur.execute(
+                    """SELECT id, name, article, price_base, price_retail, price_wholesale, price_purchase, product_group
+                       FROM products
+                       WHERE (lower(article) LIKE %s OR lower(name) LIKE %s)
+                         AND COALESCE(is_archived, false) = false
+                       LIMIT 50""",
+                    (like_pattern, like_pattern)
+                )
+            else:
+                cur.execute(
+                    """SELECT id, name, article, price_base, price_retail, price_wholesale, price_purchase, product_group
+                       FROM products
+                       WHERE lower(article) LIKE %s
+                         AND COALESCE(is_archived, false) = false
+                       LIMIT 50""",
+                    (like_pattern,)
+                )
+            for row in cur.fetchall():
+                products_by_query[q].append({
+                    'id': row[0], 'name': row[1], 'article': row[2],
+                    'price_base': row[3], 'price_retail': row[4],
+                    'price_wholesale': row[5], 'price_purchase': row[6],
+                    'product_group': row[7]
+                })
 
     rules = []
     if customer_name:
@@ -157,31 +173,33 @@ def handler(event: dict, context) -> dict:
         }
         return calc_price(rules, pm, p['product_group'])
 
-    # Поиск среди временных товаров для артикулов, не найденных в products
-    not_found_lower = [a.lower() for a in articles_clean if a and a.lower() not in products_by_article]
-    temps_by_article = {}
-    if not_found_lower:
-        cur.execute(
-            """SELECT id, brand, article, price
-               FROM temp_products
-               WHERE lower(article) = ANY(%s)""",
-            (list(set(not_found_lower)),)
-        )
-        for row in cur.fetchall():
-            key = (row[2] or '').lower()
-            temps_by_article.setdefault(key, []).append({
-                'id': row[0], 'brand': row[1], 'article': row[2],
-                'price': float(row[3] or 0)
-            })
+    # Поиск среди временных товаров для запросов, не нашедших ничего в products
+    not_found_queries = [q for q in unique_queries if not products_by_query.get(q)]
+    temps_by_query = {q: [] for q in not_found_queries}
+    if not_found_queries:
+        for q in not_found_queries:
+            like_pattern = f"%{q}%"
+            cur.execute(
+                """SELECT id, brand, article, price
+                   FROM temp_products
+                   WHERE lower(article) LIKE %s
+                   LIMIT 50""",
+                (like_pattern,)
+            )
+            for row in cur.fetchall():
+                temps_by_query[q].append({
+                    'id': row[0], 'brand': row[1], 'article': row[2],
+                    'price': float(row[3] or 0)
+                })
 
     results = []
     for art in articles_clean:
         if not art:
             results.append({'article': art, 'status': 'empty'})
             continue
-        matches = products_by_article.get(art.lower(), [])
+        matches = products_by_query.get(art.lower(), [])
         if len(matches) == 0:
-            temp_matches = temps_by_article.get(art.lower(), [])
+            temp_matches = temps_by_query.get(art.lower(), [])
             if len(temp_matches) == 0:
                 results.append({'article': art, 'status': 'not_found'})
             elif len(temp_matches) == 1:

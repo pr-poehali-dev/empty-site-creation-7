@@ -76,6 +76,7 @@ const BulkPastePage = () => {
   );
   const [results, setResults] = useState<Record<number, RowResult>>({});
   const [resolving, setResolving] = useState(false);
+  const [searchInNames, setSearchInNames] = useState(false);
 
   const [newProductForRow, setNewProductForRow] = useState<number | null>(null);
   const [npBrand, setNpBrand] = useState("");
@@ -211,7 +212,7 @@ const BulkPastePage = () => {
       const resp = await fetch(BULK_RESOLVE_URL, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ articles, customer_name: customerName }),
+        body: JSON.stringify({ articles, customer_name: customerName, search_in_names: searchInNames }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -483,6 +484,16 @@ const BulkPastePage = () => {
           Вставьте данные из Excel/Google Sheets. Колонки: <b>Артикул</b>, <b>Кол-во</b>, <b>Цена</b> (опционально).
           {customerName && <> Поиск с учётом покупателя «{customerName}».</>}
         </div>
+
+        <label className="flex items-center gap-2 mb-3 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={searchInNames}
+            onChange={(e) => setSearchInNames(e.target.checked)}
+            className="accent-primary"
+          />
+          Искать в том числе и в наименованиях
+        </label>
 
         <div className="overflow-x-auto border border-white/[0.08] rounded-lg">
           <table className="w-full text-sm">
