@@ -120,7 +120,11 @@ const BulkPastePage = () => {
       setRows((prev) => {
         const next = [...prev];
         while (next.length <= rowIdx) next.push({ ...EMPTY_ROW });
-        next[rowIdx] = { ...next[rowIdx], [field]: cleaned };
+        const updated = { ...next[rowIdx], [field]: cleaned };
+        if (field === "article" && (!updated.qty || updated.qty.trim() === "")) {
+          updated.qty = "1";
+        }
+        next[rowIdx] = updated;
         while (next.length < INITIAL_ROWS) next.push({ ...EMPTY_ROW });
         const last = next[next.length - 1];
         if (last.article || last.qty || last.price) {
@@ -129,7 +133,7 @@ const BulkPastePage = () => {
         return next;
       });
       const colIdx = field === "article" ? 0 : field === "qty" ? 1 : 2;
-      setTimeout(() => moveOnEnter(rowIdx, colIdx), 0);
+      setTimeout(() => moveFocus(rowIdx, colIdx), 0);
       return;
     }
     setRows((prev) => {
@@ -189,17 +193,11 @@ const BulkPastePage = () => {
     setResults({});
   };
 
-  const moveOnEnter = (rowIdx: number, colIdx: number) => {
+  const moveFocus = (rowIdx: number, colIdx: number) => {
     let nextRow = rowIdx;
     let nextCol = colIdx;
     if (colIdx < 2) {
       nextCol = colIdx + 1;
-      if (nextCol === 1) {
-        const currentQty = rows[rowIdx]?.qty ?? "";
-        if (currentQty.trim() === "") {
-          setCell(rowIdx, "qty", "1");
-        }
-      }
     } else {
       nextRow = rowIdx + 1;
       nextCol = 0;
@@ -211,6 +209,21 @@ const BulkPastePage = () => {
         ref.select();
       }, 0);
     }
+  };
+
+  const moveOnEnter = (rowIdx: number, colIdx: number) => {
+    if (colIdx === 0) {
+      setRows((prev) => {
+        const next = [...prev];
+        while (next.length <= rowIdx) next.push({ ...EMPTY_ROW });
+        const cur = next[rowIdx];
+        if (!cur.qty || cur.qty.trim() === "") {
+          next[rowIdx] = { ...cur, qty: "1" };
+        }
+        return next;
+      });
+    }
+    moveFocus(rowIdx, colIdx);
   };
 
   const handleKeyDown = (rowIdx: number, colIdx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
