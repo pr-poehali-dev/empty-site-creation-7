@@ -111,23 +111,6 @@ const OrderBulkPastePage = () => {
   ).slice(0, 50);
 
   const setCell = (rowIdx: number, field: keyof RowInput, value: string) => {
-    if (value.includes("\n")) {
-      const cleaned = value.replace(/\n/g, "");
-      setRows((prev) => {
-        const next = [...prev];
-        while (next.length <= rowIdx) next.push({ ...EMPTY_ROW });
-        next[rowIdx] = { ...next[rowIdx], [field]: cleaned };
-        while (next.length < INITIAL_ROWS) next.push({ ...EMPTY_ROW });
-        const last = next[next.length - 1];
-        if (last.article || last.qty || last.price) {
-          next.push({ ...EMPTY_ROW });
-        }
-        return next;
-      });
-      const colIdx = field === "article" ? 0 : field === "qty" ? 1 : 2;
-      setTimeout(() => moveOnEnter(rowIdx, colIdx), 0);
-      return;
-    }
     setRows((prev) => {
       const next = [...prev];
       while (next.length <= rowIdx) next.push({ ...EMPTY_ROW });
@@ -145,30 +128,6 @@ const OrderBulkPastePage = () => {
       delete next[rowIdx];
       return next;
     });
-  };
-
-  const moveOnEnter = (rowIdx: number, colIdx: number) => {
-    let nextRow = rowIdx;
-    let nextCol = colIdx;
-    if (colIdx < 2) {
-      nextCol = colIdx + 1;
-      if (nextCol === 1) {
-        const currentQty = rows[rowIdx]?.qty ?? "";
-        if (currentQty.trim() === "") {
-          setCell(rowIdx, "qty", "1");
-        }
-      }
-    } else {
-      nextRow = rowIdx + 1;
-      nextCol = 0;
-    }
-    const ref = cellRefs.current[`${nextRow}-${nextCol}`];
-    if (ref) {
-      setTimeout(() => {
-        ref.focus();
-        ref.select();
-      }, 0);
-    }
   };
 
   const handlePaste = (rowIdx: number, colIdx: number, e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -213,11 +172,7 @@ const OrderBulkPastePage = () => {
     const key = e.key;
     let nextRow = rowIdx;
     let nextCol = colIdx;
-    if (key === "Enter") {
-      e.preventDefault();
-      moveOnEnter(rowIdx, colIdx);
-      return;
-    } else if (key === "ArrowDown") {
+    if (key === "Enter" || (key === "ArrowDown")) {
       nextRow = rowIdx + 1;
     } else if (key === "ArrowUp") {
       nextRow = Math.max(0, rowIdx - 1);
