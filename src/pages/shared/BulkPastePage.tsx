@@ -89,6 +89,10 @@ const BulkPastePage = () => {
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     fetch(`${BRANDS_URL}?names_only=1`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.items)) setAllBrands(d.items); })
