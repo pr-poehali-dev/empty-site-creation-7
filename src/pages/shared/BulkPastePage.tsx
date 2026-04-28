@@ -386,7 +386,7 @@ const BulkPastePage = () => {
       });
     });
 
-    sessionStorage.setItem("resolve_result", JSON.stringify({ source: "bulk", items: [...items].reverse() }));
+    sessionStorage.setItem("resolve_result", JSON.stringify({ source: "bulk", items }));
     sessionStorage.removeItem("resolve_request");
     toast({ title: `Перенесено: ${items.length}` });
     navigate(req.returnTo);
