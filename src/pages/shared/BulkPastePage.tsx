@@ -255,11 +255,30 @@ const BulkPastePage = () => {
     }
   };
 
+  const ensureQtyOne = (rowIdx: number) => {
+    setRows((prev) => {
+      if (rowIdx >= prev.length) return prev;
+      const cur = prev[rowIdx];
+      if (!cur.article || cur.article.trim() === "") return prev;
+      if (cur.qty && cur.qty.trim() !== "") return prev;
+      const next = [...prev];
+      next[rowIdx] = { ...cur, qty: "1" };
+      return next;
+    });
+  };
+
   const filledRows = rows
     .map((r, idx) => ({ ...r, idx }))
     .filter((r) => r.article.trim() !== "");
 
   const resolveAll = async () => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.article.trim() !== "" && (!r.qty || r.qty.trim() === "")
+          ? { ...r, qty: "1" }
+          : r
+      )
+    );
     if (filledRows.length === 0) {
       toast({ title: "Нет данных", description: "Заполните хотя бы один артикул", variant: "destructive" });
       return;
@@ -581,10 +600,22 @@ const BulkPastePage = () => {
                         <input
                           ref={(el) => { cellRefs.current[`${rowIdx}-${colIdx}`] = el; }}
                           type="text"
+                          enterKeyHint={colIdx === 2 ? "done" : "next"}
                           value={row[field]}
                           onChange={(e) => setCell(rowIdx, field, e.target.value)}
                           onPaste={(e) => handlePaste(rowIdx, colIdx, e)}
                           onKeyDown={(e) => handleKeyDown(rowIdx, colIdx, e)}
+                          onBeforeInput={(e) => {
+                            const ne = e.nativeEvent as InputEvent;
+                            if (ne.inputType === "insertLineBreak") {
+                              e.preventDefault();
+                              if (field === "article") ensureQtyOne(rowIdx);
+                              moveOnEnter(rowIdx, colIdx);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (field === "article") ensureQtyOne(rowIdx);
+                          }}
                           className="w-full bg-transparent border border-white/[0.06] rounded px-2 py-1 text-sm focus:outline-none focus:border-primary"
                         />
                       </td>
