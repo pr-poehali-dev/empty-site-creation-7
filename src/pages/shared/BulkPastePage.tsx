@@ -172,23 +172,46 @@ const BulkPastePage = () => {
     setResults({});
   };
 
+  const moveOnEnter = (rowIdx: number, colIdx: number) => {
+    let nextRow = rowIdx;
+    let nextCol = colIdx;
+    if (colIdx < 2) {
+      nextCol = colIdx + 1;
+      if (nextCol === 1) {
+        const currentQty = rows[rowIdx]?.qty ?? "";
+        if (currentQty.trim() === "") {
+          setCell(rowIdx, "qty", "1");
+        }
+      }
+    } else {
+      nextRow = rowIdx + 1;
+      nextCol = 0;
+    }
+    const ref = cellRefs.current[`${nextRow}-${nextCol}`];
+    if (ref) {
+      setTimeout(() => {
+        ref.focus();
+        ref.select();
+      }, 0);
+    }
+  };
+
+  const handleBeforeInput = (rowIdx: number, colIdx: number, e: React.FormEvent<HTMLInputElement>) => {
+    const ne = e.nativeEvent as InputEvent;
+    if (ne.inputType === "insertLineBreak") {
+      e.preventDefault();
+      moveOnEnter(rowIdx, colIdx);
+    }
+  };
+
   const handleKeyDown = (rowIdx: number, colIdx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     const key = e.key;
     let nextRow = rowIdx;
     let nextCol = colIdx;
     if (key === "Enter") {
-      if (colIdx < 2) {
-        nextCol = colIdx + 1;
-        if (nextCol === 1) {
-          const currentQty = rows[rowIdx]?.qty ?? "";
-          if (currentQty.trim() === "") {
-            setCell(rowIdx, "qty", "1");
-          }
-        }
-      } else {
-        nextRow = rowIdx + 1;
-        nextCol = 0;
-      }
+      e.preventDefault();
+      moveOnEnter(rowIdx, colIdx);
+      return;
     } else if (key === "ArrowDown") {
       nextRow = rowIdx + 1;
     } else if (key === "ArrowUp") {
@@ -540,6 +563,7 @@ const BulkPastePage = () => {
                           onChange={(e) => setCell(rowIdx, field, e.target.value)}
                           onPaste={(e) => handlePaste(rowIdx, colIdx, e)}
                           onKeyDown={(e) => handleKeyDown(rowIdx, colIdx, e)}
+                          onBeforeInput={(e) => handleBeforeInput(rowIdx, colIdx, e)}
                           className="w-full bg-transparent border border-white/[0.06] rounded px-2 py-1 text-sm focus:outline-none focus:border-primary"
                         />
                       </td>
