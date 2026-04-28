@@ -179,13 +179,22 @@ def handler(event: dict, context) -> dict:
     if not_found_queries:
         for q in not_found_queries:
             like_pattern = f"%{q}%"
-            cur.execute(
-                """SELECT id, brand, article, price
-                   FROM temp_products
-                   WHERE lower(article) LIKE %s
-                   LIMIT 50""",
-                (like_pattern,)
-            )
+            if search_in_names:
+                cur.execute(
+                    """SELECT id, brand, article, price
+                       FROM temp_products
+                       WHERE lower(article) LIKE %s OR lower(brand) LIKE %s
+                       LIMIT 50""",
+                    (like_pattern, like_pattern)
+                )
+            else:
+                cur.execute(
+                    """SELECT id, brand, article, price
+                       FROM temp_products
+                       WHERE lower(article) LIKE %s
+                       LIMIT 50""",
+                    (like_pattern,)
+                )
             for row in cur.fetchall():
                 temps_by_query[q].append({
                     'id': row[0], 'brand': row[1], 'article': row[2],
