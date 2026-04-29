@@ -965,21 +965,45 @@ const OrderCreatePage = () => {
   const canApplyPricing = isOwner || user.role_name === "Управляющий";
 
   const applyPricing = async () => {
-    if (!editId) return;
+    if (pricingRules.length === 0) {
+      toast({ title: "Нет правил ценообразования", description: "Выберите оптовика с настроенными правилами", variant: "destructive" });
+      return;
+    }
     setApplyingPricing(true);
     try {
-      const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
-        method: "PUT",
-        headers: authHeaders,
-        body: JSON.stringify({ action: "apply_pricing" }),
-      });
-      const data = await resp.json();
-      if (resp.ok) {
-        toast({ title: "Цены пересчитаны" });
-        window.location.reload();
-      } else {
-        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      const ids = Array.from(
+        new Set(
+          lines
+            .filter((l) => !l.is_temp && l.product_id)
+            .map((l) => l.product_id as number)
+        )
+      );
+      const productMap = new Map<number, ProductSearchItem>();
+      if (ids.length > 0) {
+        const settled = await Promise.allSettled(
+          ids.map(async (pid) => {
+            const r = await fetch(`${PRODUCTS_URL}?id=${pid}`, { headers: authHeaders });
+            const d = await r.json();
+            return { pid, product: r.ok ? (d?.item || null) : null };
+          })
+        );
+        settled.forEach((res) => {
+          if (res.status === "fulfilled" && res.value.product) {
+            productMap.set(res.value.pid, res.value.product);
+          }
+        });
       }
+      let updated = 0;
+      const newLines = lines.map((l) => {
+        if (l.is_temp || !l.product_id) return l;
+        const product = productMap.get(l.product_id);
+        if (!product) return l;
+        const newPrice = calcPrice(product, pricingRules);
+        if (newPrice !== l.price) updated += 1;
+        return { ...l, price: newPrice };
+      });
+      setLines(newLines);
+      toast({ title: "Цены пересчитаны", description: `Обновлено позиций: ${updated}` });
     } catch {
       toast({ title: "Ошибка", description: "Не удалось пересчитать цены", variant: "destructive" });
     } finally {
