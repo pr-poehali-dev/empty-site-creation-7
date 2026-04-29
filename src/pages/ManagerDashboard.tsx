@@ -53,7 +53,7 @@ const ManagerDashboard = () => {
           )}
         </div>
 
-        <div className="flex gap-2 mb-5">
+        <div className="flex gap-2 mb-5 flex-wrap">
           <DebugBadge id="Manager:nav.catalog" className="flex-1">
             <Button
               variant="outline"
