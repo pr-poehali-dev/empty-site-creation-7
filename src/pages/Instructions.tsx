@@ -5,6 +5,11 @@ import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
 import DebugBadge from "@/components/DebugBadge";
 import MODULE_CODE from "@/data/module-form-code";
+import scannerJournal from "@/data/journal/scanner.md?raw";
+
+const JOURNAL_TABS = [
+  { key: "scanner", label: "Сканер штрихкодов", content: scannerJournal },
+];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
 
@@ -353,8 +358,9 @@ const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal">("menu");
   const [activeTab, setActiveTab] = useState("creation");
+  const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
 
   if (user.role !== "owner") {
     navigate("/admin");
@@ -373,7 +379,14 @@ const Instructions = () => {
     });
   };
 
-  const sectionTitle = section === "1c" ? "Обмен с 1С" : section === "hosting" ? "Перенос сайта" : "Инструкции от Юры";
+  const sectionTitle =
+    section === "1c"
+      ? "Обмен с 1С"
+      : section === "hosting"
+      ? "Перенос сайта"
+      : section === "journal"
+      ? "Журнал проекта"
+      : "Инструкции от Юры";
 
   return (
     <div className="min-h-screen">
@@ -420,6 +433,18 @@ const Instructions = () => {
               </div>
               <p className="text-sm text-muted-foreground">Как перенести проект на свой хостинг: фронт, бэк, БД, S3</p>
             </button>
+            <button
+              onClick={() => setSection("journal")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors sm:col-span-2"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  <Icon name="BookOpen" size={20} className="text-emerald-400" />
+                </div>
+                <span className="text-lg font-semibold">Журнал проекта</span>
+              </div>
+              <p className="text-sm text-muted-foreground">История работы с Юрой по блокам сайта — что обсуждали, что сделали, что осталось</p>
+            </button>
           </div>
         )}
 
@@ -465,6 +490,39 @@ const Instructions = () => {
           <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
             {renderMarkdown(TAB_HOSTING)}
           </div>
+        )}
+
+        {section === "journal" && (
+          <>
+            {JOURNAL_TABS.length === 0 ? (
+              <div className="rounded-xl border border-white/[0.08] bg-card p-6 text-sm text-muted-foreground">
+                Пока пусто. Журнал заполняется по ходу работы над блоками сайта.
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2 mb-4 overflow-x-auto">
+                  {JOURNAL_TABS.map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setJournalTab(tab.key)}
+                      className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                        journalTab === tab.key
+                          ? "bg-emerald-500/20 text-emerald-300 font-medium"
+                          : "text-muted-foreground hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+                  {renderMarkdown(
+                    JOURNAL_TABS.find((t) => t.key === journalTab)?.content || "",
+                  )}
+                </div>
+              </>
+            )}
+          </>
         )}
       </main>
     </div>
