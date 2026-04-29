@@ -79,10 +79,23 @@ const Labels = () => {
     Authorization: `Bearer ${token}`,
   };
 
+  const LINES_DRAFT_KEY = "labels_lines_draft";
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LabelProduct[]>([]);
   const [searching, setSearching] = useState(false);
-  const [lines, setLines] = useState<LabelLine[]>([]);
+  const [lines, setLines] = useState<LabelLine[]>(() => {
+    try {
+      const raw = localStorage.getItem(LINES_DRAFT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
 
   const [width, setWidth] = useState(58);
   const [height, setHeight] = useState(40);
@@ -155,6 +168,19 @@ const Labels = () => {
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates]);
+
+  // Сохранение списка этикеток (для возврата с UnknownBarcodePage)
+  useEffect(() => {
+    try {
+      if (lines.length > 0) {
+        localStorage.setItem(LINES_DRAFT_KEY, JSON.stringify(lines));
+      } else {
+        localStorage.removeItem(LINES_DRAFT_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }, [lines]);
 
   // Загрузка брендов для автоподстановки
   useEffect(() => {
@@ -280,19 +306,22 @@ const Labels = () => {
   // Сканер
   const handleScan = useCallback(
     async (code: string) => {
+      if (!code.trim()) return;
       try {
-        const params = new URLSearchParams({
-          search: code,
-          search_type: "all",
-          per_page: "1",
-        });
-        const resp = await fetch(`${PRODUCTS_URL}?${params}`, {
-          headers: authHeaders,
-        });
+        const resp = await fetch(
+          `${PRODUCTS_URL}?barcode=${encodeURIComponent(code)}`,
+          { headers: authHeaders },
+        );
         const data = await resp.json();
-        if (resp.ok && data.items && data.items.length > 0) {
-          addProduct(data.items[0]);
-          toast({ title: "Товар добавлен", description: data.items[0].name });
+        const product: LabelProduct | null =
+          resp.ok && Array.isArray(data.items) && data.items.length > 0
+            ? data.items[0]
+            : resp.ok && data.item
+            ? data.item
+            : null;
+        if (product) {
+          addProduct(product);
+          toast({ title: "Товар добавлен", description: product.name });
         } else {
           navigate(`/admin/orders/unknown-barcode/${encodeURIComponent(code)}`);
         }
