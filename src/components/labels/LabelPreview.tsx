@@ -25,7 +25,7 @@ export const renderTokens = (template: string, p: LabelProduct): string => {
     .replace(/\{бренд\}/g, p.brand || "")
     .replace(/\{розничная_цена\}/g, formatPrice(p.price_retail))
     .replace(/\{оптовая_цена\}/g, formatPrice(p.price_wholesale))
-    .replace(/\{штрихкод\}/g, p.external_id || "");
+    .replace(/\{штрихкод\}/g, (p.barcodes && p.barcodes[0]) || "");
 };
 
 const Barcode = ({ value, height }: { value: string; height: number }) => {

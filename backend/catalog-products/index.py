@@ -190,7 +190,7 @@ def handler(event: dict, context) -> dict:
                             'is_temp': True, 'temp_product_id': tp[0],
                             'category_id': None, 'supplier_code': None, 'price_base': None,
                             'price_retail': None, 'price_purchase': None, 'product_group': None,
-                            'external_id': None, 'category_name': None, 'images': [], 'barcodes': []
+                            'external_id': None, 'category_name': None, 'images': [], 'barcodes': [barcode]
                         }], 'total': 1, 'page': 1, 'per_page': 50})}
                 cur.close()
                 conn.close()
@@ -207,6 +207,15 @@ def handler(event: dict, context) -> dict:
                 tuple(product_ids)
             )
             rows = cur.fetchall()
+            bc_map = {}
+            if product_ids:
+                bc_ph = ','.join(['%s'] * len(product_ids))
+                cur.execute(
+                    f"SELECT product_id, barcode FROM product_barcodes WHERE product_id IN ({bc_ph}) ORDER BY id",
+                    tuple(product_ids)
+                )
+                for bc in cur.fetchall():
+                    bc_map.setdefault(bc[0], []).append(bc[1])
             items = []
             for r in rows:
                 items.append({
@@ -220,7 +229,7 @@ def handler(event: dict, context) -> dict:
                     'category_name': r[11],
                     'product_group': r[12],
                     'external_id': r[13],
-                    'images': [], 'barcodes': []
+                    'images': [], 'barcodes': bc_map.get(r[0], [])
                 })
             cur.close()
             conn.close()

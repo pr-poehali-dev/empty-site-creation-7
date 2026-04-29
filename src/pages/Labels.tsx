@@ -38,6 +38,7 @@ export interface LabelProduct {
   price_wholesale?: number | null;
   price_purchase?: number | null;
   external_id?: string | null;
+  barcodes?: string[];
   is_temp?: boolean;
 }
 
