@@ -631,11 +631,28 @@ const Labels = () => {
           </div>
 
           <div className="rounded-lg border border-border">
-            <div className="px-3 py-2 text-sm font-medium border-b border-border flex items-center justify-between">
+            <div className="px-3 py-2 text-sm font-medium border-b border-border flex items-center justify-between gap-2">
               <span>Список товаров</span>
-              <span className="text-xs text-muted-foreground">
-                Всего этикеток: {totalLabels}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Всего этикеток: {totalLabels}
+                </span>
+                {lines.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      if (window.confirm("Очистить список товаров?")) {
+                        setLines([]);
+                      }
+                    }}
+                  >
+                    <Icon name="Trash2" size={14} />
+                    <span className="ml-1 text-xs hidden sm:inline">Очистить</span>
+                  </Button>
+                )}
+              </div>
             </div>
             {lines.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-foreground">
