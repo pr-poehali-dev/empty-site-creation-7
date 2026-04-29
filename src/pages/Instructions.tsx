@@ -354,11 +354,15 @@ Python-функции находятся в папке \`/backend/\`. Вариа
 ## Минимальный набор
 VPS за 500-1000Br/мес + PostgreSQL + Nginx + Python. Всё поместится на одном сервере.`;
 
+const TAB_PLANS = `# Планы
+
+- Создание Нового товара отдельная страница`;
+
 const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "plans">("menu");
   const [activeTab, setActiveTab] = useState("creation");
   const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
 
@@ -386,6 +390,8 @@ const Instructions = () => {
       ? "Перенос сайта"
       : section === "journal"
       ? "Журнал проекта"
+      : section === "plans"
+      ? "Планы"
       : "Инструкции от Юры";
 
   return (
@@ -435,7 +441,7 @@ const Instructions = () => {
             </button>
             <button
               onClick={() => setSection("journal")}
-              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors sm:col-span-2"
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
@@ -445,6 +451,24 @@ const Instructions = () => {
               </div>
               <p className="text-sm text-muted-foreground">История работы с Юрой по блокам сайта — что обсуждали, что сделали, что осталось</p>
             </button>
+            <button
+              onClick={() => setSection("plans")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <Icon name="ListTodo" size={20} className="text-amber-400" />
+                </div>
+                <span className="text-lg font-semibold">Планы</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Что ещё хочется сделать — список задач на будущее</p>
+            </button>
+          </div>
+        )}
+
+        {section === "plans" && (
+          <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+            {renderMarkdown(TAB_PLANS)}
           </div>
         )}
 
