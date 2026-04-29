@@ -30,6 +30,7 @@ import NewProducts from "./pages/NewProducts";
 import NewBarcodes from "./pages/NewBarcodes";
 import Brands from "./pages/Brands";
 import ProductGroups from "./pages/ProductGroups";
+import Labels from "./pages/Labels";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DebugProvider from "./contexts/DebugContext";
 import KeyboardFab from "./components/KeyboardFab";
@@ -75,6 +76,7 @@ const App = () => (
           <Route path="/admin/new-barcodes" element={<ProtectedRoute><NewBarcodes /></ProtectedRoute>} />
           <Route path="/admin/brands" element={<ProtectedRoute><Brands /></ProtectedRoute>} />
           <Route path="/admin/product-groups" element={<ProtectedRoute><ProductGroups /></ProtectedRoute>} />
+          <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -88,6 +88,16 @@ const ManagerDashboard = () => {
               </Button>
             </DebugBadge>
           )}
+          <DebugBadge id="Manager:nav.labels" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/labels")}
+            >
+              <Icon name="Tag" size={20} />
+              <span className="font-medium">Этикетки</span>
+            </Button>
+          </DebugBadge>
         </div>
       </main>
     </div>
