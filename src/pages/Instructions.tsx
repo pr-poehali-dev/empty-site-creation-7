@@ -7,10 +7,12 @@ import DebugBadge from "@/components/DebugBadge";
 import MODULE_CODE from "@/data/module-form-code";
 import scannerJournal from "@/data/journal/scanner.md?raw";
 import labelsJournal from "@/data/journal/labels.md?raw";
+import orderLockJournal from "@/data/journal/order-lock.md?raw";
 
 const JOURNAL_TABS = [
   { key: "scanner", label: "Сканер штрихкодов", content: scannerJournal },
   { key: "labels", label: "Печать этикеток", content: labelsJournal },
+  { key: "order-lock", label: "Блокировка не Новых заявок", content: orderLockJournal },
 ];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
