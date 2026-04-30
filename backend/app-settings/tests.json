@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET без токена — 401",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    },
+    {
+      "name": "PUT без токена — 401",
+      "method": "PUT",
+      "path": "/",
+      "body": {"key": "lock_non_new_orders", "value": "true"},
+      "expectedStatus": 401
+    }
+  ]
+}

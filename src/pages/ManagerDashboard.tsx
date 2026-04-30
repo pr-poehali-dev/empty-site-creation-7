@@ -98,6 +98,18 @@ const ManagerDashboard = () => {
               <span className="font-medium">Этикетки</span>
             </Button>
           </DebugBadge>
+          {user.role === "owner" && (
+            <DebugBadge id="Manager:nav.settings" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+                onClick={() => navigate("/admin/settings")}
+              >
+                <Icon name="Settings" size={20} />
+                <span className="font-medium">Настройки</span>
+              </Button>
+            </DebugBadge>
+          )}
         </div>
       </main>
     </div>

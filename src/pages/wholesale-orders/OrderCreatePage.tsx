@@ -146,6 +146,8 @@ const OrderCreatePage = () => {
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
+  const [lockSettingEnabled, setLockSettingEnabled] = useState(false);
+  const isLocked = !!editId && orderStatus !== "new" && lockSettingEnabled && !isOwner;
 
   const statusLabels: Record<string, { label: string; className: string }> = {
     new: { label: "Новая", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
@@ -380,6 +382,19 @@ const OrderCreatePage = () => {
     return () => clearTimeout(timer);
   }, [customerName, comment, lines, wholesalerId]);
 
+
+  useEffect(() => {
+    const loadAppSettings = async () => {
+      try {
+        const resp = await fetch("https://functions.poehali.dev/82a95791-7a9f-4f40-8167-eb96c3045d34", { headers: authHeaders });
+        if (resp.ok) {
+          const data = await resp.json();
+          setLockSettingEnabled(data.lock_non_new_orders === "true");
+        }
+      } catch { /* ignore */ }
+    };
+    loadAppSettings();
+  }, []);
 
   useEffect(() => {
     if (!editId) return;
@@ -618,7 +633,7 @@ const OrderCreatePage = () => {
   }, [token, pricingRules]);
 
   const { isActive: scannerActive } = useBarcodeScanner({
-    enabled: !loading,
+    enabled: !loading && !isLocked,
     onScan: handleHardwareScan,
   });
 
@@ -1111,12 +1126,21 @@ const OrderCreatePage = () => {
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
+        {isLocked && (
+          <div className="mb-3 p-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-start gap-2">
+            <Icon name="Lock" size={16} className="text-yellow-400 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-yellow-200">
+              Заявка в статусе «{(statusLabels[orderStatus] || statusLabels.new).label}». Редактирование товаров недоступно. Комментарий можно менять.
+            </p>
+          </div>
+        )}
         <div className="flex gap-1 mb-3 items-start">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1" style={{scrollbarWidth: 'none'}}>
             {SEARCH_MODES.map((mode) => (
               <button
                 key={mode.value}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                disabled={isLocked}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
                   searchMode === mode.value
                     ? "bg-primary/20 text-primary"
                     : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
@@ -1177,6 +1201,7 @@ const OrderCreatePage = () => {
                 }
                 value={searchQuery}
                 onChange={(e) => handleSearchInput(e.target.value)}
+                disabled={isLocked}
                 className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm pr-8"
               />
             </DebugBadge>
@@ -1245,7 +1270,8 @@ const OrderCreatePage = () => {
           </div>
 
           <button
-            className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 transition-colors ${
+            disabled={isLocked}
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
               showBarcode ? "border-primary bg-primary/20" : "border-white/[0.08] hover:bg-white/[0.06]"
             }`}
             onClick={() => {
@@ -1258,7 +1284,8 @@ const OrderCreatePage = () => {
           </button>
           {isOwner && (
             <button
-              className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors"
+              disabled={isLocked}
+              className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => {
                 localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                 navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste");
@@ -1404,6 +1431,7 @@ const OrderCreatePage = () => {
                 onChange={(e) => { setCustomerName(e.target.value); setShowWholesalerList(true); }}
                 onFocus={() => setShowWholesalerList(true)}
                 placeholder="Оптовик *"
+                disabled={isLocked}
                 className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
               />
             {showWholesalerList && (customerName === "" || filteredWholesalers.length > 0) && (
@@ -1500,17 +1528,20 @@ const OrderCreatePage = () => {
                       </div>
                       {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
                     </div>
-                    <button
-                      className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
-                      onClick={() => removeLine(i)}
-                    >
-                      <Icon name="X" size={14} className="text-destructive" />
-                    </button>
+                    {!isLocked && (
+                      <button
+                        className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
+                        onClick={() => removeLine(i)}
+                      >
+                        <Icon name="X" size={14} className="text-destructive" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
                     <div className="flex items-center gap-1">
                       <button
-                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08]"
+                        disabled={isLocked}
+                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => updateQty(i, line.quantity - 1)}
                       >
                         <Icon name="Minus" size={10} />
@@ -1520,10 +1551,12 @@ const OrderCreatePage = () => {
                         value={line.quantity}
                         onChange={(e) => updateQty(i, parseFloat(e.target.value) || 1)}
                         onFocus={(e) => e.currentTarget.select()}
+                        disabled={isLocked}
                         className="w-12 h-6 text-center text-xs p-0 bg-white/[0.04] border-white/[0.08] rounded"
                       />
                       <button
-                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08]"
+                        disabled={isLocked}
+                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => updateQty(i, line.quantity + 1)}
                       >
                         <Icon name="Plus" size={10} />
@@ -1536,6 +1569,7 @@ const OrderCreatePage = () => {
                         value={line.price}
                         onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
                         onFocus={(e) => e.currentTarget.select()}
+                        disabled={isLocked}
                         className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
                       />
                       <span className="text-xs text-muted-foreground">Br</span>
@@ -1651,7 +1685,7 @@ const OrderCreatePage = () => {
                 variant="outline"
                 className="rounded-xl border-white/[0.08] w-full"
                 onClick={applyPricing}
-                disabled={applyingPricing}
+                disabled={applyingPricing || isLocked}
               >
                 {applyingPricing ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
                 <span className="ml-2">Применить ценообразование</span>

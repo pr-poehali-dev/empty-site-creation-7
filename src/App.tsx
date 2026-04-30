@@ -31,6 +31,7 @@ import NewBarcodes from "./pages/NewBarcodes";
 import Brands from "./pages/Brands";
 import ProductGroups from "./pages/ProductGroups";
 import Labels from "./pages/Labels";
+import OwnerSettings from "./pages/OwnerSettings";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DebugProvider from "./contexts/DebugContext";
 import KeyboardFab from "./components/KeyboardFab";
@@ -77,6 +78,7 @@ const App = () => (
           <Route path="/admin/brands" element={<ProtectedRoute><Brands /></ProtectedRoute>} />
           <Route path="/admin/product-groups" element={<ProtectedRoute><ProductGroups /></ProtectedRoute>} />
           <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
+          <Route path="/admin/settings" element={<ProtectedRoute><OwnerSettings /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
