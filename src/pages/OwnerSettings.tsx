@@ -78,7 +78,7 @@ const OwnerSettings = () => {
               variant="ghost"
               size="sm"
               className="h-8"
-              onClick={() => navigate("/admin/manager")}
+              onClick={() => navigate("/admin/dashboard")}
             >
               <Icon name="ArrowLeft" size={16} />
             </Button>
