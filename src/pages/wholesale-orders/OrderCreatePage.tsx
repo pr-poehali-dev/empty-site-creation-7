@@ -1481,9 +1481,16 @@ const OrderCreatePage = () => {
               disabled={isLocked}
               className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => {
-                navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste");
+                sessionStorage.setItem("resolve_request", JSON.stringify({
+                  returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
+                  context: "order",
+                  wholesalerId,
+                  customerName,
+                  authHeaders,
+                }));
+                navigate("/admin/shared/bulk-paste");
               }}
-              title="Вставить списком (пакетный ввод)"
+              title="Вставить списком"
             >
               <Icon name="ClipboardPaste" size={18} />
             </button>
@@ -1926,22 +1933,6 @@ const OrderCreatePage = () => {
               >
                 <Icon name="ScanLine" size={16} />
                 <span className="ml-2">ТЕСТ: Сканер</span>
-              </Button>
-              <Button
-                className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
-                onClick={() => {
-                  sessionStorage.setItem("resolve_request", JSON.stringify({
-                    returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
-                    context: "order",
-                    wholesalerId,
-                    customerName,
-                    authHeaders,
-                  }));
-                  navigate("/admin/shared/bulk-paste");
-                }}
-              >
-                <Icon name="ClipboardPaste" size={16} />
-                <span className="ml-2">ТЕСТ: Список</span>
               </Button>
             </div>
           </div>
