@@ -97,8 +97,36 @@ def recalc_total(cur, order_id):
         (order_id,)
     )
     total = cur.fetchone()[0] or 0
-    cur.execute("UPDATE wholesale_orders SET total_amount = %s WHERE id = %s", (total, order_id))
-    return float(total)
+    cur.execute(
+        "UPDATE wholesale_orders SET total_amount = %s, updated_at = NOW() WHERE id = %s RETURNING updated_at",
+        (total, order_id)
+    )
+    new_updated_at = cur.fetchone()[0]
+    return float(total), str(new_updated_at)
+
+
+def touch_order(cur, order_id):
+    cur.execute(
+        "UPDATE wholesale_orders SET updated_at = NOW() WHERE id = %s RETURNING updated_at",
+        (order_id,)
+    )
+    row = cur.fetchone()
+    return str(row[0]) if row else None
+
+
+def get_order_version(cur, order_id):
+    cur.execute("SELECT updated_at FROM wholesale_orders WHERE id = %s", (order_id,))
+    row = cur.fetchone()
+    return str(row[0]) if row else None
+
+
+def check_version(cur, order_id, expected_version):
+    if not expected_version:
+        return True, None
+    current = get_order_version(cur, order_id)
+    if current is None:
+        return False, current
+    return str(current) == str(expected_version), current
 
 
 def insert_item(cur, order_id, item, customer_name):
@@ -276,6 +304,7 @@ def handler(event: dict, context) -> dict:
                     })
 
                 created_by_str = "Владелец" if row[11] else f"{row[6]} {row[7]}"
+                version = get_order_version(cur, row[0])
                 order = {
                     'id': row[0], 'customer_name': row[1], 'comment': row[2],
                     'status': row[3], 'total_amount': float(row[4]),
@@ -283,6 +312,7 @@ def handler(event: dict, context) -> dict:
                     'created_by_id': row[12],
                     'payment_status': row[8], 'paid_amount': float(row[9]),
                     'is_restored': row[10],
+                    'version': version,
                     'items': items,
                 }
                 return json_resp(200, {'order': order})
@@ -348,17 +378,30 @@ def handler(event: dict, context) -> dict:
 
             action = body.get('action')
 
-            # Создание пустой заявки-черновика. Возвращает id.
+            # Лёгкий запрос версии заявки (для polling).
+            if action == 'get_version':
+                order_id = body.get('order_id')
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                v = get_order_version(cur, order_id)
+                if v is None:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                return json_resp(200, {'version': v})
+
+            # Создание пустой заявки-черновика. Возвращает id и version.
             if action == 'create_draft':
                 cur.execute(
                     """INSERT INTO wholesale_orders
                        (customer_name, comment, total_amount, created_by, created_by_owner, status)
-                       VALUES (%s, %s, 0, %s, %s, 'draft') RETURNING id""",
+                       VALUES (%s, %s, 0, %s, %s, 'draft') RETURNING id, updated_at""",
                     ('', None, owner_manager_id, bool(is_owner))
                 )
-                order_id = cur.fetchone()[0]
+                row = cur.fetchone()
+                order_id, ver = row[0], str(row[1])
                 conn.commit()
-                return json_resp(201, {'id': order_id})
+                return json_resp(201, {'id': order_id, 'version': ver})
+
+            expected_version = body.get('expected_version')
 
             # Добавление одной позиции к существующей заявке.
             if action == 'add_item':
@@ -366,16 +409,19 @@ def handler(event: dict, context) -> dict:
                 item = body.get('item') or {}
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
+                ok_v, current_v = check_version(cur, order_id, expected_version)
+                if current_v is None:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                if not ok_v:
+                    return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
                 cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
                 ord_row = cur.fetchone()
-                if not ord_row:
-                    return json_resp(404, {'error': 'Заявка не найдена'})
                 cname = ord_row[0] or ''
                 item_id, _, _ = insert_item(cur, order_id, item, cname)
-                total = recalc_total(cur, order_id)
+                total, ver = recalc_total(cur, order_id)
                 view = fetch_item_view(cur, item_id)
                 conn.commit()
-                return json_resp(201, {'item': view, 'total_amount': total})
+                return json_resp(201, {'item': view, 'total_amount': total, 'version': ver})
 
             # Массовое добавление позиций (bulk paste, скан камерой).
             if action == 'add_items_batch':
@@ -385,19 +431,22 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 if not items:
                     return json_resp(400, {'error': 'Список позиций пуст'})
+                ok_v, current_v = check_version(cur, order_id, expected_version)
+                if current_v is None:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                if not ok_v:
+                    return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
                 cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
                 ord_row = cur.fetchone()
-                if not ord_row:
-                    return json_resp(404, {'error': 'Заявка не найдена'})
                 cname = ord_row[0] or ''
                 created_ids = []
                 for it in items:
                     iid, _, _ = insert_item(cur, order_id, it, cname)
                     created_ids.append(iid)
-                total = recalc_total(cur, order_id)
+                total, ver = recalc_total(cur, order_id)
                 views = [fetch_item_view(cur, i) for i in created_ids]
                 conn.commit()
-                return json_resp(201, {'items': views, 'total_amount': total})
+                return json_resp(201, {'items': views, 'total_amount': total, 'version': ver})
 
             # Обновление количества/цены одной позиции.
             if action == 'update_item':
@@ -409,6 +458,9 @@ def handler(event: dict, context) -> dict:
                 if not row:
                     return json_resp(404, {'error': 'Позиция не найдена'})
                 order_id, cur_qty, cur_price = row
+                ok_v, current_v = check_version(cur, order_id, expected_version)
+                if not ok_v:
+                    return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
                 qty = int(body.get('quantity', cur_qty))
                 price = float(body.get('price', cur_price))
                 amount = qty * price
@@ -416,9 +468,9 @@ def handler(event: dict, context) -> dict:
                     "UPDATE wholesale_order_items SET quantity = %s, price = %s, amount = %s WHERE id = %s",
                     (qty, price, amount, item_id)
                 )
-                total = recalc_total(cur, order_id)
+                total, ver = recalc_total(cur, order_id)
                 conn.commit()
-                return json_resp(200, {'ok': True, 'amount': float(amount), 'total_amount': total})
+                return json_resp(200, {'ok': True, 'amount': float(amount), 'total_amount': total, 'version': ver})
 
             # Удаление одной позиции.
             if action == 'delete_item':
@@ -430,16 +482,24 @@ def handler(event: dict, context) -> dict:
                 if not row:
                     return json_resp(404, {'error': 'Позиция не найдена'})
                 order_id = row[0]
+                ok_v, current_v = check_version(cur, order_id, expected_version)
+                if not ok_v:
+                    return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
                 cur.execute("DELETE FROM wholesale_order_items WHERE id = %s", (item_id,))
-                total = recalc_total(cur, order_id)
+                total, ver = recalc_total(cur, order_id)
                 conn.commit()
-                return json_resp(200, {'ok': True, 'total_amount': total})
+                return json_resp(200, {'ok': True, 'total_amount': total, 'version': ver})
 
             # Обновление шапки заявки (имя клиента, комментарий).
             if action == 'update_header':
                 order_id = body.get('order_id')
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
+                ok_v, current_v = check_version(cur, order_id, expected_version)
+                if current_v is None:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                if not ok_v:
+                    return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
                 fields = []
                 vals = []
                 if 'customer_name' in body:
@@ -453,10 +513,12 @@ def handler(event: dict, context) -> dict:
                     vals.append(body.get('comment'))
                 if not fields:
                     return json_resp(400, {'error': 'Нет полей для обновления'})
+                fields.append("updated_at = NOW()")
                 vals.append(order_id)
-                cur.execute(f"UPDATE wholesale_orders SET {', '.join(fields)} WHERE id = %s", vals)
+                cur.execute(f"UPDATE wholesale_orders SET {', '.join(fields)} WHERE id = %s RETURNING updated_at", vals)
+                ver = str(cur.fetchone()[0])
                 conn.commit()
-                return json_resp(200, {'ok': True})
+                return json_resp(200, {'ok': True, 'version': ver})
 
             # Старое поведение — создание сразу с позициями (оставлено для обратной совместимости).
             customer_name = body.get('customer_name', '').strip()
@@ -479,6 +541,7 @@ def handler(event: dict, context) -> dict:
             for item in items:
                 insert_item(cur, order_id, item, customer_name)
             recalc_total(cur, order_id)
+            touch_order(cur, order_id)
             conn.commit()
             return json_resp(201, {'id': order_id})
 

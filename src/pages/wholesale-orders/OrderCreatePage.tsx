@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
-import { orderApi, ItemPayload } from "./orderApi";
+import { orderApi, ItemPayload, VersionConflictError } from "./orderApi";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -148,6 +148,8 @@ const OrderCreatePage = () => {
   const isOwner = user.role === "owner";
   const [lockSettingEnabled, setLockSettingEnabled] = useState(false);
   const isLocked = !!editId && orderStatus !== "new" && lockSettingEnabled && !isOwner;
+
+  const versionRef = useRef<string | null>(null);
 
   const statusLabels: Record<string, { label: string; className: string }> = {
     new: { label: "Новая", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
@@ -304,7 +306,8 @@ const OrderCreatePage = () => {
                 has_uuid: !!l.has_uuid,
                 from_bulk: !!l.from_bulk,
               }));
-              const { items: srvItems } = await orderApi.addItemsBatch(orderId, payloads);
+              const { items: srvItems, version } = await orderApi.addItemsBatch(orderId, payloads, versionRef.current);
+              versionRef.current = version;
               const linesWithIds: OrderLine[] = srvItems.map((srv) => ({
                 id: srv.id,
                 product_id: srv.product_id,
@@ -323,8 +326,10 @@ const OrderCreatePage = () => {
                 setLines((prev) => [...linesWithIds, ...prev]);
               }
             } catch (e) {
-              const msg = e instanceof Error ? e.message : "Не удалось добавить позиции";
-              toast({ title: "Ошибка", description: msg, variant: "destructive" });
+              if (!(await handleVersionConflict(e))) {
+                const msg = e instanceof Error ? e.message : "Не удалось добавить позиции";
+                toast({ title: "Ошибка", description: msg, variant: "destructive" });
+              }
             }
 
             if (newLines.length < entries.length) {
@@ -414,7 +419,8 @@ const OrderCreatePage = () => {
                 has_uuid: !!l.has_uuid,
                 from_bulk: !!l.from_bulk,
               }));
-              const { items: srvItems } = await orderApi.addItemsBatch(orderId, payloads);
+              const { items: srvItems, version } = await orderApi.addItemsBatch(orderId, payloads, versionRef.current);
+              versionRef.current = version;
               const linesWithIds: OrderLine[] = srvItems.map((srv) => ({
                 id: srv.id,
                 product_id: srv.product_id,
@@ -434,8 +440,10 @@ const OrderCreatePage = () => {
               }
               toast({ title: `Добавлено: ${newLines.length}` });
             } catch (e) {
-              const msg = e instanceof Error ? e.message : "Не удалось добавить позиции";
-              toast({ title: "Ошибка", description: msg, variant: "destructive" });
+              if (!(await handleVersionConflict(e))) {
+                const msg = e instanceof Error ? e.message : "Не удалось добавить позиции";
+                toast({ title: "Ошибка", description: msg, variant: "destructive" });
+              }
             }
           };
           applyResolve();
@@ -458,32 +466,33 @@ const OrderCreatePage = () => {
     loadAppSettings();
   }, []);
 
-  useEffect(() => {
+  const reloadOrder = useCallback(async (silent = false) => {
     if (!editId) return;
-
-    const load = async () => {
-      try {
-        const resp = await fetch(`${ORDERS_URL}?id=${editId}`, { headers: authHeaders });
-        const data = await resp.json();
-        if (resp.ok && data.order) {
-          setCustomerName(data.order.customer_name || "");
-          setComment(data.order.comment || "");
-          setOrderStatus(data.order.status || "new");
-          setPaymentStatus(data.order.payment_status || "not_paid");
-          setLines(
-            (data.order.items || []).map((item: OrderLine) => ({
-              id: item.id,
-              product_id: item.product_id,
-              name: item.name,
-              article: item.article,
-              quantity: item.quantity,
-              price: item.price,
-              is_temp: item.is_temp,
-              temp_product_id: item.temp_product_id,
-              has_uuid: item.has_uuid,
-              from_bulk: item.from_bulk,
-            }))
-          );
+    try {
+      const resp = await fetch(`${ORDERS_URL}?id=${editId}`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok && data.order) {
+        headerInitedRef.current = false;
+        setCustomerName(data.order.customer_name || "");
+        setComment(data.order.comment || "");
+        setOrderStatus(data.order.status || "new");
+        setPaymentStatus(data.order.payment_status || "not_paid");
+        setLines(
+          (data.order.items || []).map((item: OrderLine) => ({
+            id: item.id,
+            product_id: item.product_id,
+            name: item.name,
+            article: item.article,
+            quantity: item.quantity,
+            price: item.price,
+            is_temp: item.is_temp,
+            temp_product_id: item.temp_product_id,
+            has_uuid: item.has_uuid,
+            from_bulk: item.from_bulk,
+          }))
+        );
+        versionRef.current = data.order.version || null;
+        if (!silent) {
           const wResp = await fetch(WHOLESALERS_URL, { headers: authHeaders });
           const wData = await wResp.json();
           const found = (wData.items || []).find((w: {id: number; name: string}) => w.name === data.order.customer_name);
@@ -492,14 +501,27 @@ const OrderCreatePage = () => {
             loadPricingRules(found.id);
           }
         }
-      } catch {
-        toast({ title: "Ошибка", description: "Не удалось загрузить заявку", variant: "destructive" });
-      } finally {
-        setLoading(false);
       }
-    };
-    load();
+    } catch {
+      if (!silent) toast({ title: "Ошибка", description: "Не удалось загрузить заявку", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   }, [editId]);
+
+  const handleVersionConflict = useCallback(async (e: unknown) => {
+    if (e instanceof VersionConflictError) {
+      await reloadOrder(true);
+      toast({ title: "Заявка обновлена", description: "Кто-то изменил её. Данные обновлены, попробуйте снова.", variant: "destructive" });
+      return true;
+    }
+    return false;
+  }, [reloadOrder]);
+
+  useEffect(() => {
+    if (!editId) return;
+    reloadOrder();
+  }, [editId, reloadOrder]);
 
   const searchProducts = useCallback(async (query: string, mode: string, group?: string) => {
     if (!query.trim() || query.trim().length < 2) {
@@ -570,7 +592,8 @@ const OrderCreatePage = () => {
           has_uuid: !!product.external_id,
         };
         try {
-          const { item: srv } = await orderApi.addItem(orderId, payload);
+          const { item: srv, version } = await orderApi.addItem(orderId, payload, versionRef.current);
+          versionRef.current = version;
           setLines((prev) => [{
             id: srv.id,
             product_id: srv.product_id,
@@ -585,8 +608,10 @@ const OrderCreatePage = () => {
             from_bulk: srv.from_bulk,
           }, ...prev]);
         } catch (e) {
-          const msg = e instanceof Error ? e.message : "Ошибка";
-          toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+          if (!(await handleVersionConflict(e))) {
+            const msg = e instanceof Error ? e.message : "Ошибка";
+            toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+          }
         }
       };
       ensureOrderAndAdd();
@@ -610,7 +635,8 @@ const OrderCreatePage = () => {
       has_uuid: !!item.external_id,
     };
     try {
-      const { item: srv } = await orderApi.addItem(editId, payload);
+      const { item: srv, version } = await orderApi.addItem(editId, payload, versionRef.current);
+      versionRef.current = version;
       setLines((prev) => [{
         id: srv.id,
         product_id: srv.product_id,
@@ -628,8 +654,10 @@ const OrderCreatePage = () => {
       setSearchResults([]);
       setTempProductResults([]);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Ошибка";
-      toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+      if (!(await handleVersionConflict(e))) {
+        const msg = e instanceof Error ? e.message : "Ошибка";
+        toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+      }
     }
   };
 
@@ -648,7 +676,8 @@ const OrderCreatePage = () => {
       has_uuid: false,
     };
     try {
-      const { item: srv } = await orderApi.addItem(editId, payload);
+      const { item: srv, version } = await orderApi.addItem(editId, payload, versionRef.current);
+      versionRef.current = version;
       setLines((prev) => [{
         id: srv.id,
         product_id: srv.product_id,
@@ -666,8 +695,10 @@ const OrderCreatePage = () => {
       setSearchResults([]);
       setTempProductResults([]);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Ошибка";
-      toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+      if (!(await handleVersionConflict(e))) {
+        const msg = e instanceof Error ? e.message : "Ошибка";
+        toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+      }
     }
   };
 
@@ -808,7 +839,7 @@ const OrderCreatePage = () => {
           setAllBrands(prev => [...prev, tempBrand.trim()].sort());
         }
         try {
-          const { item: srv } = await orderApi.addItem(editId, {
+          const { item: srv, version } = await orderApi.addItem(editId, {
             product_id: null,
             temp_product_id: data.id,
             name: `${tempBrand.trim()} ${tempArticle.trim()}`,
@@ -816,7 +847,8 @@ const OrderCreatePage = () => {
             price: parseFloat(tempPrice),
             is_temp: true,
             has_uuid: false,
-          });
+          }, versionRef.current);
+          versionRef.current = version;
           setLines((prev) => [{
             id: srv.id,
             product_id: srv.product_id,
@@ -831,8 +863,10 @@ const OrderCreatePage = () => {
             from_bulk: srv.from_bulk,
           }, ...prev]);
         } catch (e) {
-          const msg = e instanceof Error ? e.message : "Ошибка";
-          toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+          if (!(await handleVersionConflict(e))) {
+            const msg = e instanceof Error ? e.message : "Ошибка";
+            toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+          }
         }
         setShowTempForm(false);
         setTempBrand("");
@@ -916,10 +950,13 @@ const OrderCreatePage = () => {
     const t = setTimeout(async () => {
       itemDebouncesRef.current.delete(lineId);
       try {
-        await orderApi.updateItem(lineId, { quantity, price });
+        const { version } = await orderApi.updateItem(lineId, { quantity, price }, versionRef.current);
+        versionRef.current = version;
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Ошибка";
-        toast({ title: "Не сохранено", description: msg, variant: "destructive" });
+        if (!(await handleVersionConflict(e))) {
+          const msg = e instanceof Error ? e.message : "Ошибка";
+          toast({ title: "Не сохранено", description: msg, variant: "destructive" });
+        }
       }
     }, 400);
     itemDebouncesRef.current.set(lineId, t);
@@ -959,10 +996,13 @@ const OrderCreatePage = () => {
     setLines((prev) => prev.filter((_, i) => i !== index));
     if (target?.id) {
       try {
-        await orderApi.deleteItem(target.id);
+        const { version } = await orderApi.deleteItem(target.id, versionRef.current);
+        versionRef.current = version;
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Ошибка";
-        toast({ title: "Не удалось удалить", description: msg, variant: "destructive" });
+        if (!(await handleVersionConflict(e))) {
+          const msg = e instanceof Error ? e.message : "Ошибка";
+          toast({ title: "Не удалось удалить", description: msg, variant: "destructive" });
+        }
         return;
       }
     }
@@ -989,7 +1029,8 @@ const OrderCreatePage = () => {
         has_uuid: !!line.has_uuid,
         from_bulk: !!line.from_bulk,
       };
-      const { item: srv } = await orderApi.addItem(editId, payload);
+      const { item: srv, version } = await orderApi.addItem(editId, payload, versionRef.current);
+      versionRef.current = version;
       setLines((prev) => {
         const next = [...prev];
         const safeIndex = Math.min(index, next.length);
@@ -1009,6 +1050,7 @@ const OrderCreatePage = () => {
         return next;
       });
     } catch (e) {
+      if (await handleVersionConflict(e)) return;
       const msg = e instanceof Error ? e.message : "Ошибка";
       toast({ title: "Не удалось вернуть", description: msg, variant: "destructive" });
     }
@@ -1028,9 +1070,11 @@ const OrderCreatePage = () => {
     }
     if (headerDebounceRef.current) clearTimeout(headerDebounceRef.current);
     headerDebounceRef.current = setTimeout(() => {
-      orderApi.updateHeader(editId, { customer_name: customerName, comment }).catch(() => {});
+      orderApi.updateHeader(editId, { customer_name: customerName, comment }, versionRef.current)
+        .then((res) => { versionRef.current = res.version; })
+        .catch(async (e) => { await handleVersionConflict(e); });
     }, 600);
-  }, [customerName, comment, editId]);
+  }, [customerName, comment, editId, handleVersionConflict]);
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
