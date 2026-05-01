@@ -57,6 +57,9 @@ export interface ItemPayload {
   has_uuid?: boolean;
   from_bulk?: boolean;
   was_restored?: boolean;
+  preserve_created_by?: string | null;
+  preserve_qty_changed_by?: string | null;
+  preserve_price_changed_by?: string | null;
 }
 
 export const orderApi = {

@@ -146,13 +146,16 @@ def insert_item(cur, order_id, item, customer_name, actor='4'):
     )
     sort_order = cur.fetchone()[0]
     restored_by = actor if was_restored else None
+    created_by = item.get('preserve_created_by') or actor
+    qty_changed_by = item.get('preserve_qty_changed_by') or actor
+    price_changed_by = item.get('preserve_price_changed_by') or actor
     cur.execute(
         """INSERT INTO wholesale_order_items
            (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk, sort_order, was_restored,
             created_by, qty_changed_by, price_changed_by, restored_by)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk, sort_order, was_restored,
-         actor, actor, actor, restored_by)
+         created_by, qty_changed_by, price_changed_by, restored_by)
     )
     return cur.fetchone()[0], float(price), float(amount)
 

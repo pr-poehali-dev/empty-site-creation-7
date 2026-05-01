@@ -1047,6 +1047,9 @@ const OrderCreatePage = () => {
         has_uuid: !!line.has_uuid,
         from_bulk: !!line.from_bulk,
         was_restored: true,
+        preserve_created_by: line.created_by ?? null,
+        preserve_qty_changed_by: line.qty_changed_by ?? null,
+        preserve_price_changed_by: line.price_changed_by ?? null,
       };
       const { item: srv, version } = await orderApi.addItem(editId, payload, versionRef.current);
       versionRef.current = version;
@@ -1063,6 +1066,10 @@ const OrderCreatePage = () => {
         has_uuid: srv.has_uuid,
         from_bulk: srv.from_bulk,
         was_restored: true,
+        created_by: srv.created_by,
+        qty_changed_by: srv.qty_changed_by,
+        price_changed_by: srv.price_changed_by,
+        restored_by: srv.restored_by,
       }, ...prev]);
     } catch (e) {
       if (await handleVersionConflict(e)) return;
