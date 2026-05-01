@@ -62,6 +62,7 @@ const WholesaleOrders = () => {
   const [loading, setLoading] = useState(true);
   const [showArchive, setShowArchive] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
+  const [drafts, setDrafts] = useState<Order[]>([]);
 
   const fetchOrders = useCallback(async (archived = false) => {
     setLoading(true);
@@ -82,6 +83,13 @@ const WholesaleOrders = () => {
     localStorage.removeItem("draft_order");
     localStorage.removeItem("draft_order_items");
     localStorage.removeItem("draft_order_returning");
+  }, []);
+
+  useEffect(() => {
+    fetch(`${ORDERS_URL}?my_drafts=1`, { headers: authHeaders })
+      .then((r) => r.json())
+      .then((d) => setDrafts(d.orders || []))
+      .catch(() => {});
   }, []);
 
   const confirmDelete = async () => {
@@ -164,6 +172,20 @@ const WholesaleOrders = () => {
       </header>
 
       <main className="max-w-4xl mx-auto w-full px-4 py-6 flex-1">
+        {drafts.length > 0 && (
+          <div className="mb-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+            <div className="text-sm font-medium text-yellow-400 mb-2">Незавершённые заявки</div>
+            {drafts.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => navigate(`/admin/orders/${d.id}/edit`)}
+                className="block w-full text-left text-sm py-1 hover:underline"
+              >
+                Заявка #{d.id} {d.customer_name ? `— ${d.customer_name}` : "(без имени)"} {d.total_amount ? `— ${d.total_amount} ₽` : ""}
+              </button>
+            ))}
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-12">
             <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />

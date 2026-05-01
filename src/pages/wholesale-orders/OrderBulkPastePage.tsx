@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import { orderApi, ItemPayload } from "./orderApi";
 
 const BULK_RESOLVE_URL = "https://functions.poehali.dev/793352cf-67e1-4127-8a2a-a47efa5e2630";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
-const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
 
 interface RowInput {
@@ -58,8 +58,6 @@ const OrderBulkPastePage = () => {
   const token = localStorage.getItem("auth_token") || "";
   const { toast } = useToast();
 
-  const DRAFT_KEY = editId ? `order_draft_${editId}` : "order_draft_new";
-
   const [rows, setRows] = useState<RowInput[]>(
     Array.from({ length: INITIAL_ROWS }, () => ({ ...EMPTY_ROW }))
   );
@@ -78,16 +76,6 @@ const OrderBulkPastePage = () => {
   const brandRef = useRef<HTMLDivElement>(null);
 
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  useEffect(() => {
-    const draft = localStorage.getItem(DRAFT_KEY);
-    if (draft) {
-      try {
-        const d = JSON.parse(draft);
-        if (d.customerName) setCustomerName(d.customerName);
-      } catch { /* ignore */ }
-    }
-  }, [DRAFT_KEY]);
 
   useEffect(() => {
     fetch(`${BRANDS_URL}?names_only=1`, { headers: { Authorization: `Bearer ${token}` } })
@@ -399,51 +387,29 @@ const OrderBulkPastePage = () => {
       // Порядок как при ручном добавлении: последняя строка пакета — сверху
       const reversedNew = [...newLines].reverse();
 
-      // Базовые строки: при редактировании сохранённой заявки — берём из БД,
-      // чтобы не потерять существующие позиции, иначе из черновика
-      let existingLines: DraftLine[] = [];
-      const draft = localStorage.getItem(DRAFT_KEY);
-      let parsed: Record<string, unknown> = {};
-      try { parsed = draft ? JSON.parse(draft) : {}; } catch { parsed = {}; }
-
-      if (editId) {
-        try {
-          const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const data = await resp.json();
-          if (resp.ok && data.order) {
-            const draftLines: DraftLine[] = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
-            const orderLines: DraftLine[] = (data.order.items || []).map((item: {
-              product_id: number | null; name: string; article: string | null;
-              quantity: number; price: number; is_temp?: boolean;
-              temp_product_id?: number | null; has_uuid?: boolean; from_bulk?: boolean;
-            }) => ({
-              product_id: item.product_id,
-              name: item.name,
-              article: item.article,
-              quantity: item.quantity,
-              price: item.price,
-              is_temp: item.is_temp,
-              temp_product_id: item.temp_product_id,
-              has_uuid: item.has_uuid,
-              from_bulk: item.from_bulk,
-            }));
-            // Если в черновике больше строк, чем в БД — пользователь редактировал; берём черновик
-            existingLines = draftLines.length >= orderLines.length ? draftLines : orderLines;
-          }
-        } catch {
-          existingLines = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
+      try {
+        let orderId = editId;
+        if (!orderId) {
+          const draft = await orderApi.createDraft();
+          orderId = draft.id;
         }
-      } else {
-        existingLines = Array.isArray(parsed.lines) ? (parsed.lines as DraftLine[]) : [];
+        const payloads: ItemPayload[] = reversedNew.map((l) => ({
+          product_id: l.product_id,
+          temp_product_id: l.temp_product_id ?? null,
+          name: l.name,
+          quantity: l.quantity,
+          price: l.price,
+          is_temp: !!l.is_temp,
+          has_uuid: !!l.has_uuid,
+          from_bulk: true,
+        }));
+        await orderApi.addItemsBatch(orderId, payloads);
+        toast({ title: `Перенесено: ${newLines.length}` });
+        navigate(`/admin/orders/${orderId}/edit`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Не удалось перенести";
+        toast({ title: "Ошибка", description: msg, variant: "destructive" });
       }
-
-      parsed.lines = [...reversedNew, ...existingLines];
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(parsed));
-
-      toast({ title: `Перенесено: ${newLines.length}` });
-      navigate(editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create");
     } finally {
       setTransferring(false);
     }

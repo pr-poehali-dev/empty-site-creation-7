@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
+import { orderApi, ItemPayload } from "./orderApi";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -27,6 +28,7 @@ const EXPORT_URL = "https://functions.poehali.dev/9a93a221-e083-4f2d-9e96-1d086b
 const RETURNS_URL = "https://functions.poehali.dev/57193003-9226-4238-83dd-4f87ff8cd5ad";
 
 interface OrderLine {
+  id?: number;
   product_id: number | null;
   temp_product_id?: number | null;
   name: string;
@@ -124,7 +126,6 @@ const OrderCreatePage = () => {
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [applyingPricing, setApplyingPricing] = useState(false);
   const [copyMode, setCopyMode] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<Set<number>>(new Set());
   const [creatingReturn, setCreatingReturn] = useState(false);
@@ -142,7 +143,6 @@ const OrderCreatePage = () => {
   const articleRef = useRef<HTMLDivElement>(null);
   const articleDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [savingTemp, setSavingTemp] = useState(false);
-  const canSaveDraftRef = useRef(false);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -161,8 +161,6 @@ const OrderCreatePage = () => {
     new: { status: "confirmed", label: "Подтвердить", icon: "CheckCircle" },
     confirmed: { status: "shipped", label: "Отгружена", icon: "Truck" },
   };
-
-  const DRAFT_KEY = editId ? `order_draft_${editId}` : "order_draft_new";
 
   const loadPricingRules = async (wId: number) => {
     try {
@@ -215,26 +213,27 @@ const OrderCreatePage = () => {
     return item.price_wholesale || 0;
   };
 
+  // Одноразовая чистка legacy localStorage
   useEffect(() => {
-    const saved = localStorage.getItem(DRAFT_KEY);
-    let rulesPromise: Promise<PricingRule[]> | null = null;
-    let savedLines: OrderLine[] = [];
-    if (saved) {
-      try {
-        const d = JSON.parse(saved);
-        if (d.customerName) setCustomerName(d.customerName);
-        if (d.comment) setComment(d.comment);
-        if (d.lines?.length) savedLines = d.lines;
-        if (d.wholesalerId) {
-          setWholesalerId(d.wholesalerId);
-          rulesPromise = fetch(`${PRICING_URL}?wholesaler_id=${d.wholesalerId}`, { headers: authHeaders })
-            .then(r => r.json())
-            .then(data => { const items = data.items || []; setPricingRules(items); return items; })
-            .catch(() => [] as PricingRule[]);
-        }
-      } catch { /* ignore */ }
-    }
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith("order_draft_")) localStorage.removeItem(k);
+    });
+  }, []);
 
+  // Авто-создание draft при заходе на /admin/orders/create без pending данных
+  const draftCreatedRef = useRef(false);
+  useEffect(() => {
+    if (editId) return;
+    if (draftCreatedRef.current) return;
+    draftCreatedRef.current = true;
+    const hasPending = sessionStorage.getItem("resolve_result") || localStorage.getItem("scanned_order_barcodes") || sessionStorage.getItem("pending_unknown_product");
+    if (hasPending) return;
+    orderApi.createDraft()
+      .then(({ id }) => navigate(`/admin/orders/${id}/edit`, { replace: true }))
+      .catch(() => toast({ title: "Не удалось создать заявку", variant: "destructive" }));
+  }, [editId]);
+
+  useEffect(() => {
     const scannedRaw = localStorage.getItem("scanned_order_barcodes");
     if (scannedRaw) {
       localStorage.removeItem("scanned_order_barcodes");
@@ -242,7 +241,7 @@ const OrderCreatePage = () => {
         const entries: { barcode: string; product_id: number | null; name: string | null; price?: number }[] = JSON.parse(scannedRaw);
         if (entries.length > 0) {
           const loadScanned = async () => {
-            const rules = rulesPromise ? await rulesPromise : pricingRules;
+            const rules = pricingRules;
             const settled = await Promise.allSettled(
               entries.map(async (entry) => {
                 if (entry.product_id) {
@@ -288,11 +287,49 @@ const OrderCreatePage = () => {
                 });
               }
             });
-            setLines([...newLines, ...savedLines]);
+
+            try {
+              let orderId = editId;
+              if (!orderId) {
+                const draft = await orderApi.createDraft();
+                orderId = draft.id;
+              }
+              const payloads: ItemPayload[] = newLines.map((l) => ({
+                product_id: l.product_id,
+                temp_product_id: l.temp_product_id ?? null,
+                name: l.name,
+                quantity: l.quantity,
+                price: l.price,
+                is_temp: !!l.is_temp,
+                has_uuid: !!l.has_uuid,
+                from_bulk: !!l.from_bulk,
+              }));
+              const { items: srvItems } = await orderApi.addItemsBatch(orderId, payloads);
+              const linesWithIds: OrderLine[] = srvItems.map((srv) => ({
+                id: srv.id,
+                product_id: srv.product_id,
+                name: srv.name,
+                article: srv.article,
+                quantity: srv.quantity,
+                price: srv.price,
+                is_temp: srv.is_temp,
+                temp_product_id: srv.temp_product_id,
+                has_uuid: srv.has_uuid,
+                from_bulk: srv.from_bulk,
+              }));
+              if (!editId) {
+                navigate(`/admin/orders/${orderId}/edit`, { replace: true });
+              } else {
+                setLines((prev) => [...linesWithIds, ...prev]);
+              }
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : "Не удалось добавить позиции";
+              toast({ title: "Ошибка", description: msg, variant: "destructive" });
+            }
+
             if (newLines.length < entries.length) {
               toast({ title: `Добавлено ${newLines.length} из ${entries.length}`, variant: "destructive" });
             }
-            if (!editId) canSaveDraftRef.current = true;
           };
           loadScanned();
           return;
@@ -326,7 +363,7 @@ const OrderCreatePage = () => {
         };
         if (parsed.items?.length) {
           const applyResolve = async () => {
-            const rules = rulesPromise ? await rulesPromise : pricingRules;
+            const rules = pricingRules;
             const newLines: OrderLine[] = parsed.items.map((it) => {
               let price = it.base_price;
               if (parsed.source === "scan" && !it.is_temp && it.product_group !== undefined) {
@@ -360,28 +397,53 @@ const OrderCreatePage = () => {
               };
             });
             const ordered = parsed.source === "bulk" ? [...newLines].reverse() : newLines;
-            setLines([...ordered, ...savedLines]);
-            toast({ title: `Добавлено: ${newLines.length}` });
-            if (!editId) canSaveDraftRef.current = true;
+
+            try {
+              let orderId = editId;
+              if (!orderId) {
+                const draft = await orderApi.createDraft();
+                orderId = draft.id;
+              }
+              const payloads: ItemPayload[] = ordered.map((l) => ({
+                product_id: l.product_id,
+                temp_product_id: l.temp_product_id ?? null,
+                name: l.name,
+                quantity: l.quantity,
+                price: l.price,
+                is_temp: !!l.is_temp,
+                has_uuid: !!l.has_uuid,
+                from_bulk: !!l.from_bulk,
+              }));
+              const { items: srvItems } = await orderApi.addItemsBatch(orderId, payloads);
+              const linesWithIds: OrderLine[] = srvItems.map((srv) => ({
+                id: srv.id,
+                product_id: srv.product_id,
+                name: srv.name,
+                article: srv.article,
+                quantity: srv.quantity,
+                price: srv.price,
+                is_temp: srv.is_temp,
+                temp_product_id: srv.temp_product_id,
+                has_uuid: srv.has_uuid,
+                from_bulk: srv.from_bulk,
+              }));
+              if (!editId) {
+                navigate(`/admin/orders/${orderId}/edit`, { replace: true });
+              } else {
+                setLines((prev) => [...linesWithIds, ...prev]);
+              }
+              toast({ title: `Добавлено: ${newLines.length}` });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : "Не удалось добавить позиции";
+              toast({ title: "Ошибка", description: msg, variant: "destructive" });
+            }
           };
           applyResolve();
           return;
         }
       } catch { /* ignore */ }
     }
-
-    if (!editId && savedLines.length > 0) setLines(savedLines);
-    if (!editId) canSaveDraftRef.current = true;
   }, []);
-
-  useEffect(() => {
-    if (!canSaveDraftRef.current) return;
-    const timer = setTimeout(() => {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [customerName, comment, lines, wholesalerId]);
-
 
   useEffect(() => {
     const loadAppSettings = async () => {
@@ -398,34 +460,6 @@ const OrderCreatePage = () => {
 
   useEffect(() => {
     if (!editId) return;
-    const draft = localStorage.getItem(DRAFT_KEY);
-    if (draft) {
-      try {
-        const d = JSON.parse(draft);
-        if (d.customerName) setCustomerName(d.customerName);
-        if (d.comment) setComment(d.comment);
-        if (d.lines?.length) setLines(d.lines);
-        if (d.wholesalerId) {
-          setWholesalerId(d.wholesalerId);
-          loadPricingRules(d.wholesalerId);
-        }
-      } catch { /* ignore */ }
-      canSaveDraftRef.current = true;
-      setLoading(false);
-
-      const loadStatus = async () => {
-        try {
-          const resp = await fetch(`${ORDERS_URL}?id=${editId}`, { headers: authHeaders });
-          const data = await resp.json();
-          if (resp.ok && data.order) {
-            setOrderStatus(data.order.status || "new");
-            setPaymentStatus(data.order.payment_status || "not_paid");
-          }
-        } catch { /* ignore */ }
-      };
-      loadStatus();
-      return;
-    }
 
     const load = async () => {
       try {
@@ -438,6 +472,7 @@ const OrderCreatePage = () => {
           setPaymentStatus(data.order.payment_status || "not_paid");
           setLines(
             (data.order.items || []).map((item: OrderLine) => ({
+              id: item.id,
               product_id: item.product_id,
               name: item.name,
               article: item.article,
@@ -461,7 +496,6 @@ const OrderCreatePage = () => {
         toast({ title: "Ошибка", description: "Не удалось загрузить заявку", variant: "destructive" });
       } finally {
         setLoading(false);
-        canSaveDraftRef.current = true;
       }
     };
     load();
@@ -511,78 +545,130 @@ const OrderCreatePage = () => {
       const product = JSON.parse(raw) as ProductSearchItem & { is_temp?: boolean; temp_product_id?: number | null };
       sessionStorage.removeItem("pending_unknown_product");
       pendingHandledRef.current = true;
-      if (product.is_temp && product.temp_product_id) {
-        setLines((prev) => [
-          {
-            product_id: null,
-            temp_product_id: product.temp_product_id ?? null,
-            name: product.name,
-            article: product.article,
+
+      const ensureOrderAndAdd = async () => {
+        let orderId = editId;
+        if (!orderId) {
+          const { id } = await orderApi.createDraft();
+          orderId = id;
+          navigate(`/admin/orders/${id}/edit`, { replace: true });
+        }
+        const payload: ItemPayload = product.is_temp && product.temp_product_id ? {
+          product_id: null,
+          temp_product_id: product.temp_product_id,
+          name: product.name,
+          quantity: 1,
+          price: product.price_base || 0,
+          is_temp: true,
+          has_uuid: false,
+        } : {
+          product_id: product.id,
+          name: product.name,
+          quantity: 1,
+          price: calcPrice(product, pricingRules),
+          is_temp: false,
+          has_uuid: !!product.external_id,
+        };
+        try {
+          const { item: srv } = await orderApi.addItem(orderId, payload);
+          setLines((prev) => [{
+            id: srv.id,
+            product_id: srv.product_id,
+            name: srv.name,
+            article: srv.article,
             brand: product.brand,
-            quantity: 1,
-            price: product.price_base || 0,
-            is_temp: true,
-            has_uuid: false,
-          },
-          ...prev,
-        ]);
-      } else {
-        setLines((prev) => [
-          {
-            product_id: product.id,
-            name: product.name,
-            article: product.article,
-            brand: product.brand,
-            quantity: 1,
-            price: calcPrice(product, pricingRules),
-            is_temp: false,
-            has_uuid: !!product.external_id,
-          },
-          ...prev,
-        ]);
-      }
+            quantity: srv.quantity,
+            price: srv.price,
+            is_temp: srv.is_temp,
+            temp_product_id: srv.temp_product_id,
+            has_uuid: srv.has_uuid,
+            from_bulk: srv.from_bulk,
+          }, ...prev]);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Ошибка";
+          toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+        }
+      };
+      ensureOrderAndAdd();
     } catch {
       sessionStorage.removeItem("pending_unknown_product");
     }
-  }, [loading, pricingRules]);
+  }, [loading, pricingRules, editId]);
 
-  const addItem = (item: ProductSearchItem) => {
-    setLines((prev) => [
-      {
-        product_id: item.id,
-        name: item.name,
-        article: item.article,
+  const addItem = async (item: ProductSearchItem) => {
+    if (!editId) {
+      toast({ title: "Заявка ещё создаётся, попробуйте через секунду", variant: "destructive" });
+      return;
+    }
+    const price = calcPrice(item, pricingRules);
+    const payload: ItemPayload = {
+      product_id: item.id,
+      name: item.name,
+      quantity: 1,
+      price,
+      is_temp: false,
+      has_uuid: !!item.external_id,
+    };
+    try {
+      const { item: srv } = await orderApi.addItem(editId, payload);
+      setLines((prev) => [{
+        id: srv.id,
+        product_id: srv.product_id,
+        name: srv.name,
+        article: srv.article,
         brand: item.brand,
-        quantity: 1,
-        price: calcPrice(item, pricingRules),
-        is_temp: false,
-        has_uuid: !!item.external_id,
-      },
-      ...prev,
-    ]);
-    setSearchQuery("");
-    setSearchResults([]);
-    setTempProductResults([]);
+        quantity: srv.quantity,
+        price: srv.price,
+        is_temp: srv.is_temp,
+        temp_product_id: srv.temp_product_id,
+        has_uuid: srv.has_uuid,
+        from_bulk: srv.from_bulk,
+      }, ...prev]);
+      setSearchQuery("");
+      setSearchResults([]);
+      setTempProductResults([]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка";
+      toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+    }
   };
 
-  const addTempItemFromExisting = (tp: TempProduct) => {
-    setLines((prev) => [
-      {
-        product_id: null,
-        temp_product_id: tp.id,
-        name: `${tp.brand} ${tp.article}`,
-        article: tp.article,
+  const addTempItemFromExisting = async (tp: TempProduct) => {
+    if (!editId) {
+      toast({ title: "Заявка ещё создаётся, попробуйте через секунду", variant: "destructive" });
+      return;
+    }
+    const payload: ItemPayload = {
+      product_id: null,
+      temp_product_id: tp.id,
+      name: `${tp.brand} ${tp.article}`,
+      quantity: tp.quantity,
+      price: tp.price,
+      is_temp: true,
+      has_uuid: false,
+    };
+    try {
+      const { item: srv } = await orderApi.addItem(editId, payload);
+      setLines((prev) => [{
+        id: srv.id,
+        product_id: srv.product_id,
+        name: srv.name,
+        article: srv.article ?? tp.article,
         brand: tp.brand,
-        quantity: tp.quantity,
-        price: tp.price,
-        is_temp: true,
-        has_uuid: false,
-      },
-      ...prev,
-    ]);
-    setSearchQuery("");
-    setSearchResults([]);
-    setTempProductResults([]);
+        quantity: srv.quantity,
+        price: srv.price,
+        is_temp: srv.is_temp,
+        temp_product_id: srv.temp_product_id,
+        has_uuid: srv.has_uuid,
+        from_bulk: srv.from_bulk,
+      }, ...prev]);
+      setSearchQuery("");
+      setSearchResults([]);
+      setTempProductResults([]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка";
+      toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+    }
   };
 
   const searchByBarcode = async (code: string) => {
@@ -700,6 +786,10 @@ const OrderCreatePage = () => {
       toast({ title: "Заполните все поля", variant: "destructive" });
       return;
     }
+    if (!editId) {
+      toast({ title: "Заявка ещё создаётся, попробуйте через секунду", variant: "destructive" });
+      return;
+    }
     setSavingTemp(true);
     try {
       const resp = await fetch(TEMP_PRODUCTS_URL, {
@@ -717,20 +807,33 @@ const OrderCreatePage = () => {
         if (!allBrands.includes(tempBrand.trim())) {
           setAllBrands(prev => [...prev, tempBrand.trim()].sort());
         }
-        setLines(prev => [
-          {
+        try {
+          const { item: srv } = await orderApi.addItem(editId, {
             product_id: null,
             temp_product_id: data.id,
             name: `${tempBrand.trim()} ${tempArticle.trim()}`,
-            article: tempArticle.trim(),
-            brand: tempBrand.trim(),
             quantity: 1,
             price: parseFloat(tempPrice),
             is_temp: true,
             has_uuid: false,
-          },
-          ...prev,
-        ]);
+          });
+          setLines((prev) => [{
+            id: srv.id,
+            product_id: srv.product_id,
+            name: srv.name,
+            article: srv.article ?? tempArticle.trim(),
+            brand: tempBrand.trim(),
+            quantity: srv.quantity,
+            price: srv.price,
+            is_temp: srv.is_temp,
+            temp_product_id: srv.temp_product_id,
+            has_uuid: srv.has_uuid,
+            from_bulk: srv.from_bulk,
+          }, ...prev]);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Ошибка";
+          toast({ title: "Не удалось добавить", description: msg, variant: "destructive" });
+        }
         setShowTempForm(false);
         setTempBrand("");
         setTempArticle("");
@@ -805,21 +908,75 @@ const OrderCreatePage = () => {
     }
   }, [customerName, wholesalers]);
 
+  const itemDebouncesRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const scheduleItemUpdate = (lineId: number, quantity: number, price: number) => {
+    const existing = itemDebouncesRef.current.get(lineId);
+    if (existing) clearTimeout(existing);
+    const t = setTimeout(async () => {
+      itemDebouncesRef.current.delete(lineId);
+      try {
+        await orderApi.updateItem(lineId, { quantity, price });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Ошибка";
+        toast({ title: "Не сохранено", description: msg, variant: "destructive" });
+      }
+    }, 400);
+    itemDebouncesRef.current.set(lineId, t);
+  };
+
   const updateQty = (index: number, qty: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, quantity: Math.max(1, qty) } : l)));
+    setLines((prev) => prev.map((l, i) => {
+      if (i !== index) return l;
+      const next = { ...l, quantity: Math.max(1, qty) };
+      if (next.id) scheduleItemUpdate(next.id, next.quantity, next.price);
+      return next;
+    }));
   };
 
   const updatePrice = (index: number, price: number) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, price: Math.max(0, price) } : l)));
+    setLines((prev) => prev.map((l, i) => {
+      if (i !== index) return l;
+      const next = { ...l, price: Math.max(0, price) };
+      if (next.id) scheduleItemUpdate(next.id, next.quantity, next.price);
+      return next;
+    }));
   };
 
-  const removeLine = (index: number) => {
+  const removeLine = async (index: number) => {
+    const target = lines[index];
     setLines((prev) => prev.filter((_, i) => i !== index));
+    if (target?.id) {
+      try {
+        await orderApi.deleteItem(target.id);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Ошибка";
+        toast({ title: "Не удалось удалить", description: msg, variant: "destructive" });
+      }
+    }
   };
+
+  const headerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const headerInitedRef = useRef(false);
+  useEffect(() => {
+    if (!editId) return;
+    if (!headerInitedRef.current) {
+      headerInitedRef.current = true;
+      return;
+    }
+    if (headerDebounceRef.current) clearTimeout(headerDebounceRef.current);
+    headerDebounceRef.current = setTimeout(() => {
+      orderApi.updateHeader(editId, { customer_name: customerName, comment }).catch(() => {});
+    }, 600);
+  }, [customerName, comment, editId]);
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
   const handleSave = async () => {
+    if (!editId) {
+      navigate("/admin/orders");
+      return;
+    }
     if (!customerName.trim()) {
       toast({ title: "Ошибка", description: "Укажите имя оптовика", variant: "destructive" });
       return;
@@ -830,48 +987,29 @@ const OrderCreatePage = () => {
     }
     setSaving(true);
     try {
-      const url = editId ? `${ORDERS_URL}?id=${editId}` : ORDERS_URL;
-      const resp = await fetch(url, {
-        method: editId ? "PUT" : "POST",
-        headers: authHeaders,
-        body: JSON.stringify({
-          customer_name: customerName.trim(),
-          comment: comment.trim() || null,
-          items: lines.map((l) => ({
-            product_id: l.product_id,
-            name: l.name,
-            quantity: l.quantity,
-            price: l.price,
-            is_temp: l.is_temp || false,
-            temp_product_id: l.temp_product_id || null,
-            has_uuid: l.has_uuid || false,
-            from_bulk: l.from_bulk || false,
-          })),
-        }),
-      });
-      const data = await resp.json();
-      if (resp.ok) {
-        localStorage.removeItem(DRAFT_KEY);
-        toast({ title: editId ? "Заявка обновлена" : "Заявка создана" });
-        if (!editId && data.id) {
-          navigate(`/admin/orders/${data.id}/edit`, { replace: true });
-        }
-      } else {
-        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      if (orderStatus === "draft") {
+        await fetch(`${ORDERS_URL}?id=${editId}`, {
+          method: "PUT",
+          headers: authHeaders,
+          body: JSON.stringify({ status: "new" }),
+        });
       }
-    } catch {
-      toast({ title: "Ошибка", description: "Не удалось сохранить заявку", variant: "destructive" });
+      toast({ title: "Готово" });
+      navigate("/admin/orders");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка";
+      toast({ title: "Ошибка", description: msg, variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
   const handleBack = () => {
-    if (customerName.trim() || lines.length > 0) {
+    if (orderStatus === "draft" && !customerName.trim() && lines.length === 0 && editId) {
       setShowExitDialog(true);
-    } else {
-      navigate("/admin/orders");
+      return;
     }
+    navigate("/admin/orders");
   };
 
   const enterCopyMode = () => {
@@ -1017,55 +1155,6 @@ const OrderCreatePage = () => {
       toast({ title: "Ошибка", description: "Не удалось скачать файл", variant: "destructive" });
     } finally {
       setExporting(false);
-    }
-  };
-
-  const canApplyPricing = isOwner || user.role_name === "Управляющий";
-
-  const applyPricing = async () => {
-    if (pricingRules.length === 0) {
-      toast({ title: "Нет правил ценообразования", description: "Выберите оптовика с настроенными правилами", variant: "destructive" });
-      return;
-    }
-    setApplyingPricing(true);
-    try {
-      const ids = Array.from(
-        new Set(
-          lines
-            .filter((l) => !l.is_temp && l.product_id)
-            .map((l) => l.product_id as number)
-        )
-      );
-      const productMap = new Map<number, ProductSearchItem>();
-      if (ids.length > 0) {
-        const settled = await Promise.allSettled(
-          ids.map(async (pid) => {
-            const r = await fetch(`${PRODUCTS_URL}?id=${pid}`, { headers: authHeaders });
-            const d = await r.json();
-            return { pid, product: r.ok ? (d?.item || null) : null };
-          })
-        );
-        settled.forEach((res) => {
-          if (res.status === "fulfilled" && res.value.product) {
-            productMap.set(res.value.pid, res.value.product);
-          }
-        });
-      }
-      let updated = 0;
-      const newLines = lines.map((l) => {
-        if (l.is_temp || !l.product_id) return l;
-        const product = productMap.get(l.product_id);
-        if (!product) return l;
-        const newPrice = calcPrice(product, pricingRules);
-        if (newPrice !== l.price) updated += 1;
-        return { ...l, price: newPrice };
-      });
-      setLines(newLines);
-      toast({ title: "Цены пересчитаны", description: `Обновлено позиций: ${updated}` });
-    } catch {
-      toast({ title: "Ошибка", description: "Не удалось пересчитать цены", variant: "destructive" });
-    } finally {
-      setApplyingPricing(false);
     }
   };
 
@@ -1287,7 +1376,6 @@ const OrderCreatePage = () => {
               disabled={isLocked}
               className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => {
-                localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                 navigate(editId ? `/admin/orders/${editId}/bulk-paste` : "/admin/orders/create/bulk-paste");
               }}
               title="Вставить списком (пакетный ввод)"
@@ -1411,7 +1499,6 @@ const OrderCreatePage = () => {
               <button
                 className="w-10 h-10 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
                 onClick={() => {
-                  localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                   const returnTo = editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create";
                   const wParam = wholesalerId ? `&wholesalerId=${wholesalerId}` : "";
                   navigate(`/admin/scan?returnTo=${returnTo}&key=scanned_order_barcodes${wParam}`);
@@ -1680,17 +1767,6 @@ const OrderCreatePage = () => {
                 <span className="ml-2">Excel</span>
               </Button>
             </div>
-            {canApplyPricing && (
-              <Button
-                variant="outline"
-                className="rounded-xl border-white/[0.08] w-full"
-                onClick={applyPricing}
-                disabled={applyingPricing || isLocked}
-              >
-                {applyingPricing ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
-                <span className="ml-2">Применить ценообразование</span>
-              </Button>
-            )}
             <div className="flex gap-2 flex-wrap">
               {orderStatus === "confirmed" && (
                 <Button variant="outline" className="rounded-xl border-white/[0.08]" disabled={statusUpdating} onClick={() => updateOrderStatus("new")}>
@@ -1728,7 +1804,6 @@ const OrderCreatePage = () => {
               <Button
                 className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
                 onClick={() => {
-                  localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                   sessionStorage.setItem("resolve_request", JSON.stringify({
                     returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
                     context: "order",
@@ -1745,7 +1820,6 @@ const OrderCreatePage = () => {
               <Button
                 className="rounded-xl bg-red-600 hover:bg-red-700 text-white flex-1"
                 onClick={() => {
-                  localStorage.setItem(DRAFT_KEY, JSON.stringify({ customerName, comment, lines, wholesalerId }));
                   sessionStorage.setItem("resolve_request", JSON.stringify({
                     returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
                     context: "order",
@@ -1767,29 +1841,31 @@ const OrderCreatePage = () => {
       <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
           <AlertDialogHeader>
-            <AlertDialogTitle>Выйти из заявки?</AlertDialogTitle>
-            <AlertDialogDescription>Несохранённые данные будут потеряны</AlertDialogDescription>
+            <AlertDialogTitle>Удалить пустую заявку?</AlertDialogTitle>
+            <AlertDialogDescription>Заявка пустая. Удалить её?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
-            <AlertDialogCancel className="rounded-xl border-white/[0.08]">Остаться</AlertDialogCancel>
+            <AlertDialogCancel
+              className="rounded-xl border-white/[0.08]"
+              onClick={() => {
+                setShowExitDialog(false);
+                navigate("/admin/orders");
+              }}
+            >
+              Оставить
+            </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-xl bg-destructive hover:bg-destructive/90"
-              onClick={() => {
-                localStorage.removeItem(DRAFT_KEY);
-                navigate("/admin/orders");
-              }}
-            >
-              Не сохранять
-            </AlertDialogAction>
-            <AlertDialogAction
-              className="rounded-xl"
               onClick={async () => {
-                await handleSave();
-                localStorage.removeItem(DRAFT_KEY);
+                if (editId) {
+                  try {
+                    await fetch(`${ORDERS_URL}?id=${editId}`, { method: "DELETE", headers: authHeaders });
+                  } catch { /* ignore */ }
+                }
                 navigate("/admin/orders");
               }}
             >
-              Сохранить и выйти
+              Удалить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
