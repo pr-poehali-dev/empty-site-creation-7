@@ -441,7 +441,8 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Список позиций пуст'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if current_v is None:
-                    return json_resp(404, {'error': 'Заявка не найдена'})
+                    print(f'[add_items_batch] Заявка не найдена: order_id={order_id} expected_version={expected_version} items_count={len(items)}')
+                    return json_resp(404, {'error': f'Заявка не найдена (id={order_id})'})
                 if not ok_v:
                     return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
                 cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
