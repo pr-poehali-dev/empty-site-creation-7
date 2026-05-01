@@ -58,6 +58,8 @@ interface ProductSearchItem {
   price_purchase: number | null;
   product_group: string | null;
   external_id?: string | null;
+  is_temp?: boolean;
+  temp_product_id?: number | null;
 }
 
 interface TempProduct {
@@ -643,15 +645,25 @@ const OrderCreatePage = () => {
       toast({ title: "Заявка ещё создаётся, попробуйте через секунду", variant: "destructive" });
       return;
     }
-    const price = calcPrice(item, pricingRules);
-    const payload: ItemPayload = {
-      product_id: item.id,
-      name: item.name,
-      quantity: 1,
-      price,
-      is_temp: false,
-      has_uuid: !!item.external_id,
-    };
+    const isTempItem = item.is_temp === true || item.temp_product_id != null;
+    const payload: ItemPayload = isTempItem
+      ? {
+          product_id: null,
+          temp_product_id: item.temp_product_id ?? item.id,
+          name: item.name,
+          quantity: 1,
+          price: item.price_wholesale ?? 0,
+          is_temp: true,
+          has_uuid: false,
+        }
+      : {
+          product_id: item.id,
+          name: item.name,
+          quantity: 1,
+          price: calcPrice(item, pricingRules),
+          is_temp: false,
+          has_uuid: !!item.external_id,
+        };
     try {
       const { item: srv, version } = await orderApi.addItem(editId, payload, versionRef.current);
       versionRef.current = version;
