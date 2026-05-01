@@ -943,6 +943,17 @@ const OrderCreatePage = () => {
     }));
   };
 
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [undoData, setUndoData] = useState<{ line: OrderLine; index: number } | null>(null);
+
+  const clearUndo = () => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setUndoData(null);
+  };
+
   const removeLine = async (index: number) => {
     const target = lines[index];
     setLines((prev) => prev.filter((_, i) => i !== index));
@@ -952,9 +963,60 @@ const OrderCreatePage = () => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Ошибка";
         toast({ title: "Не удалось удалить", description: msg, variant: "destructive" });
+        return;
       }
     }
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoData({ line: target, index });
+    undoTimerRef.current = setTimeout(() => {
+      undoTimerRef.current = null;
+      setUndoData(null);
+    }, 10000);
   };
+
+  const handleUndo = async () => {
+    if (!undoData || !editId) return;
+    const { line, index } = undoData;
+    clearUndo();
+    try {
+      const payload: ItemPayload = {
+        product_id: line.product_id,
+        temp_product_id: line.temp_product_id ?? null,
+        name: line.name,
+        quantity: line.quantity,
+        price: line.price,
+        is_temp: !!line.is_temp,
+        has_uuid: !!line.has_uuid,
+        from_bulk: !!line.from_bulk,
+      };
+      const { item: srv } = await orderApi.addItem(editId, payload);
+      setLines((prev) => {
+        const next = [...prev];
+        const safeIndex = Math.min(index, next.length);
+        next.splice(safeIndex, 0, {
+          id: srv.id,
+          product_id: srv.product_id,
+          name: srv.name,
+          article: srv.article ?? line.article,
+          brand: line.brand,
+          quantity: srv.quantity,
+          price: srv.price,
+          is_temp: srv.is_temp,
+          temp_product_id: srv.temp_product_id,
+          has_uuid: srv.has_uuid,
+          from_bulk: srv.from_bulk,
+        });
+        return next;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка";
+      toast({ title: "Не удалось вернуть", description: msg, variant: "destructive" });
+    }
+  };
+
+  useEffect(() => () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  }, []);
 
   const headerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const headerInitedRef = useRef(false);
@@ -1870,6 +1932,27 @@ const OrderCreatePage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {undoData && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl border border-white/[0.08] bg-card px-4 py-3 shadow-lg max-w-[92vw]">
+          <div className="flex flex-col text-sm">
+            <span className="text-foreground">Удалена позиция</span>
+            <span className="text-muted-foreground truncate max-w-[60vw]">{undoData.line.name}</span>
+          </div>
+          <Button size="sm" variant="outline" className="rounded-lg" onClick={handleUndo}>
+            <Icon name="Undo2" size={14} />
+            <span className="ml-1">Вернуть</span>
+          </Button>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={clearUndo}
+            aria-label="Закрыть"
+          >
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+      )}
 
     </div>
   );
