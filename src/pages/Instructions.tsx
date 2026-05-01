@@ -8,11 +8,13 @@ import MODULE_CODE from "@/data/module-form-code";
 import scannerJournal from "@/data/journal/scanner.md?raw";
 import labelsJournal from "@/data/journal/labels.md?raw";
 import orderLockJournal from "@/data/journal/order-lock.md?raw";
+import ordersRestructure34Journal from "@/data/journal/orders-restructure-stages-3-4.md?raw";
 
 const JOURNAL_TABS = [
   { key: "scanner", label: "Сканер штрихкодов", content: scannerJournal },
   { key: "labels", label: "Печать этикеток", content: labelsJournal },
   { key: "order-lock", label: "Блокировка не Новых заявок", content: orderLockJournal },
+  { key: "orders-restructure-3-4", label: "Осталось два этапа 3,4", content: ordersRestructure34Journal },
 ];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
