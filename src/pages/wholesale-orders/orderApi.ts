@@ -40,6 +40,7 @@ export interface ServerOrderItem {
   temp_product_id: number | null;
   has_uuid: boolean;
   from_bulk: boolean;
+  was_restored?: boolean;
 }
 
 export interface ItemPayload {
@@ -51,6 +52,7 @@ export interface ItemPayload {
   is_temp?: boolean;
   has_uuid?: boolean;
   from_bulk?: boolean;
+  was_restored?: boolean;
 }
 
 export const orderApi = {

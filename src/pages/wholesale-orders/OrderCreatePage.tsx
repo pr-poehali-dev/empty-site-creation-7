@@ -39,6 +39,7 @@ interface OrderLine {
   is_temp?: boolean;
   has_uuid?: boolean;
   from_bulk?: boolean;
+  was_restored?: boolean;
 }
 
 interface ProductSearchItem {
@@ -489,6 +490,7 @@ const OrderCreatePage = () => {
             temp_product_id: item.temp_product_id,
             has_uuid: item.has_uuid,
             from_bulk: item.from_bulk,
+            was_restored: item.was_restored,
           }))
         );
         versionRef.current = data.order.version || null;
@@ -1016,7 +1018,7 @@ const OrderCreatePage = () => {
 
   const handleUndo = async () => {
     if (!undoData || !editId) return;
-    const { line, index } = undoData;
+    const { line } = undoData;
     clearUndo();
     try {
       const payload: ItemPayload = {
@@ -1028,27 +1030,24 @@ const OrderCreatePage = () => {
         is_temp: !!line.is_temp,
         has_uuid: !!line.has_uuid,
         from_bulk: !!line.from_bulk,
+        was_restored: true,
       };
       const { item: srv, version } = await orderApi.addItem(editId, payload, versionRef.current);
       versionRef.current = version;
-      setLines((prev) => {
-        const next = [...prev];
-        const safeIndex = Math.min(index, next.length);
-        next.splice(safeIndex, 0, {
-          id: srv.id,
-          product_id: srv.product_id,
-          name: srv.name,
-          article: srv.article ?? line.article,
-          brand: line.brand,
-          quantity: srv.quantity,
-          price: srv.price,
-          is_temp: srv.is_temp,
-          temp_product_id: srv.temp_product_id,
-          has_uuid: srv.has_uuid,
-          from_bulk: srv.from_bulk,
-        });
-        return next;
-      });
+      setLines((prev) => [{
+        id: srv.id,
+        product_id: srv.product_id,
+        name: srv.name,
+        article: srv.article ?? line.article,
+        brand: line.brand,
+        quantity: srv.quantity,
+        price: srv.price,
+        is_temp: srv.is_temp,
+        temp_product_id: srv.temp_product_id,
+        has_uuid: srv.has_uuid,
+        from_bulk: srv.from_bulk,
+        was_restored: true,
+      }, ...prev]);
     } catch (e) {
       if (await handleVersionConflict(e)) return;
       const msg = e instanceof Error ? e.message : "Ошибка";
@@ -1715,6 +1714,11 @@ const OrderCreatePage = () => {
                           />
                         )}
                         <p className="text-sm break-words min-w-0"><span className="text-muted-foreground">{lines.length - i}.</span> {line.name}</p>
+                        {line.was_restored && (
+                          <span className="flex-shrink-0 mt-0.5 text-amber-400" title="Возвращена после удаления">
+                            <Icon name="Undo2" size={12} />
+                          </span>
+                        )}
                         {isRedLine && (
                           <span className="text-xs text-red-400 flex-shrink-0 mt-0.5">новый</span>
                         )}

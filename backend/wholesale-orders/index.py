@@ -139,11 +139,17 @@ def insert_item(cur, order_id, item, customer_name):
     temp_pid = item.get('temp_product_id')
     item_name = item.get('name')
     from_bulk = bool(item.get('from_bulk'))
+    was_restored = bool(item.get('was_restored'))
+    cur.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM wholesale_order_items WHERE order_id = %s",
+        (order_id,)
+    )
+    sort_order = cur.fetchone()[0]
     cur.execute(
         """INSERT INTO wholesale_order_items
-           (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk)
+           (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk, sort_order, was_restored)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk, sort_order, was_restored)
     )
     return cur.fetchone()[0], float(price), float(amount)
 
@@ -153,7 +159,7 @@ def fetch_item_view(cur, item_id):
         """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount,
                   oi.temp_product_id, oi.item_name, oi.from_bulk,
                   tp.brand, tp.article, tp.nomenclature_id,
-                  np.name, np.article, np.brand
+                  np.name, np.article, np.brand, oi.was_restored
            FROM wholesale_order_items oi
            JOIN products p ON p.id = oi.product_id
            LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -191,6 +197,7 @@ def fetch_item_view(cur, item_id):
         'temp_product_id': r[7],
         'has_uuid': False if is_temp else bool(r[3]),
         'from_bulk': bool(r[9]),
+        'was_restored': bool(r[16]),
     }
 
 
@@ -263,13 +270,13 @@ def handler(event: dict, context) -> dict:
                     """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount,
                               oi.temp_product_id, oi.item_name, oi.from_bulk,
                               tp.brand, tp.article, tp.nomenclature_id,
-                              np.name, np.article, np.brand
+                              np.name, np.article, np.brand, oi.was_restored
                        FROM wholesale_order_items oi
                        JOIN products p ON p.id = oi.product_id
                        LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
                        LEFT JOIN products np ON np.id = tp.nomenclature_id
                        WHERE oi.order_id = %s
-                       ORDER BY oi.id""",
+                       ORDER BY oi.sort_order DESC""",
                     (order_id,)
                 )
                 items = []
@@ -301,6 +308,7 @@ def handler(event: dict, context) -> dict:
                         'temp_product_id': r[7],
                         'has_uuid': False if is_temp else bool(r[3]),
                         'from_bulk': bool(r[9]),
+                        'was_restored': bool(r[16]),
                     })
 
                 created_by_str = "Владелец" if row[11] else f"{row[6]} {row[7]}"
