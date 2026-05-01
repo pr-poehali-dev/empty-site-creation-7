@@ -154,7 +154,7 @@ const OrderCreatePage = () => {
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
   const [lockSettingEnabled, setLockSettingEnabled] = useState(false);
-  const isLocked = !!editId && orderStatus !== "new" && lockSettingEnabled && !isOwner;
+  const isLocked = !!editId && orderStatus !== "new" && orderStatus !== "draft" && lockSettingEnabled && !isOwner;
 
   const versionRef = useRef<string | null>(null);
 
