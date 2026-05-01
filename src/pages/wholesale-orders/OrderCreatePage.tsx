@@ -40,6 +40,10 @@ interface OrderLine {
   has_uuid?: boolean;
   from_bulk?: boolean;
   was_restored?: boolean;
+  created_by?: string | null;
+  qty_changed_by?: string | null;
+  price_changed_by?: string | null;
+  restored_by?: string | null;
 }
 
 interface ProductSearchItem {
@@ -320,6 +324,10 @@ const OrderCreatePage = () => {
                 temp_product_id: srv.temp_product_id,
                 has_uuid: srv.has_uuid,
                 from_bulk: srv.from_bulk,
+                created_by: srv.created_by,
+                qty_changed_by: srv.qty_changed_by,
+                price_changed_by: srv.price_changed_by,
+                restored_by: srv.restored_by,
               }));
               if (!editId) {
                 navigate(`/admin/orders/${orderId}/edit`, { replace: true });
@@ -433,6 +441,10 @@ const OrderCreatePage = () => {
                 temp_product_id: srv.temp_product_id,
                 has_uuid: srv.has_uuid,
                 from_bulk: srv.from_bulk,
+                created_by: srv.created_by,
+                qty_changed_by: srv.qty_changed_by,
+                price_changed_by: srv.price_changed_by,
+                restored_by: srv.restored_by,
               }));
               if (!editId) {
                 navigate(`/admin/orders/${orderId}/edit`, { replace: true });
@@ -491,6 +503,10 @@ const OrderCreatePage = () => {
             has_uuid: item.has_uuid,
             from_bulk: item.from_bulk,
             was_restored: item.was_restored,
+            created_by: item.created_by,
+            qty_changed_by: item.qty_changed_by,
+            price_changed_by: item.price_changed_by,
+            restored_by: item.restored_by,
           }))
         );
         versionRef.current = data.order.version || null;
@@ -1722,8 +1738,11 @@ const OrderCreatePage = () => {
                         )}
                         <p className="text-sm break-words min-w-0"><span className="text-muted-foreground">{lines.length - i}.</span> {line.name}</p>
                         {line.was_restored && (
-                          <span className="flex-shrink-0 mt-0.5 text-amber-400" title="Возвращена после удаления">
+                          <span className="flex-shrink-0 mt-0.5 text-amber-400 flex items-center gap-0.5" title="Возвращена после удаления">
                             <Icon name="Undo2" size={12} />
+                            {isOwner && line.restored_by && (
+                              <span className="text-[9px] text-blue-400 leading-none">id={line.restored_by}</span>
+                            )}
                           </span>
                         )}
                         {isRedLine && (
@@ -1733,52 +1752,67 @@ const OrderCreatePage = () => {
                       {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
                     </div>
                     {!isLocked && (
-                      <button
-                        className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors flex-shrink-0"
-                        onClick={() => removeLine(i)}
-                      >
-                        <Icon name="X" size={14} className="text-destructive" />
-                      </button>
+                      <div className="flex flex-col items-center flex-shrink-0">
+                        {isOwner && line.created_by && (
+                          <span className="text-[9px] text-blue-400 leading-none mb-0.5">id={line.created_by}</span>
+                        )}
+                        <button
+                          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20 transition-colors"
+                          onClick={() => removeLine(i)}
+                        >
+                          <Icon name="X" size={14} className="text-destructive" />
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <div className="flex items-center gap-1">
-                      <button
-                        disabled={isLocked}
-                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
-                        onClick={() => updateQty(i, line.quantity - 1)}
-                      >
-                        <Icon name="Minus" size={10} />
-                      </button>
-                      <Input
-                        type="number"
-                        value={line.quantity}
-                        onChange={(e) => updateQty(i, parseFloat(e.target.value) || 1)}
-                        onFocus={(e) => e.currentTarget.select()}
-                        disabled={isLocked}
-                        className="w-12 h-6 text-center text-xs p-0 bg-white/[0.04] border-white/[0.08] rounded"
-                      />
-                      <button
-                        disabled={isLocked}
-                        className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
-                        onClick={() => updateQty(i, line.quantity + 1)}
-                      >
-                        <Icon name="Plus" size={10} />
-                      </button>
+                  <div className="flex items-start gap-2 mt-1.5">
+                    <div className="flex flex-col items-center">
+                      <div className="flex items-center gap-1">
+                        <button
+                          disabled={isLocked}
+                          className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => updateQty(i, line.quantity - 1)}
+                        >
+                          <Icon name="Minus" size={10} />
+                        </button>
+                        <Input
+                          type="number"
+                          value={line.quantity}
+                          onChange={(e) => updateQty(i, parseFloat(e.target.value) || 1)}
+                          onFocus={(e) => e.currentTarget.select()}
+                          disabled={isLocked}
+                          className="w-12 h-6 text-center text-xs p-0 bg-white/[0.04] border-white/[0.08] rounded"
+                        />
+                        <button
+                          disabled={isLocked}
+                          className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => updateQty(i, line.quantity + 1)}
+                        >
+                          <Icon name="Plus" size={10} />
+                        </button>
+                      </div>
+                      {isOwner && line.qty_changed_by && (
+                        <span className="text-[9px] text-blue-400 leading-none mt-0.5">id={line.qty_changed_by}</span>
+                      )}
                     </div>
-                    <span className="text-xs text-muted-foreground">шт</span>
-                    <div className="flex items-center gap-1 ml-auto">
-                      <Input
-                        type="number"
-                        value={line.price}
-                        onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
-                        onFocus={(e) => e.currentTarget.select()}
-                        disabled={isLocked}
-                        className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
-                      />
-                      <span className="text-xs text-muted-foreground">Br</span>
+                    <span className="text-xs text-muted-foreground mt-1">шт</span>
+                    <div className="flex flex-col items-end ml-auto">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={line.price}
+                          onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
+                          onFocus={(e) => e.currentTarget.select()}
+                          disabled={isLocked}
+                          className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
+                        />
+                        <span className="text-xs text-muted-foreground">Br</span>
+                      </div>
+                      {isOwner && line.price_changed_by && (
+                        <span className="text-[9px] text-blue-400 leading-none mt-0.5">id={line.price_changed_by}</span>
+                      )}
                     </div>
-                    <span className="text-xs font-medium flex-shrink-0">
+                    <span className="text-xs font-medium flex-shrink-0 mt-1">
                       = {(line.price * line.quantity).toLocaleString()} Br
                     </span>
                   </div>

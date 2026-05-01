@@ -41,6 +41,10 @@ export interface ServerOrderItem {
   has_uuid: boolean;
   from_bulk: boolean;
   was_restored?: boolean;
+  created_by?: string | null;
+  qty_changed_by?: string | null;
+  price_changed_by?: string | null;
+  restored_by?: string | null;
 }
 
 export interface ItemPayload {

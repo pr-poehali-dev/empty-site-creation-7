@@ -129,7 +129,7 @@ def check_version(cur, order_id, expected_version):
     return str(current) == str(expected_version), current
 
 
-def insert_item(cur, order_id, item, customer_name):
+def insert_item(cur, order_id, item, customer_name, actor='4'):
     qty = int(item.get('quantity', 1))
     price = float(item.get('price', 0) or 0)
     pid = item.get('product_id') or TEMP_PRODUCT_ID
@@ -145,11 +145,14 @@ def insert_item(cur, order_id, item, customer_name):
         (order_id,)
     )
     sort_order = cur.fetchone()[0]
+    restored_by = actor if was_restored else None
     cur.execute(
         """INSERT INTO wholesale_order_items
-           (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk, sort_order, was_restored)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk, sort_order, was_restored)
+           (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk, sort_order, was_restored,
+            created_by, qty_changed_by, price_changed_by, restored_by)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk, sort_order, was_restored,
+         actor, actor, actor, restored_by)
     )
     return cur.fetchone()[0], float(price), float(amount)
 
@@ -159,7 +162,8 @@ def fetch_item_view(cur, item_id):
         """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount,
                   oi.temp_product_id, oi.item_name, oi.from_bulk,
                   tp.brand, tp.article, tp.nomenclature_id,
-                  np.name, np.article, np.brand, oi.was_restored
+                  np.name, np.article, np.brand, oi.was_restored,
+                  oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by
            FROM wholesale_order_items oi
            JOIN products p ON p.id = oi.product_id
            LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -198,6 +202,10 @@ def fetch_item_view(cur, item_id):
         'has_uuid': False if is_temp else bool(r[3]),
         'from_bulk': bool(r[9]),
         'was_restored': bool(r[16]),
+        'created_by': r[17],
+        'qty_changed_by': r[18],
+        'price_changed_by': r[19],
+        'restored_by': r[20],
     }
 
 
@@ -250,6 +258,8 @@ def handler(event: dict, context) -> dict:
             if role_name not in ALLOWED_ROLES:
                 return json_resp(403, {'error': 'Нет доступа к заявкам'})
 
+        actor = 'Ф' if is_owner else str(manager_id)
+
         if method == 'GET':
             order_id = params.get('id')
             if order_id:
@@ -270,7 +280,8 @@ def handler(event: dict, context) -> dict:
                     """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount,
                               oi.temp_product_id, oi.item_name, oi.from_bulk,
                               tp.brand, tp.article, tp.nomenclature_id,
-                              np.name, np.article, np.brand, oi.was_restored
+                              np.name, np.article, np.brand, oi.was_restored,
+                              oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by
                        FROM wholesale_order_items oi
                        JOIN products p ON p.id = oi.product_id
                        LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -309,6 +320,10 @@ def handler(event: dict, context) -> dict:
                         'has_uuid': False if is_temp else bool(r[3]),
                         'from_bulk': bool(r[9]),
                         'was_restored': bool(r[16]),
+                        'created_by': r[17],
+                        'qty_changed_by': r[18],
+                        'price_changed_by': r[19],
+                        'restored_by': r[20],
                     })
 
                 created_by_str = "Владелец" if row[11] else f"{row[6]} {row[7]}"
@@ -425,7 +440,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
                 ord_row = cur.fetchone()
                 cname = ord_row[0] or ''
-                item_id, _, _ = insert_item(cur, order_id, item, cname)
+                item_id, _, _ = insert_item(cur, order_id, item, cname, actor)
                 total, ver = recalc_total(cur, order_id)
                 view = fetch_item_view(cur, item_id)
                 conn.commit()
@@ -449,7 +464,7 @@ def handler(event: dict, context) -> dict:
                 cname = ord_row[0] or ''
                 created_ids = []
                 for it in items:
-                    iid, _, _ = insert_item(cur, order_id, it, cname)
+                    iid, _, _ = insert_item(cur, order_id, it, cname, actor)
                     created_ids.append(iid)
                 total, ver = recalc_total(cur, order_id)
                 views = [fetch_item_view(cur, i) for i in created_ids]
@@ -472,9 +487,20 @@ def handler(event: dict, context) -> dict:
                 qty = int(body.get('quantity', cur_qty))
                 price = float(body.get('price', cur_price))
                 amount = qty * price
+                qty_changed = qty != int(cur_qty)
+                price_changed = float(price) != float(cur_price)
+                set_fields = ["quantity = %s", "price = %s", "amount = %s"]
+                set_vals = [qty, price, amount]
+                if qty_changed:
+                    set_fields.append("qty_changed_by = %s")
+                    set_vals.append(actor)
+                if price_changed:
+                    set_fields.append("price_changed_by = %s")
+                    set_vals.append(actor)
+                set_vals.append(item_id)
                 cur.execute(
-                    "UPDATE wholesale_order_items SET quantity = %s, price = %s, amount = %s WHERE id = %s",
-                    (qty, price, amount, item_id)
+                    f"UPDATE wholesale_order_items SET {', '.join(set_fields)} WHERE id = %s",
+                    set_vals
                 )
                 total, ver = recalc_total(cur, order_id)
                 conn.commit()
@@ -547,7 +573,7 @@ def handler(event: dict, context) -> dict:
             order_id = cur.fetchone()[0]
             cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name,))
             for item in items:
-                insert_item(cur, order_id, item, customer_name)
+                insert_item(cur, order_id, item, customer_name, actor)
             recalc_total(cur, order_id)
             touch_order(cur, order_id)
             conn.commit()
