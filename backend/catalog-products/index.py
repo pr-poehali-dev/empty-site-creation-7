@@ -171,11 +171,24 @@ def handler(event: dict, context) -> dict:
         if barcode or barcode_search:
             price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
             if barcode:
-                cur.execute("SELECT product_id FROM product_barcodes WHERE barcode = %s LIMIT 1", (barcode,))
+                cur.execute(
+                    """SELECT pb.product_id FROM product_barcodes pb
+                       JOIN products p ON p.id = pb.product_id
+                       WHERE pb.barcode = %s
+                       ORDER BY p.is_archived ASC, pb.id DESC
+                       LIMIT 1""",
+                    (barcode,)
+                )
                 bc_row = cur.fetchone()
                 product_ids = [bc_row[0]] if bc_row else []
             else:
-                cur.execute("SELECT DISTINCT product_id FROM product_barcodes WHERE barcode LIKE %s LIMIT 10", (f"%{barcode_search}%",))
+                cur.execute(
+                    """SELECT DISTINCT pb.product_id FROM product_barcodes pb
+                       JOIN products p ON p.id = pb.product_id
+                       WHERE pb.barcode LIKE %s AND p.is_archived = false
+                       LIMIT 10""",
+                    (f"%{barcode_search}%",)
+                )
                 product_ids = [r[0] for r in cur.fetchall()]
 
             if not product_ids:
