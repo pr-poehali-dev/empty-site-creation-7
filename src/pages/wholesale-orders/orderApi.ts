@@ -14,15 +14,52 @@ export class VersionConflictError extends Error {
   }
 }
 
+export interface LockInfo {
+  locked: boolean;
+  locked_by_user_id?: number;
+  locked_by_name?: string;
+  locked_at?: string;
+  locked_session_id?: string;
+  is_mine?: boolean;
+}
+
+export class LockedByOtherError extends Error {
+  lock: LockInfo | null;
+  constructor(lock: LockInfo | null, message?: string) {
+    super(message || "Заявка редактируется другим пользователем");
+    this.name = "LockedByOtherError";
+    this.lock = lock;
+  }
+}
+
+let currentSessionId: string | null = null;
+
+export function setSessionId(id: string | null) {
+  currentSessionId = id;
+}
+
+export function getSessionId(): string | null {
+  return currentSessionId;
+}
+
 async function postAction<T = unknown>(action: string, payload: Record<string, unknown>): Promise<T> {
+  const body: Record<string, unknown> = { action, ...payload };
+  if (currentSessionId && body.session_id === undefined) {
+    body.session_id = currentSessionId;
+  }
   const resp = await fetch(ORDERS_URL, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify(body),
   });
   const data = await resp.json();
   if (resp.status === 409) {
     throw new VersionConflictError(data.version || null);
+  }
+  if (resp.status === 423) {
+    if (data && data.lock !== undefined) {
+      throw new LockedByOtherError(data.lock || null, data.error);
+    }
   }
   if (!resp.ok) throw new Error(data.error || "Ошибка сервера");
   return data as T;
@@ -94,6 +131,26 @@ export const orderApi = {
   recalcZeroPrices: (orderId: number) =>
     postAction<{ updated: number; total_zero: number; total_amount: number; version: string; done: boolean; processed?: number }>(
       "recalc_zero_prices",
+      { order_id: orderId }
+    ),
+  lock: (orderId: number, sessionId: string, force = false) =>
+    postAction<{ ok: boolean; owner: 'self' | 'self_other_tab' | 'other'; lock: LockInfo; forced?: boolean }>(
+      "lock",
+      { order_id: orderId, session_id: sessionId, force }
+    ),
+  heartbeat: (orderId: number, sessionId: string) =>
+    postAction<{ ok?: boolean; lost?: boolean; reason?: string }>(
+      "heartbeat",
+      { order_id: orderId, session_id: sessionId }
+    ),
+  unlock: (orderId: number, sessionId: string) =>
+    postAction<{ ok: boolean; noop?: boolean }>(
+      "unlock",
+      { order_id: orderId, session_id: sessionId }
+    ),
+  forceUnlock: (orderId: number) =>
+    postAction<{ ok: boolean }>(
+      "force_unlock",
       { order_id: orderId }
     ),
 };

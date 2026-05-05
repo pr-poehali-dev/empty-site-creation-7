@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
-import { orderApi, ItemPayload, VersionConflictError } from "./orderApi";
+import { orderApi, ItemPayload, VersionConflictError, LockInfo, setSessionId as setApiSessionId } from "./orderApi";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -156,7 +156,18 @@ const OrderCreatePage = () => {
   const isOwner = user.role === "owner";
   const [lockSettingEnabled, setLockSettingEnabled] = useState(false);
   const [recalcInProgress, setRecalcInProgress] = useState(false);
-  const isLocked = (!!editId && orderStatus !== "new" && orderStatus !== "draft" && lockSettingEnabled && !isOwner) || recalcInProgress;
+
+  // Single-user lock
+  const sessionIdRef = useRef<string>("");
+  if (!sessionIdRef.current) {
+    sessionIdRef.current = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `s${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setApiSessionId(sessionIdRef.current);
+  }
+  const [lockOwnerStatus, setLockOwnerStatus] = useState<'self' | 'other' | 'self_other_tab' | null>(null);
+  const [lockInfo, setLockInfo] = useState<LockInfo | null>(null);
+  const [showOtherTabDialog, setShowOtherTabDialog] = useState(false);
+  const isReadOnly = lockOwnerStatus === 'other' || lockOwnerStatus === 'self_other_tab';
+  const isLocked = (!!editId && orderStatus !== "new" && orderStatus !== "draft" && lockSettingEnabled && !isOwner) || recalcInProgress || isReadOnly;
 
   const versionRef = useRef<string | null>(null);
 
@@ -547,13 +558,72 @@ const OrderCreatePage = () => {
   }, [editId, reloadOrder]);
 
   // POLLING ОТКЛЮЧЁН — single-user lock режим. Заявку редактирует только владелец сессии.
-  // useEffect(() => {
-  //   if (!editId) return;
-  //   const interval = setInterval(() => {
-  //     reloadOrder(true);
-  //   }, 3000);
-  //   return () => clearInterval(interval);
-  // }, [editId, reloadOrder]);
+
+  // Захват блокировки заявки при открытии
+  const tryLock = useCallback(async (force = false): Promise<boolean> => {
+    if (!editId) return false;
+    try {
+      const res = await orderApi.lock(editId, sessionIdRef.current, force);
+      setLockOwnerStatus(res.owner);
+      setLockInfo(res.lock || null);
+      if (res.owner === 'self_other_tab') {
+        setShowOtherTabDialog(true);
+      } else {
+        setShowOtherTabDialog(false);
+      }
+      return res.owner === 'self';
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка блокировки";
+      toast({ title: "Не удалось захватить блокировку", description: msg, variant: "destructive" });
+      return false;
+    }
+  }, [editId, toast]);
+
+  useEffect(() => {
+    if (!editId) return;
+    tryLock(false);
+  }, [editId, tryLock]);
+
+  // Heartbeat каждые 30 сек — продлеваем блокировку
+  useEffect(() => {
+    if (!editId) return;
+    if (lockOwnerStatus !== 'self') return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await orderApi.heartbeat(editId, sessionIdRef.current);
+        if (res.lost) {
+          setLockOwnerStatus('other');
+          toast({ title: "Блокировка потеряна", description: "Заявку перехватил другой пользователь или вы продолжили в другой вкладке", variant: "destructive" });
+        }
+      } catch {
+        // тихо игнорируем разовые сбои сети
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [editId, lockOwnerStatus, toast]);
+
+  // Unlock при закрытии вкладки/перехода
+  useEffect(() => {
+    if (!editId) return;
+    const sid = sessionIdRef.current;
+    const handleBeforeUnload = () => {
+      try {
+        const url = ORDERS_URL;
+        const blob = new Blob([JSON.stringify({ action: 'unlock', order_id: editId, session_id: sid })], { type: 'application/json' });
+        navigator.sendBeacon(url, blob);
+      } catch {
+        // best-effort, ignore
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Освобождаем lock при размонтировании компонента (переход внутри SPA)
+      if (lockOwnerStatus === 'self') {
+        orderApi.unlock(editId, sid).catch(() => {});
+      }
+    };
+  }, [editId, lockOwnerStatus]);
 
   const searchProducts = useCallback(async (query: string, mode: string, group?: string) => {
     if (!query.trim() || query.trim().length < 2) {
@@ -1408,12 +1478,49 @@ const OrderCreatePage = () => {
             </p>
           </div>
         )}
-        {isLocked && !recalcInProgress && (
+        {isLocked && !recalcInProgress && !isReadOnly && (
           <div className="mb-3 p-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-start gap-2">
             <Icon name="Lock" size={16} className="text-yellow-400 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-yellow-200">
               Заявка в статусе «{(statusLabels[orderStatus] || statusLabels.new).label}». Редактирование товаров недоступно. Комментарий можно менять.
             </p>
+          </div>
+        )}
+        {isReadOnly && lockOwnerStatus === 'other' && (
+          <div className="mb-3 p-3 rounded-xl border border-red-500/30 bg-red-500/10 flex items-start gap-2">
+            <Icon name="Lock" size={16} className="text-red-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 text-sm text-red-200">
+              <div>
+                Заявку редактирует <b>{lockInfo?.locked_by_name || 'другой пользователь'}</b>
+                {lockInfo?.locked_at ? ` с ${new Date(lockInfo.locked_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}` : ''}.
+                Режим только для чтения.
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" className="h-7 rounded-lg text-xs" onClick={() => tryLock(false)}>
+                  <Icon name="RefreshCw" size={12} className="mr-1" />
+                  Попробовать снова
+                </Button>
+                {isOwner && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 rounded-lg text-xs"
+                    onClick={async () => {
+                      try {
+                        await orderApi.forceUnlock(editId!);
+                        toast({ title: 'Блокировка снята' });
+                        await tryLock(false);
+                      } catch (e) {
+                        toast({ title: 'Ошибка', description: e instanceof Error ? e.message : '', variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    <Icon name="Unlock" size={12} className="mr-1" />
+                    Снять блокировку
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         )}
         <div className="flex gap-1 mb-3 items-start">
@@ -2053,6 +2160,37 @@ const OrderCreatePage = () => {
           </div>
         )}
       </main>
+
+      <AlertDialog open={showOtherTabDialog} onOpenChange={setShowOtherTabDialog}>
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Заявка уже открыта</AlertDialogTitle>
+            <AlertDialogDescription>
+              Эта заявка уже открыта вами в другой вкладке. Закройте её, чтобы продолжить здесь, либо перехватите редактирование сюда.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+            <AlertDialogCancel
+              className="rounded-xl border-white/[0.08]"
+              onClick={() => {
+                setShowOtherTabDialog(false);
+                navigate("/admin/orders");
+              }}
+            >
+              Закрыть
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl"
+              onClick={async () => {
+                setShowOtherTabDialog(false);
+                await tryLock(true);
+              }}
+            >
+              Перехватить здесь
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
