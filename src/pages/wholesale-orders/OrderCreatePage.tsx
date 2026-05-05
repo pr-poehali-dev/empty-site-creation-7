@@ -1022,70 +1022,27 @@ const OrderCreatePage = () => {
   };
 
   const recalcZeroPrices = async () => {
+    if (!editId) return;
     if (!wholesalerId) {
       toast({ title: "Сначала выберите оптовика", variant: "destructive" });
       return;
     }
-    const zeroLines = lines.map((l, i) => ({ l, i })).filter((x) => x.l.price === 0 && x.l.id);
-    if (zeroLines.length === 0) {
+    const zeroCount = lines.filter((l) => l.price === 0 && l.id).length;
+    if (zeroCount === 0) {
       toast({ title: "Нулевых цен нет" });
       return;
     }
     setRecalculating(true);
-    let updated = 0;
-    const updates: { index: number; price: number; id: number }[] = [];
     try {
-      const startResp = await orderApi.startRecalc(editId!);
-      versionRef.current = startResp.version;
-      setRecalcInProgress(true);
-      await Promise.all(zeroLines.map(async ({ l, i }) => {
-        try {
-          let newPrice = 0;
-          if (l.is_temp && l.temp_product_id) {
-            const resp = await fetch(`${TEMP_PRODUCTS_URL}?id=${l.temp_product_id}`, { headers: authHeaders });
-            const data = await resp.json();
-            if (resp.ok && data.item) {
-              newPrice = Number(data.item.price) || 0;
-            }
-          } else if (l.product_id) {
-            const resp = await fetch(`${PRODUCTS_URL}?id=${l.product_id}`, { headers: authHeaders });
-            const data = await resp.json();
-            if (resp.ok && data.item) {
-              newPrice = calcPrice(data.item, pricingRules);
-            }
-          }
-          if (newPrice > 0 && l.id) {
-            updates.push({ index: i, price: newPrice, id: l.id });
-          }
-        } catch { /* ignore individual errors */ }
-      }));
-
-      for (const u of updates) {
-        try {
-          const { version } = await orderApi.updateItem(u.id, { price: u.price }, versionRef.current, true);
-          versionRef.current = version;
-          updated++;
-        } catch (e) {
-          if (await handleVersionConflict(e)) break;
-        }
-      }
-      if (updated > 0) {
-        setLines((prev) => prev.map((l, i) => {
-          const u = updates.find((x) => x.index === i);
-          return u ? { ...l, price: u.price } : l;
-        }));
-      }
-      toast({ title: `Обновлено ${updated} из ${zeroLines.length}` });
-    } finally {
-      try {
-        if (editId) {
-          const stopResp = await orderApi.stopRecalc(editId);
-          versionRef.current = stopResp.version;
-        }
-      } catch { /* ignore */ }
-      setRecalcInProgress(false);
-      setRecalculating(false);
+      const resp = await orderApi.recalcZeroPrices(editId);
+      versionRef.current = resp.version;
       await reloadOrder(true);
+      toast({ title: `Обновлено ${resp.updated} из ${resp.total_zero}` });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка пересчёта";
+      toast({ title: "Не удалось пересчитать", description: msg, variant: "destructive" });
+    } finally {
+      setRecalculating(false);
     }
   };
 

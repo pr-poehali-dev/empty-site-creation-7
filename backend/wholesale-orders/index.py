@@ -436,6 +436,55 @@ def handler(event: dict, context) -> dict:
 
             expected_version = body.get('expected_version')
 
+            # Атомарный пересчёт нулевых цен: блокировка → пересчёт → разблокировка в одной транзакции.
+            if action == 'recalc_zero_prices':
+                order_id = body.get('order_id')
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                ord_row = cur.fetchone()
+                if not ord_row:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                cname = ord_row[0] or ''
+                cur.execute(
+                    "UPDATE wholesale_orders SET recalc_in_progress = TRUE WHERE id = %s",
+                    (order_id,)
+                )
+                cur.execute(
+                    """SELECT id, product_id, temp_product_id
+                       FROM wholesale_order_items
+                       WHERE order_id = %s AND (price IS NULL OR price = 0)""",
+                    (order_id,)
+                )
+                zero_items = cur.fetchall()
+                total_zero = len(zero_items)
+                updated_count = 0
+                for item_id, pid, temp_pid in zero_items:
+                    new_price = 0.0
+                    if temp_pid:
+                        cur.execute("SELECT price FROM temp_products WHERE id = %s", (temp_pid,))
+                        tp = cur.fetchone()
+                        if tp and tp[0]:
+                            new_price = float(tp[0])
+                    elif pid and pid != TEMP_PRODUCT_ID:
+                        new_price = calc_price_by_rules(cur, cname, pid)
+                    if new_price > 0:
+                        cur.execute("SELECT quantity FROM wholesale_order_items WHERE id = %s", (item_id,))
+                        qty = cur.fetchone()[0]
+                        amount = float(new_price) * int(qty)
+                        cur.execute(
+                            "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
+                            (new_price, amount, actor, item_id)
+                        )
+                        updated_count += 1
+                cur.execute(
+                    "UPDATE wholesale_orders SET recalc_in_progress = FALSE WHERE id = %s",
+                    (order_id,)
+                )
+                total, ver = recalc_total(cur, order_id)
+                conn.commit()
+                return json_resp(200, {'updated': updated_count, 'total_zero': total_zero, 'total_amount': total, 'version': ver})
+
             # Старт пересчёта нулевых цен — блокирует заявку для всех остальных операций.
             if action == 'start_recalc':
                 order_id = body.get('order_id')
@@ -525,7 +574,7 @@ def handler(event: dict, context) -> dict:
                 if not row:
                     return json_resp(404, {'error': 'Позиция не найдена'})
                 order_id, cur_qty, cur_price = row
-                if is_recalc_locked(cur, order_id) and not body.get('_recalc_internal'):
+                if is_recalc_locked(cur, order_id):
                     return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if not ok_v:
