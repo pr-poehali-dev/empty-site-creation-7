@@ -1454,7 +1454,7 @@ const OrderCreatePage = () => {
             size="sm"
             className="h-9 rounded-lg px-3 sm:px-4"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || isLocked}
             title="Сохранить заявку"
           >
             {saving ? (
@@ -1523,6 +1523,7 @@ const OrderCreatePage = () => {
             </div>
           </div>
         )}
+        <fieldset disabled={isReadOnly} className={isReadOnly ? "opacity-60 pointer-events-none" : "contents"}>
         <div className="flex gap-1 mb-3 items-start">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1" style={{scrollbarWidth: 'none'}}>
             {SEARCH_MODES.map((mode) => (
@@ -1848,6 +1849,7 @@ const OrderCreatePage = () => {
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="Комментарий"
+              disabled={isLocked}
               className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
             />
           </DebugBadge>
@@ -2159,6 +2161,7 @@ const OrderCreatePage = () => {
             </div>
           </div>
         )}
+        </fieldset>
       </main>
 
       <AlertDialog open={showOtherTabDialog} onOpenChange={setShowOtherTabDialog}>
