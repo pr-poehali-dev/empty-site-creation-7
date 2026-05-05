@@ -145,38 +145,44 @@ LOCK_STALE_MINUTES = 5
 
 
 def get_lock_info(cur, order_id):
-    """Возвращает текущую информацию о блокировке заявки."""
+    """Возвращает текущую информацию о блокировке заявки.
+    locked_by_users_id — id из users (уникален у каждого пользователя, в т.ч. владельца)."""
     cur.execute(
-        """SELECT o.locked_by_user_id, o.locked_at, o.locked_session_id,
-                  m.first_name, m.last_name, NOW() - o.locked_at > INTERVAL '5 minutes'
+        """SELECT o.locked_by_users_id, o.locked_at, o.locked_session_id,
+                  u.role, u.phone, m.first_name, m.last_name,
+                  NOW() - o.locked_at > INTERVAL '5 minutes'
            FROM wholesale_orders o
-           LEFT JOIN managers m ON m.id = o.locked_by_user_id
+           LEFT JOIN users u ON u.id = o.locked_by_users_id
+           LEFT JOIN managers m ON m.phone = u.phone AND u.role <> 'owner'
            WHERE o.id = %s""",
         (order_id,)
     )
     row = cur.fetchone()
     if not row:
         return None
-    locked_by_user_id, locked_at, session_id, first_name, last_name, is_stale = row
-    if locked_by_user_id is None:
+    locked_by_users_id, locked_at, session_id, u_role, _u_phone, first_name, last_name, is_stale = row
+    if locked_by_users_id is None:
         return {'locked': False}
     if is_stale:
         cur.execute(
-            "UPDATE wholesale_orders SET locked_by_user_id = NULL, locked_at = NULL, locked_session_id = NULL WHERE id = %s",
+            "UPDATE wholesale_orders SET locked_by_users_id = NULL, locked_at = NULL, locked_session_id = NULL WHERE id = %s",
             (order_id,)
         )
         return {'locked': False}
-    name = f"{first_name or ''} {last_name or ''}".strip() or 'Пользователь'
+    if u_role == 'owner':
+        name = 'Владелец'
+    else:
+        name = f"{first_name or ''} {last_name or ''}".strip() or 'Пользователь'
     return {
         'locked': True,
-        'locked_by_user_id': locked_by_user_id,
+        'locked_by_users_id': locked_by_users_id,
         'locked_by_name': name,
         'locked_at': str(locked_at),
         'locked_session_id': session_id,
     }
 
 
-def check_lock_owner(cur, order_id, current_manager_id, session_id):
+def check_lock_owner(cur, order_id, current_users_id, session_id):
     """Проверяет что текущий пользователь+сессия владеют блокировкой.
     Если блокировки нет — автоматически захватывает её для текущего пользователя (lazy lock).
     Возвращает (ok: bool, info: dict|None)."""
@@ -186,13 +192,13 @@ def check_lock_owner(cur, order_id, current_manager_id, session_id):
     if not info.get('locked'):
         # Lock свободен — захватываем сами (lazy)
         cur.execute(
-            "UPDATE wholesale_orders SET locked_by_user_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
-            (current_manager_id, session_id or '', order_id)
+            "UPDATE wholesale_orders SET locked_by_users_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
+            (current_users_id, session_id or '', order_id)
         )
-        log_lock_action(cur, order_id, current_manager_id, session_id, 'lazy_lock', 'auto_on_mutation')
+        log_lock_action(cur, order_id, current_users_id, session_id, 'lazy_lock', 'auto_on_mutation')
         new_info = get_lock_info(cur, order_id)
         return True, new_info
-    if info.get('locked_by_user_id') != current_manager_id:
+    if info.get('locked_by_users_id') != current_users_id:
         return False, info
     if session_id and info.get('locked_session_id') != session_id:
         return False, info
@@ -423,7 +429,7 @@ def handler(event: dict, context) -> dict:
                 lock_info = get_lock_info(cur, row[0])
                 if lock_info and lock_info.get('locked'):
                     lock_info = dict(lock_info)
-                    lock_info['is_mine'] = (lock_info.get('locked_by_user_id') == manager_id) if not is_owner else False
+                    lock_info['is_mine'] = (lock_info.get('locked_by_users_id') == user_id)
                 order = {
                     'id': row[0], 'customer_name': row[1], 'comment': row[2],
                     'status': row[3], 'total_amount': float(row[4]),
@@ -527,6 +533,8 @@ def handler(event: dict, context) -> dict:
             session_id = body.get('session_id') or ''
 
             # ===== Блокировка заявки (single-user lock) =====
+            # Идентификация владельца блокировки идёт по users.id (уникальный для каждого пользователя,
+            # включая владельца проекта — у него role='owner' и собственный users.id).
             # Захват блокировки: ставит lock на заявку текущему пользователю+сессии.
             if action == 'lock':
                 order_id = body.get('order_id')
@@ -539,7 +547,7 @@ def handler(event: dict, context) -> dict:
                 info = get_lock_info(cur, order_id)
                 # Если уже залочено
                 if info and info.get('locked'):
-                    same_user = info.get('locked_by_user_id') == owner_manager_id
+                    same_user = info.get('locked_by_users_id') == user_id
                     same_session = info.get('locked_session_id') == session_id
                     if same_user and same_session:
                         # Это мы — продлеваем
@@ -556,7 +564,7 @@ def handler(event: dict, context) -> dict:
                                 "UPDATE wholesale_orders SET locked_session_id = %s, locked_at = NOW() WHERE id = %s",
                                 (session_id, order_id)
                             )
-                            log_lock_action(cur, order_id, owner_manager_id, session_id, 'force_takeover', 'same_user_other_tab')
+                            log_lock_action(cur, order_id, user_id, session_id, 'force_takeover', 'same_user_other_tab')
                             conn.commit()
                             new_info = get_lock_info(cur, order_id)
                             return json_resp(200, {'ok': True, 'owner': 'self', 'lock': new_info})
@@ -564,20 +572,20 @@ def handler(event: dict, context) -> dict:
                     # Чужой пользователь
                     if force and is_owner:
                         cur.execute(
-                            "UPDATE wholesale_orders SET locked_by_user_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
-                            (owner_manager_id, session_id, order_id)
+                            "UPDATE wholesale_orders SET locked_by_users_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
+                            (user_id, session_id, order_id)
                         )
-                        log_lock_action(cur, order_id, owner_manager_id, session_id, 'force_unlock_by_owner', 'admin')
+                        log_lock_action(cur, order_id, user_id, session_id, 'force_unlock_by_owner', 'admin')
                         conn.commit()
                         new_info = get_lock_info(cur, order_id)
                         return json_resp(200, {'ok': True, 'owner': 'self', 'lock': new_info, 'forced': True})
                     return json_resp(200, {'ok': False, 'owner': 'other', 'lock': info})
                 # Свободно — захватываем
                 cur.execute(
-                    "UPDATE wholesale_orders SET locked_by_user_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
-                    (owner_manager_id, session_id, order_id)
+                    "UPDATE wholesale_orders SET locked_by_users_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
+                    (user_id, session_id, order_id)
                 )
-                log_lock_action(cur, order_id, owner_manager_id, session_id, 'lock', None)
+                log_lock_action(cur, order_id, user_id, session_id, 'lock', None)
                 conn.commit()
                 new_info = get_lock_info(cur, order_id)
                 return json_resp(200, {'ok': True, 'owner': 'self', 'lock': new_info})
@@ -590,7 +598,7 @@ def handler(event: dict, context) -> dict:
                 info = get_lock_info(cur, order_id)
                 if not info or not info.get('locked'):
                     return json_resp(200, {'lost': True, 'reason': 'no_lock'})
-                if info.get('locked_by_user_id') != owner_manager_id or info.get('locked_session_id') != session_id:
+                if info.get('locked_by_users_id') != user_id or info.get('locked_session_id') != session_id:
                     return json_resp(200, {'lost': True, 'reason': 'taken_by_other'})
                 cur.execute(
                     "UPDATE wholesale_orders SET locked_at = NOW() WHERE id = %s",
@@ -606,12 +614,12 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 info = get_lock_info(cur, order_id)
                 if info and info.get('locked'):
-                    if info.get('locked_by_user_id') == owner_manager_id and (not session_id or info.get('locked_session_id') == session_id):
+                    if info.get('locked_by_users_id') == user_id and (not session_id or info.get('locked_session_id') == session_id):
                         cur.execute(
-                            "UPDATE wholesale_orders SET locked_by_user_id = NULL, locked_at = NULL, locked_session_id = NULL WHERE id = %s",
+                            "UPDATE wholesale_orders SET locked_by_users_id = NULL, locked_at = NULL, locked_session_id = NULL WHERE id = %s",
                             (order_id,)
                         )
-                        log_lock_action(cur, order_id, owner_manager_id, session_id, 'unlock', None)
+                        log_lock_action(cur, order_id, user_id, session_id, 'unlock', None)
                         conn.commit()
                         return json_resp(200, {'ok': True})
                 return json_resp(200, {'ok': True, 'noop': True})
@@ -624,10 +632,10 @@ def handler(event: dict, context) -> dict:
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 cur.execute(
-                    "UPDATE wholesale_orders SET locked_by_user_id = NULL, locked_at = NULL, locked_session_id = NULL WHERE id = %s",
+                    "UPDATE wholesale_orders SET locked_by_users_id = NULL, locked_at = NULL, locked_session_id = NULL WHERE id = %s",
                     (order_id,)
                 )
-                log_lock_action(cur, order_id, owner_manager_id, '', 'force_unlock_admin', 'owner_action')
+                log_lock_action(cur, order_id, user_id, '', 'force_unlock_admin', 'owner_action')
                 conn.commit()
                 return json_resp(200, {'ok': True})
 
@@ -883,7 +891,7 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 if is_recalc_locked(cur, order_id):
                     return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
-                ok_l, lock_info = check_lock_owner(cur, order_id, owner_manager_id, session_id)
+                ok_l, lock_info = check_lock_owner(cur, order_id, user_id, session_id)
                 if not ok_l:
                     return json_resp(423, {'error': 'Заявка редактируется другим пользователем', 'lock': lock_info})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
@@ -910,7 +918,7 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Список позиций пуст'})
                 if is_recalc_locked(cur, order_id):
                     return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
-                ok_l, lock_info = check_lock_owner(cur, order_id, owner_manager_id, session_id)
+                ok_l, lock_info = check_lock_owner(cur, order_id, user_id, session_id)
                 if not ok_l:
                     return json_resp(423, {'error': 'Заявка редактируется другим пользователем', 'lock': lock_info})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
@@ -942,7 +950,7 @@ def handler(event: dict, context) -> dict:
                 order_id, cur_qty, cur_price = row
                 if is_recalc_locked(cur, order_id):
                     return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
-                ok_l, lock_info = check_lock_owner(cur, order_id, owner_manager_id, session_id)
+                ok_l, lock_info = check_lock_owner(cur, order_id, user_id, session_id)
                 if not ok_l:
                     return json_resp(423, {'error': 'Заявка редактируется другим пользователем', 'lock': lock_info})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
@@ -982,7 +990,7 @@ def handler(event: dict, context) -> dict:
                 order_id = row[0]
                 if is_recalc_locked(cur, order_id):
                     return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
-                ok_l, lock_info = check_lock_owner(cur, order_id, owner_manager_id, session_id)
+                ok_l, lock_info = check_lock_owner(cur, order_id, user_id, session_id)
                 if not ok_l:
                     return json_resp(423, {'error': 'Заявка редактируется другим пользователем', 'lock': lock_info})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
@@ -1000,7 +1008,7 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 if is_recalc_locked(cur, order_id):
                     return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
-                ok_l, lock_info = check_lock_owner(cur, order_id, owner_manager_id, session_id)
+                ok_l, lock_info = check_lock_owner(cur, order_id, user_id, session_id)
                 if not ok_l:
                     return json_resp(423, {'error': 'Заявка редактируется другим пользователем', 'lock': lock_info})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
