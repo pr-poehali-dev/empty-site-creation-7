@@ -546,13 +546,14 @@ const OrderCreatePage = () => {
     reloadOrder();
   }, [editId, reloadOrder]);
 
-  useEffect(() => {
-    if (!editId) return;
-    const interval = setInterval(() => {
-      reloadOrder(true);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [editId, reloadOrder]);
+  // POLLING ОТКЛЮЧЁН — single-user lock режим. Заявку редактирует только владелец сессии.
+  // useEffect(() => {
+  //   if (!editId) return;
+  //   const interval = setInterval(() => {
+  //     reloadOrder(true);
+  //   }, 3000);
+  //   return () => clearInterval(interval);
+  // }, [editId, reloadOrder]);
 
   const searchProducts = useCallback(async (query: string, mode: string, group?: string) => {
     if (!query.trim() || query.trim().length < 2) {
