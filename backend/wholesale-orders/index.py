@@ -438,52 +438,84 @@ def handler(event: dict, context) -> dict:
 
             # Атомарный пересчёт нулевых цен: блокировка → пересчёт → разблокировка в одной транзакции.
             if action == 'recalc_zero_prices':
+                import traceback
                 order_id = body.get('order_id')
+                print(f"[RECALC] START order_id={order_id} actor={actor}")
                 if not order_id:
+                    print("[RECALC] ABORT no order_id")
                     return json_resp(400, {'error': 'Не указан order_id'})
-                cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
-                ord_row = cur.fetchone()
-                if not ord_row:
-                    return json_resp(404, {'error': 'Заявка не найдена'})
-                cname = ord_row[0] or ''
-                cur.execute(
-                    "UPDATE wholesale_orders SET recalc_in_progress = TRUE WHERE id = %s",
-                    (order_id,)
-                )
-                cur.execute(
-                    """SELECT id, product_id, temp_product_id
-                       FROM wholesale_order_items
-                       WHERE order_id = %s AND (price IS NULL OR price = 0)""",
-                    (order_id,)
-                )
-                zero_items = cur.fetchall()
-                total_zero = len(zero_items)
-                updated_count = 0
-                for item_id, pid, temp_pid in zero_items:
-                    new_price = 0.0
-                    if temp_pid:
-                        cur.execute("SELECT price FROM temp_products WHERE id = %s", (temp_pid,))
-                        tp = cur.fetchone()
-                        if tp and tp[0]:
-                            new_price = float(tp[0])
-                    elif pid and pid != TEMP_PRODUCT_ID:
-                        new_price = calc_price_by_rules(cur, cname, pid)
-                    if new_price > 0:
-                        cur.execute("SELECT quantity FROM wholesale_order_items WHERE id = %s", (item_id,))
-                        qty = cur.fetchone()[0]
-                        amount = float(new_price) * int(qty)
-                        cur.execute(
-                            "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
-                            (new_price, amount, actor, item_id)
-                        )
-                        updated_count += 1
-                cur.execute(
-                    "UPDATE wholesale_orders SET recalc_in_progress = FALSE WHERE id = %s",
-                    (order_id,)
-                )
-                total, ver = recalc_total(cur, order_id)
-                conn.commit()
-                return json_resp(200, {'updated': updated_count, 'total_zero': total_zero, 'total_amount': total, 'version': ver})
+                try:
+                    cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                    ord_row = cur.fetchone()
+                    if not ord_row:
+                        print(f"[RECALC] ABORT order_id={order_id} not found")
+                        return json_resp(404, {'error': 'Заявка не найдена'})
+                    cname = ord_row[0] or ''
+                    print(f"[RECALC] customer_name='{cname}'")
+                    cur.execute(
+                        "UPDATE wholesale_orders SET recalc_in_progress = TRUE WHERE id = %s",
+                        (order_id,)
+                    )
+                    print(f"[RECALC] LOCK set TRUE")
+                    cur.execute(
+                        """SELECT id, product_id, temp_product_id
+                           FROM wholesale_order_items
+                           WHERE order_id = %s AND (price IS NULL OR price = 0)""",
+                        (order_id,)
+                    )
+                    zero_items = cur.fetchall()
+                    total_zero = len(zero_items)
+                    print(f"[RECALC] found {total_zero} zero items: {zero_items}")
+                    updated_count = 0
+                    for idx, (item_id, pid, temp_pid) in enumerate(zero_items):
+                        try:
+                            print(f"[RECALC] [{idx+1}/{total_zero}] item_id={item_id} pid={pid} temp_pid={temp_pid}")
+                            new_price = 0.0
+                            if temp_pid:
+                                cur.execute("SELECT price FROM temp_products WHERE id = %s", (temp_pid,))
+                                tp = cur.fetchone()
+                                print(f"[RECALC] [{idx+1}] temp_product row={tp}")
+                                if tp and tp[0]:
+                                    new_price = float(tp[0])
+                            elif pid and pid != TEMP_PRODUCT_ID:
+                                new_price = calc_price_by_rules(cur, cname, pid)
+                                print(f"[RECALC] [{idx+1}] calc_price_by_rules({cname}, pid={pid}) = {new_price}")
+                            else:
+                                print(f"[RECALC] [{idx+1}] SKIP: no pid and no temp_pid (pid={pid}, TEMP_PRODUCT_ID={TEMP_PRODUCT_ID})")
+                            if new_price > 0:
+                                cur.execute("SELECT quantity FROM wholesale_order_items WHERE id = %s", (item_id,))
+                                qty_row = cur.fetchone()
+                                qty = qty_row[0] if qty_row else 0
+                                amount = float(new_price) * int(qty)
+                                cur.execute(
+                                    "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
+                                    (new_price, amount, actor, item_id)
+                                )
+                                updated_count += 1
+                                print(f"[RECALC] [{idx+1}] UPDATED item_id={item_id} price={new_price} qty={qty} amount={amount}")
+                            else:
+                                print(f"[RECALC] [{idx+1}] SKIP item_id={item_id}: new_price={new_price} <= 0")
+                        except Exception as item_err:
+                            print(f"[RECALC] [{idx+1}] ITEM ERROR item_id={item_id}: {item_err}\n{traceback.format_exc()}")
+                            raise
+                    cur.execute(
+                        "UPDATE wholesale_orders SET recalc_in_progress = FALSE WHERE id = %s",
+                        (order_id,)
+                    )
+                    print(f"[RECALC] LOCK set FALSE")
+                    total, ver = recalc_total(cur, order_id)
+                    print(f"[RECALC] total_amount={total} version={ver}")
+                    conn.commit()
+                    print(f"[RECALC] DONE updated={updated_count}/{total_zero}")
+                    return json_resp(200, {'updated': updated_count, 'total_zero': total_zero, 'total_amount': total, 'version': ver})
+                except Exception as e:
+                    print(f"[RECALC] FATAL ERROR order_id={order_id}: {e}\n{traceback.format_exc()}")
+                    try:
+                        conn.rollback()
+                        print("[RECALC] rollback OK")
+                    except Exception as re:
+                        print(f"[RECALC] rollback failed: {re}")
+                    return json_resp(500, {'error': f'Ошибка пересчёта: {e}'})
 
             # Старт пересчёта нулевых цен — блокирует заявку для всех остальных операций.
             if action == 'start_recalc':
