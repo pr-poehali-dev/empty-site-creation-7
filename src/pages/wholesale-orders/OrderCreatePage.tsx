@@ -1034,10 +1034,18 @@ const OrderCreatePage = () => {
     }
     setRecalculating(true);
     try {
-      const resp = await orderApi.recalcZeroPrices(editId);
-      versionRef.current = resp.version;
+      let totalUpdated = 0;
+      let totalZero = 0;
+      const MAX_ITERATIONS = 100;
+      for (let i = 0; i < MAX_ITERATIONS; i++) {
+        const resp = await orderApi.recalcZeroPrices(editId);
+        versionRef.current = resp.version;
+        totalUpdated = resp.updated;
+        totalZero = resp.total_zero;
+        if (resp.done) break;
+      }
       await reloadOrder(true);
-      toast({ title: `Обновлено ${resp.updated} из ${resp.total_zero}` });
+      toast({ title: `Обновлено ${totalUpdated} из ${totalZero}` });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Ошибка пересчёта";
       toast({ title: "Не удалось пересчитать", description: msg, variant: "destructive" });

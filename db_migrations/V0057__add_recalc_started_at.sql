@@ -1,0 +1,1 @@
+ALTER TABLE wholesale_orders ADD COLUMN IF NOT EXISTS recalc_started_at TIMESTAMP NULL;

@@ -92,7 +92,7 @@ export const orderApi = {
       { order_id: orderId, ...fields, expected_version: expectedVersion ?? null }
     ),
   recalcZeroPrices: (orderId: number) =>
-    postAction<{ updated: number; total_zero: number; total_amount: number; version: string }>(
+    postAction<{ updated: number; total_zero: number; total_amount: number; version: string; done: boolean; processed?: number }>(
       "recalc_zero_prices",
       { order_id: orderId }
     ),

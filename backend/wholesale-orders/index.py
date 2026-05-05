@@ -121,9 +121,24 @@ def get_order_version(cur, order_id):
 
 
 def is_recalc_locked(cur, order_id):
-    cur.execute("SELECT recalc_in_progress FROM wholesale_orders WHERE id = %s", (order_id,))
+    cur.execute(
+        "SELECT recalc_in_progress, recalc_started_at FROM wholesale_orders WHERE id = %s",
+        (order_id,)
+    )
     row = cur.fetchone()
-    return bool(row and row[0])
+    if not row or not row[0]:
+        return False
+    started_at = row[1]
+    if started_at:
+        cur.execute("SELECT NOW() - %s > INTERVAL '5 minutes'", (started_at,))
+        is_stale = cur.fetchone()[0]
+        if is_stale:
+            cur.execute(
+                "UPDATE wholesale_orders SET recalc_in_progress = FALSE, recalc_started_at = NULL WHERE id = %s",
+                (order_id,)
+            )
+            return False
+    return True
 
 
 def check_version(cur, order_id, expected_version):
@@ -436,89 +451,218 @@ def handler(event: dict, context) -> dict:
 
             expected_version = body.get('expected_version')
 
-            # Атомарный пересчёт нулевых цен: блокировка → пересчёт → разблокировка в одной транзакции.
+            # Пересчёт нулевых цен. Поддерживает многократные вызовы с {done:false} при большом объёме.
             if action == 'recalc_zero_prices':
                 import traceback
                 import sys
+                import time as _time
                 def rlog(msg):
                     print(f"[RECALC] {msg}", flush=True)
                     sys.stdout.flush()
                 order_id = body.get('order_id')
                 rlog(f"START order_id={order_id} actor={actor}")
                 if not order_id:
-                    rlog("ABORT no order_id")
                     return json_resp(400, {'error': 'Не указан order_id'})
+
+                MAX_SECONDS = 25.0
+                BATCH_COMMIT = 50
+                SLEEP_BETWEEN = 0.05
+
+                started = _time.time()
                 try:
                     cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
                     ord_row = cur.fetchone()
                     if not ord_row:
-                        rlog(f"ABORT order_id={order_id} not found")
                         return json_resp(404, {'error': 'Заявка не найдена'})
                     cname = ord_row[0] or ''
-                    rlog(f"customer_name='{cname}'")
+
+                    # Поднимаем блокировку и проставляем heartbeat. Один коммит сразу,
+                    # чтобы другие запросы видели TRUE и получали 423.
                     cur.execute(
-                        "UPDATE wholesale_orders SET recalc_in_progress = TRUE WHERE id = %s",
+                        "UPDATE wholesale_orders SET recalc_in_progress = TRUE, recalc_started_at = NOW() WHERE id = %s",
                         (order_id,)
                     )
-                    rlog("LOCK set TRUE")
+                    conn.commit()
+                    rlog("LOCK set TRUE + heartbeat")
+
+                    # Загружаем правила оптовика ОДИН РАЗ.
+                    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (cname,))
+                    wrow = cur.fetchone()
+                    rules = []
+                    if wrow:
+                        cur.execute(
+                            """SELECT filter_type, filter_value, price_field, formula,
+                                      condition_price_field, condition_operator, condition_value
+                               FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
+                            (wrow[0],)
+                        )
+                        rules = cur.fetchall()
+                    rlog(f"loaded {len(rules)} rules for '{cname}'")
+
+                    # Все нулевые позиции (с quantity сразу).
                     cur.execute(
-                        """SELECT id, product_id, temp_product_id
+                        """SELECT id, product_id, temp_product_id, quantity
                            FROM wholesale_order_items
-                           WHERE order_id = %s AND (price IS NULL OR price = 0)""",
+                           WHERE order_id = %s AND (price IS NULL OR price = 0)
+                           ORDER BY id""",
                         (order_id,)
                     )
                     zero_items = cur.fetchall()
                     total_zero = len(zero_items)
                     rlog(f"found {total_zero} zero items")
+                    if total_zero == 0:
+                        cur.execute(
+                            "UPDATE wholesale_orders SET recalc_in_progress = FALSE, recalc_started_at = NULL WHERE id = %s",
+                            (order_id,)
+                        )
+                        total, ver = recalc_total(cur, order_id)
+                        conn.commit()
+                        return json_resp(200, {'updated': 0, 'total_zero': 0, 'total_amount': total, 'version': ver, 'done': True})
+
+                    # Грузим все товары пачкой.
+                    pids = list({pid for (_iid, pid, tpid, _q) in zero_items if pid and pid != TEMP_PRODUCT_ID})
+                    products = {}
+                    if pids:
+                        cur.execute(
+                            """SELECT id, price_base, price_retail, price_wholesale, price_purchase, product_group
+                               FROM products WHERE id = ANY(%s)""",
+                            (pids,)
+                        )
+                        for r in cur.fetchall():
+                            products[r[0]] = {
+                                'price_base': r[1], 'price_retail': r[2],
+                                'price_wholesale': r[3], 'price_purchase': r[4],
+                                'product_group': r[5],
+                            }
+                    rlog(f"loaded {len(products)} products")
+
+                    # Грузим временные товары пачкой.
+                    tpids = list({tpid for (_iid, _p, tpid, _q) in zero_items if tpid})
+                    temp_products = {}
+                    if tpids:
+                        cur.execute("SELECT id, price FROM temp_products WHERE id = ANY(%s)", (tpids,))
+                        for r in cur.fetchall():
+                            temp_products[r[0]] = r[1]
+                    rlog(f"loaded {len(temp_products)} temp_products")
+
+                    def calc_in_memory(pid):
+                        prod = products.get(pid)
+                        if not prod:
+                            return 0.0
+                        price_map = {
+                            'price_base': prod['price_base'],
+                            'price_retail': prod['price_retail'],
+                            'price_wholesale': prod['price_wholesale'],
+                            'price_purchase': prod['price_purchase'],
+                        }
+                        if not rules:
+                            return float(price_map.get('price_wholesale') or 0)
+                        matched = None
+                        for r in rules:
+                            if r[0] == 'product_group' and prod['product_group'] == r[1]:
+                                if check_condition(price_map, r[4], r[5], r[6]):
+                                    matched = r
+                                    break
+                        if not matched:
+                            return float(price_map.get('price_wholesale') or 0)
+                        base = float(price_map.get(matched[2]) or 0)
+                        return apply_formula(base, matched[3])
+
                     updated_count = 0
-                    for idx, (item_id, pid, temp_pid) in enumerate(zero_items):
+                    processed = 0
+                    batch_in_tx = 0
+                    done_all = True
+                    for idx, (item_id, pid, temp_pid, qty) in enumerate(zero_items):
+                        if _time.time() - started > MAX_SECONDS:
+                            rlog(f"TIME LIMIT at idx={idx}, will continue next call")
+                            done_all = False
+                            break
                         try:
-                            rlog(f"[{idx+1}/{total_zero}] item_id={item_id} pid={pid} temp_pid={temp_pid}")
                             new_price = 0.0
                             if temp_pid:
-                                cur.execute("SELECT price FROM temp_products WHERE id = %s", (temp_pid,))
-                                tp = cur.fetchone()
-                                rlog(f"[{idx+1}] temp_product row={tp}")
-                                if tp and tp[0]:
-                                    new_price = float(tp[0])
+                                tp = temp_products.get(temp_pid)
+                                if tp:
+                                    new_price = float(tp)
                             elif pid and pid != TEMP_PRODUCT_ID:
-                                new_price = calc_price_by_rules(cur, cname, pid)
-                                rlog(f"[{idx+1}] calc({cname}, pid={pid}) = {new_price}")
-                            else:
-                                rlog(f"[{idx+1}] SKIP no pid/temp_pid")
+                                new_price = calc_in_memory(pid)
                             if new_price > 0:
-                                cur.execute("SELECT quantity FROM wholesale_order_items WHERE id = %s", (item_id,))
-                                qty_row = cur.fetchone()
-                                qty = qty_row[0] if qty_row else 0
-                                amount = float(new_price) * int(qty)
-                                cur.execute(
-                                    "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
-                                    (new_price, amount, actor, item_id)
-                                )
+                                amount = float(new_price) * int(qty or 0)
+                                # retry на rate limit
+                                attempt = 0
+                                while True:
+                                    try:
+                                        cur.execute(
+                                            "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
+                                            (new_price, amount, actor, item_id)
+                                        )
+                                        break
+                                    except Exception as upd_err:
+                                        msg = str(upd_err).lower()
+                                        if 'rate limit' in msg and attempt < 1:
+                                            attempt += 1
+                                            rlog(f"[{idx+1}] rate limit, retry after 2s")
+                                            try:
+                                                conn.rollback()
+                                            except Exception:
+                                                pass
+                                            _time.sleep(2.0)
+                                            continue
+                                        raise
                                 updated_count += 1
-                                rlog(f"[{idx+1}] UPDATED item_id={item_id} price={new_price} qty={qty} amount={amount}")
-                            else:
-                                rlog(f"[{idx+1}] SKIP item_id={item_id} new_price={new_price}")
+                                batch_in_tx += 1
+                                if idx % 25 == 0:
+                                    rlog(f"[{idx+1}/{total_zero}] item={item_id} price={new_price}")
+                            processed += 1
+                            # Коммит пачкой + heartbeat.
+                            if batch_in_tx >= BATCH_COMMIT:
+                                cur.execute(
+                                    "UPDATE wholesale_orders SET recalc_started_at = NOW() WHERE id = %s",
+                                    (order_id,)
+                                )
+                                conn.commit()
+                                batch_in_tx = 0
+                                rlog(f"COMMIT batch, updated_so_far={updated_count}")
+                            _time.sleep(SLEEP_BETWEEN)
                         except Exception as item_err:
-                            rlog(f"[{idx+1}] ITEM ERROR item_id={item_id}: {item_err}\n{traceback.format_exc()}")
-                            raise
-                    cur.execute(
-                        "UPDATE wholesale_orders SET recalc_in_progress = FALSE WHERE id = %s",
-                        (order_id,)
-                    )
-                    rlog("LOCK set FALSE")
-                    total, ver = recalc_total(cur, order_id)
-                    rlog(f"total_amount={total} version={ver}")
-                    conn.commit()
-                    rlog(f"DONE updated={updated_count}/{total_zero}")
-                    return json_resp(200, {'updated': updated_count, 'total_zero': total_zero, 'total_amount': total, 'version': ver})
+                            rlog(f"[{idx+1}] ITEM ERROR item_id={item_id}: {item_err}")
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            batch_in_tx = 0
+                            # продолжаем со следующей позиции
+
+                    # Финальный коммит остатка
+                    if batch_in_tx > 0:
+                        conn.commit()
+                        rlog(f"COMMIT final batch, updated_total={updated_count}")
+
+                    if done_all:
+                        cur.execute(
+                            "UPDATE wholesale_orders SET recalc_in_progress = FALSE, recalc_started_at = NULL WHERE id = %s",
+                            (order_id,)
+                        )
+                        total, ver = recalc_total(cur, order_id)
+                        conn.commit()
+                        rlog(f"DONE updated={updated_count}/{total_zero}")
+                        return json_resp(200, {'updated': updated_count, 'total_zero': total_zero, 'total_amount': total, 'version': ver, 'done': True})
+                    else:
+                        # Не успели — оставляем блокировку, фронт вызовет ещё раз
+                        cur.execute(
+                            "UPDATE wholesale_orders SET recalc_started_at = NOW() WHERE id = %s",
+                            (order_id,)
+                        )
+                        total, ver = recalc_total(cur, order_id)
+                        conn.commit()
+                        rlog(f"PARTIAL processed={processed}/{total_zero} updated={updated_count}, continue")
+                        return json_resp(200, {'updated': updated_count, 'total_zero': total_zero, 'total_amount': total, 'version': ver, 'done': False, 'processed': processed})
+
                 except Exception as e:
                     rlog(f"FATAL ERROR order_id={order_id}: {e}\n{traceback.format_exc()}")
                     try:
                         conn.rollback()
-                        rlog("rollback OK")
-                    except Exception as re:
-                        rlog(f"rollback failed: {re}")
+                    except Exception:
+                        pass
                     return json_resp(500, {'error': f'Ошибка пересчёта: {e}'})
 
             # Старт пересчёта нулевых цен — блокирует заявку для всех остальных операций.
