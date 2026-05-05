@@ -155,7 +155,8 @@ const OrderCreatePage = () => {
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
   const [lockSettingEnabled, setLockSettingEnabled] = useState(false);
-  const isLocked = !!editId && orderStatus !== "new" && orderStatus !== "draft" && lockSettingEnabled && !isOwner;
+  const [recalcInProgress, setRecalcInProgress] = useState(false);
+  const isLocked = (!!editId && orderStatus !== "new" && orderStatus !== "draft" && lockSettingEnabled && !isOwner) || recalcInProgress;
 
   const versionRef = useRef<string | null>(null);
 
@@ -493,6 +494,7 @@ const OrderCreatePage = () => {
         setComment(data.order.comment || "");
         setOrderStatus(data.order.status || "new");
         setPaymentStatus(data.order.payment_status || "not_paid");
+        setRecalcInProgress(!!data.order.recalc_in_progress);
         setLines(
           (data.order.items || []).map((item: OrderLine) => ({
             id: item.id,
@@ -542,6 +544,14 @@ const OrderCreatePage = () => {
   useEffect(() => {
     if (!editId) return;
     reloadOrder();
+  }, [editId, reloadOrder]);
+
+  useEffect(() => {
+    if (!editId) return;
+    const interval = setInterval(() => {
+      reloadOrder(true);
+    }, 3000);
+    return () => clearInterval(interval);
   }, [editId, reloadOrder]);
 
   const searchProducts = useCallback(async (query: string, mode: string, group?: string) => {
@@ -1025,6 +1035,9 @@ const OrderCreatePage = () => {
     let updated = 0;
     const updates: { index: number; price: number; id: number }[] = [];
     try {
+      const startResp = await orderApi.startRecalc(editId!);
+      versionRef.current = startResp.version;
+      setRecalcInProgress(true);
       await Promise.all(zeroLines.map(async ({ l, i }) => {
         try {
           let newPrice = 0;
@@ -1049,7 +1062,7 @@ const OrderCreatePage = () => {
 
       for (const u of updates) {
         try {
-          const { version } = await orderApi.updateItem(u.id, { price: u.price }, versionRef.current);
+          const { version } = await orderApi.updateItem(u.id, { price: u.price }, versionRef.current, true);
           versionRef.current = version;
           updated++;
         } catch (e) {
@@ -1064,7 +1077,15 @@ const OrderCreatePage = () => {
       }
       toast({ title: `Обновлено ${updated} из ${zeroLines.length}` });
     } finally {
+      try {
+        if (editId) {
+          const stopResp = await orderApi.stopRecalc(editId);
+          versionRef.current = stopResp.version;
+        }
+      } catch { /* ignore */ }
+      setRecalcInProgress(false);
       setRecalculating(false);
+      await reloadOrder(true);
     }
   };
 
@@ -1413,7 +1434,15 @@ const OrderCreatePage = () => {
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
-        {isLocked && (
+        {recalcInProgress && (
+          <div className="mb-3 p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 flex items-start gap-2">
+            <Icon name="Loader2" size={16} className="text-blue-400 mt-0.5 flex-shrink-0 animate-spin" />
+            <p className="text-sm text-blue-200">
+              Идёт пересчёт цен, подождите...
+            </p>
+          </div>
+        )}
+        {isLocked && !recalcInProgress && (
           <div className="mb-3 p-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-start gap-2">
             <Icon name="Lock" size={16} className="text-yellow-400 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-yellow-200">

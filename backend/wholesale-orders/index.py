@@ -120,6 +120,12 @@ def get_order_version(cur, order_id):
     return str(row[0]) if row else None
 
 
+def is_recalc_locked(cur, order_id):
+    cur.execute("SELECT recalc_in_progress FROM wholesale_orders WHERE id = %s", (order_id,))
+    row = cur.fetchone()
+    return bool(row and row[0])
+
+
 def check_version(cur, order_id, expected_version):
     current = get_order_version(cur, order_id)
     if current is None:
@@ -269,7 +275,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
                               o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored,
-                              o.created_by_owner, o.created_by
+                              o.created_by_owner, o.created_by, o.recalc_in_progress
                        FROM wholesale_orders o
                        JOIN managers m ON m.id = o.created_by
                        WHERE o.id = %s""",
@@ -338,6 +344,7 @@ def handler(event: dict, context) -> dict:
                     'created_by_id': row[12],
                     'payment_status': row[8], 'paid_amount': float(row[9]),
                     'is_restored': row[10],
+                    'recalc_in_progress': bool(row[13]),
                     'version': version,
                     'items': items,
                 }
@@ -429,12 +436,44 @@ def handler(event: dict, context) -> dict:
 
             expected_version = body.get('expected_version')
 
+            # Старт пересчёта нулевых цен — блокирует заявку для всех остальных операций.
+            if action == 'start_recalc':
+                order_id = body.get('order_id')
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                cur.execute(
+                    "UPDATE wholesale_orders SET recalc_in_progress = TRUE, updated_at = NOW() WHERE id = %s RETURNING updated_at",
+                    (order_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                conn.commit()
+                return json_resp(200, {'ok': True, 'version': str(row[0])})
+
+            # Завершение пересчёта — снимает блокировку.
+            if action == 'stop_recalc':
+                order_id = body.get('order_id')
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                cur.execute(
+                    "UPDATE wholesale_orders SET recalc_in_progress = FALSE, updated_at = NOW() WHERE id = %s RETURNING updated_at",
+                    (order_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                conn.commit()
+                return json_resp(200, {'ok': True, 'version': str(row[0])})
+
             # Добавление одной позиции к существующей заявке.
             if action == 'add_item':
                 order_id = body.get('order_id')
                 item = body.get('item') or {}
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
+                if is_recalc_locked(cur, order_id):
+                    return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if current_v is None:
                     return json_resp(404, {'error': 'Заявка не найдена'})
@@ -457,6 +496,8 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 if not items:
                     return json_resp(400, {'error': 'Список позиций пуст'})
+                if is_recalc_locked(cur, order_id):
+                    return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if current_v is None:
                     return json_resp(404, {'error': 'Заявка не найдена'})
@@ -484,6 +525,8 @@ def handler(event: dict, context) -> dict:
                 if not row:
                     return json_resp(404, {'error': 'Позиция не найдена'})
                 order_id, cur_qty, cur_price = row
+                if is_recalc_locked(cur, order_id) and not body.get('_recalc_internal'):
+                    return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if not ok_v:
                     return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
@@ -519,6 +562,8 @@ def handler(event: dict, context) -> dict:
                 if not row:
                     return json_resp(404, {'error': 'Позиция не найдена'})
                 order_id = row[0]
+                if is_recalc_locked(cur, order_id):
+                    return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if not ok_v:
                     return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
@@ -532,6 +577,8 @@ def handler(event: dict, context) -> dict:
                 order_id = body.get('order_id')
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
+                if is_recalc_locked(cur, order_id):
+                    return json_resp(423, {'error': 'Идёт пересчёт цен, попробуйте позже'})
                 ok_v, current_v = check_version(cur, order_id, expected_version)
                 if current_v is None:
                     return json_resp(404, {'error': 'Заявка не найдена'})

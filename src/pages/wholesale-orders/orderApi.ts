@@ -76,10 +76,10 @@ export const orderApi = {
       "add_items_batch",
       { order_id: orderId, items: items as unknown as Record<string, unknown>[], expected_version: expectedVersion ?? null }
     ),
-  updateItem: (itemId: number, fields: { quantity?: number; price?: number }, expectedVersion?: string | null) =>
+  updateItem: (itemId: number, fields: { quantity?: number; price?: number }, expectedVersion?: string | null, recalcInternal?: boolean) =>
     postAction<{ ok: boolean; amount: number; total_amount: number; version: string }>(
       "update_item",
-      { item_id: itemId, ...fields, expected_version: expectedVersion ?? null }
+      { item_id: itemId, ...fields, expected_version: expectedVersion ?? null, _recalc_internal: !!recalcInternal }
     ),
   deleteItem: (itemId: number, expectedVersion?: string | null) =>
     postAction<{ ok: boolean; total_amount: number; version: string }>(
@@ -91,4 +91,8 @@ export const orderApi = {
       "update_header",
       { order_id: orderId, ...fields, expected_version: expectedVersion ?? null }
     ),
+  startRecalc: (orderId: number) =>
+    postAction<{ ok: boolean; version: string }>("start_recalc", { order_id: orderId }),
+  stopRecalc: (orderId: number) =>
+    postAction<{ ok: boolean; version: string }>("stop_recalc", { order_id: orderId }),
 };
