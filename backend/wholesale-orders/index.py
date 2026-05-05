@@ -178,12 +178,20 @@ def get_lock_info(cur, order_id):
 
 def check_lock_owner(cur, order_id, current_manager_id, session_id):
     """Проверяет что текущий пользователь+сессия владеют блокировкой.
+    Если блокировки нет — автоматически захватывает её для текущего пользователя (lazy lock).
     Возвращает (ok: bool, info: dict|None)."""
     info = get_lock_info(cur, order_id)
     if info is None:
         return False, None
     if not info.get('locked'):
-        return False, info
+        # Lock свободен — захватываем сами (lazy)
+        cur.execute(
+            "UPDATE wholesale_orders SET locked_by_user_id = %s, locked_session_id = %s, locked_at = NOW() WHERE id = %s",
+            (current_manager_id, session_id or '', order_id)
+        )
+        log_lock_action(cur, order_id, current_manager_id, session_id, 'lazy_lock', 'auto_on_mutation')
+        new_info = get_lock_info(cur, order_id)
+        return True, new_info
     if info.get('locked_by_user_id') != current_manager_id:
         return False, info
     if session_id and info.get('locked_session_id') != session_id:
