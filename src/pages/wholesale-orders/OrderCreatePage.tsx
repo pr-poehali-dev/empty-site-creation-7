@@ -133,6 +133,7 @@ const OrderCreatePage = () => {
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [copyMode, setCopyMode] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<Set<number>>(new Set());
   const [creatingReturn, setCreatingReturn] = useState(false);
@@ -1008,6 +1009,63 @@ const OrderCreatePage = () => {
       if (next.id) scheduleItemUpdate(next.id, next.quantity, next.price);
       return next;
     }));
+  };
+
+  const recalcZeroPrices = async () => {
+    if (!wholesalerId) {
+      toast({ title: "Сначала выберите оптовика", variant: "destructive" });
+      return;
+    }
+    const zeroLines = lines.map((l, i) => ({ l, i })).filter((x) => x.l.price === 0 && x.l.id);
+    if (zeroLines.length === 0) {
+      toast({ title: "Нулевых цен нет" });
+      return;
+    }
+    setRecalculating(true);
+    let updated = 0;
+    const updates: { index: number; price: number; id: number }[] = [];
+    try {
+      await Promise.all(zeroLines.map(async ({ l, i }) => {
+        try {
+          let newPrice = 0;
+          if (l.is_temp && l.temp_product_id) {
+            const resp = await fetch(`${TEMP_PRODUCTS_URL}?id=${l.temp_product_id}`, { headers: authHeaders });
+            const data = await resp.json();
+            if (resp.ok && data.item) {
+              newPrice = Number(data.item.price) || 0;
+            }
+          } else if (l.product_id) {
+            const resp = await fetch(`${PRODUCTS_URL}?id=${l.product_id}`, { headers: authHeaders });
+            const data = await resp.json();
+            if (resp.ok && data.item) {
+              newPrice = calcPrice(data.item, pricingRules);
+            }
+          }
+          if (newPrice > 0 && l.id) {
+            updates.push({ index: i, price: newPrice, id: l.id });
+          }
+        } catch { /* ignore individual errors */ }
+      }));
+
+      for (const u of updates) {
+        try {
+          const { version } = await orderApi.updateItem(u.id, { price: u.price }, versionRef.current);
+          versionRef.current = version;
+          updated++;
+        } catch (e) {
+          if (await handleVersionConflict(e)) break;
+        }
+      }
+      if (updated > 0) {
+        setLines((prev) => prev.map((l, i) => {
+          const u = updates.find((x) => x.index === i);
+          return u ? { ...l, price: u.price } : l;
+        }));
+      }
+      toast({ title: `Обновлено ${updated} из ${zeroLines.length}` });
+    } finally {
+      setRecalculating(false);
+    }
   };
 
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1935,6 +1993,15 @@ const OrderCreatePage = () => {
               >
                 {exporting ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="FileSpreadsheet" size={16} />}
                 <span className="ml-2">Excel</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-xl border-white/[0.08]"
+                onClick={recalcZeroPrices}
+                disabled={recalculating}
+              >
+                {recalculating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
+                <span className="ml-2">Обновить все нулевые цены</span>
               </Button>
             </div>
             <div className="flex gap-2 flex-wrap">
