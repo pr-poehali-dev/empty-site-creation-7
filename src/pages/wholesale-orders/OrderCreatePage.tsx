@@ -1040,8 +1040,8 @@ const OrderCreatePage = () => {
       for (let i = 0; i < MAX_ITERATIONS; i++) {
         const resp = await orderApi.recalcZeroPrices(editId);
         versionRef.current = resp.version;
-        totalUpdated = resp.updated;
-        totalZero = resp.total_zero;
+        totalUpdated += resp.updated;
+        if (i === 0) totalZero = resp.total_zero;
         if (resp.done) break;
       }
       await reloadOrder(true);
