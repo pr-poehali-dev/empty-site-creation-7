@@ -68,8 +68,6 @@ def calc_price_by_rules(cur, customer_name, product_id):
         (wholesaler_id,)
     )
     rules = cur.fetchall()
-    if not rules:
-        return 0
     cur.execute(
         "SELECT price_base, price_retail, price_wholesale, price_purchase, product_group FROM products WHERE id = %s",
         (product_id,)
@@ -78,6 +76,8 @@ def calc_price_by_rules(cur, customer_name, product_id):
     if not prod:
         return 0
     price_map = {'price_base': prod[0], 'price_retail': prod[1], 'price_wholesale': prod[2], 'price_purchase': prod[3]}
+    if not rules:
+        return float(price_map.get('price_wholesale') or 0)
     product_group = prod[4]
     matched = None
     for r in rules:
