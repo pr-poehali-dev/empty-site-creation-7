@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 
@@ -9,18 +20,23 @@ const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e
 interface Wholesaler {
   id: number;
   name: string;
+  orders_count: number;
+  returns_count: number;
 }
 
 const Wholesalers = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const token = localStorage.getItem("auth_token") || "";
   const [items, setItems] = useState<Wholesaler[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toDelete, setToDelete] = useState<Wholesaler | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const resp = await fetch(WHOLESALERS_URL, {
+        const resp = await fetch(`${WHOLESALERS_URL}?withStats=1`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await resp.json();
@@ -31,6 +47,33 @@ const Wholesalers = () => {
     };
     load();
   }, []);
+
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      const resp = await fetch(`${WHOLESALERS_URL}?id=${toDelete.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        setItems((prev) => prev.filter((x) => x.id !== toDelete.id));
+        toast({ title: "Оптовик удалён", description: toDelete.name });
+        setToDelete(null);
+      } else {
+        toast({
+          title: "Не удалось удалить",
+          description: data.error || "Попробуйте ещё раз",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({ title: "Ошибка сети", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -55,18 +98,63 @@ const Wholesalers = () => {
         ) : (
           <DebugBadge id="Wholesalers:list">
             <div className="space-y-2">
-              {items.map((w) => (
-                <div key={w.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-sm">{w.name}</p>
+              {items.map((w) => {
+                const used = w.orders_count > 0 || w.returns_count > 0;
+                return (
+                  <div
+                    key={w.id}
+                    className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{w.name}</p>
+                      {used && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {w.orders_count > 0 && <span>{w.orders_count} заявок</span>}
+                          {w.orders_count > 0 && w.returns_count > 0 && <span> · </span>}
+                          {w.returns_count > 0 && <span>{w.returns_count} возвратов</span>}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => !used && setToDelete(w)}
+                      disabled={used}
+                      title={used ? "Оптовик участвует в заявках или возвратах" : "Удалить оптовика"}
+                      className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:hover:text-muted-foreground disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Icon name="Trash2" size={16} />
+                    </button>
                   </div>
-                  <Icon name="ChevronRight" size={16} className="text-muted-foreground" />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </DebugBadge>
         )}
       </main>
+
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !deleting && setToDelete(null)}>
+        <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить оптовика?</AlertDialogTitle>
+            <AlertDialogDescription className="break-words">
+              Оптовик «{toDelete?.name}» будет удалён. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Удаляю…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -226,14 +226,15 @@ def handler(event: dict, context) -> dict:
             item['_price'] = price
             total += amount
 
+        cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id", (customer_name,))
+        wid = cur.fetchone()[0]
+
         cur.execute(
-            """INSERT INTO wholesale_returns (customer_name, comment, total_amount, created_by, created_by_owner)
-               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-            (customer_name, comment, total, manager_id, bool(is_owner))
+            """INSERT INTO wholesale_returns (customer_name, comment, total_amount, created_by, created_by_owner, wholesaler_id)
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (customer_name, comment, total, manager_id, bool(is_owner), wid)
         )
         return_id = cur.fetchone()[0]
-
-        cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name,))
 
         TEMP_PRODUCT_ID = 19
         for item in items:
@@ -288,8 +289,13 @@ def handler(event: dict, context) -> dict:
                         'body': json.dumps({'error': 'Нельзя изменить позиции: возврат уже зачтён в заявки'})}
 
         if customer_name is not None:
-            cur.execute("UPDATE wholesale_returns SET customer_name = %s WHERE id = %s", (customer_name.strip(), return_id))
-            cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name.strip(),))
+            cname_clean = customer_name.strip()
+            if cname_clean:
+                cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id", (cname_clean,))
+                wid_upd = cur.fetchone()[0]
+            else:
+                wid_upd = None
+            cur.execute("UPDATE wholesale_returns SET customer_name = %s, wholesaler_id = %s WHERE id = %s", (cname_clean, wid_upd, return_id))
         if 'comment' in body:
             cur.execute("UPDATE wholesale_returns SET comment = %s WHERE id = %s", (comment_val, return_id))
 

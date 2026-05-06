@@ -1023,7 +1023,13 @@ def handler(event: dict, context) -> dict:
                     fields.append("customer_name = %s")
                     vals.append(cname)
                     if cname:
-                        cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (cname,))
+                        cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id", (cname,))
+                        wid = cur.fetchone()[0]
+                        fields.append("wholesaler_id = %s")
+                        vals.append(wid)
+                    else:
+                        fields.append("wholesaler_id = %s")
+                        vals.append(None)
                 if 'comment' in body:
                     fields.append("comment = %s")
                     vals.append(body.get('comment'))
@@ -1046,14 +1052,15 @@ def handler(event: dict, context) -> dict:
             if not items:
                 return json_resp(400, {'error': 'Добавьте хотя бы одну позицию'})
 
+            cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id", (customer_name,))
+            wid = cur.fetchone()[0]
             cur.execute(
                 """INSERT INTO wholesale_orders
-                   (customer_name, comment, total_amount, created_by, created_by_owner)
-                   VALUES (%s, %s, 0, %s, %s) RETURNING id""",
-                (customer_name, comment, owner_manager_id, bool(is_owner))
+                   (customer_name, comment, total_amount, created_by, created_by_owner, wholesaler_id)
+                   VALUES (%s, %s, 0, %s, %s, %s) RETURNING id""",
+                (customer_name, comment, owner_manager_id, bool(is_owner), wid)
             )
             order_id = cur.fetchone()[0]
-            cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (customer_name,))
             for item in items:
                 insert_item(cur, order_id, item, customer_name, actor)
             recalc_total(cur, order_id)
