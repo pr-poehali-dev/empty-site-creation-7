@@ -463,7 +463,9 @@ def handler(event: dict, context) -> dict:
                 values.append(status_filter)
             else:
                 conditions.append("o.status != 'draft'")
-                if not include_archived:
+                if include_archived:
+                    conditions.append("o.status = 'archived'")
+                else:
                     conditions.append("o.status != 'archived'")
 
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""

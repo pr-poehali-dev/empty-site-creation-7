@@ -109,7 +109,6 @@ const WholesaleOrders = () => {
       if (resp.ok) {
         toast({ title: isArchived ? "Заявка удалена" : "Заявка в архиве" });
         setDeleteTarget(null);
-        setViewOrder(null);
         fetchOrders(showArchive);
       } else {
         const data = await resp.json();
