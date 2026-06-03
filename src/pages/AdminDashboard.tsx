@@ -492,6 +492,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Настройки</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.backup" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/backup")}
+            >
+              <Icon name="DatabaseBackup" size={20} />
+              <span className="font-medium">Архивация данных</span>
+            </Button>
+          </DebugBadge>
           <DebugBadge id="Admin:nav.exchange" className="flex-1">
             <Button
               variant="outline"
