@@ -9,6 +9,8 @@ import scannerJournal from "@/data/journal/scanner.md?raw";
 import labelsJournal from "@/data/journal/labels.md?raw";
 import orderLockJournal from "@/data/journal/order-lock.md?raw";
 import ordersRestructure34Journal from "@/data/journal/orders-restructure-stages-3-4.md?raw";
+import RecipeMarkdown from "@/components/RecipeMarkdown";
+import { REPOSITORY_RULE, RECIPES, getRecipe } from "@/data/repository";
 
 const JOURNAL_TABS = [
   { key: "scanner", label: "Сканер штрихкодов", content: scannerJournal },
@@ -413,9 +415,10 @@ const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "plans" | "backup">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "plans" | "backup" | "repo">("menu");
   const [activeTab, setActiveTab] = useState("creation");
   const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
+  const [openRecipe, setOpenRecipe] = useState<string | null>(null);
 
   if (user.role !== "owner") {
     navigate("/admin");
@@ -445,6 +448,8 @@ const Instructions = () => {
       ? "Планы"
       : section === "backup"
       ? "Автокопии (будильник)"
+      : section === "repo"
+      ? "Репозиторий"
       : "Инструкции от Юры";
 
   return (
@@ -528,6 +533,53 @@ const Instructions = () => {
               </div>
               <p className="text-sm text-muted-foreground">Как настроить автоматический запуск резервных копий по расписанию</p>
             </button>
+            <button
+              onClick={() => { setSection("repo"); setOpenRecipe(null); }}
+              className="sm:col-span-2 rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                  <Icon name="Boxes" size={20} className="text-violet-400" />
+                </div>
+                <span className="text-lg font-semibold">Репозиторий</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Готовые рецепты решений для переноса в другие проекты + правило для Юры</p>
+            </button>
+          </div>
+        )}
+
+        {section === "repo" && !openRecipe && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4 sm:p-6">
+              <RecipeMarkdown text={REPOSITORY_RULE} />
+            </div>
+            <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Рецепты</h2>
+              <div className="space-y-2">
+                {RECIPES.map((r) => (
+                  <button
+                    key={r.slug}
+                    onClick={() => setOpenRecipe(r.slug)}
+                    className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/[0.08] p-4 text-left hover:bg-white/[0.04] transition-colors"
+                  >
+                    <span className="font-medium">{r.title}</span>
+                    <Icon name="ChevronRight" size={18} className="text-muted-foreground shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {section === "repo" && openRecipe && (
+          <div className="space-y-4">
+            <Button variant="ghost" size="sm" onClick={() => setOpenRecipe(null)}>
+              <Icon name="ArrowLeft" size={16} />
+              <span className="ml-2">К списку рецептов</span>
+            </Button>
+            <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+              <RecipeMarkdown text={getRecipe(openRecipe)?.content || "Рецепт не найден"} />
+            </div>
           </div>
         )}
 

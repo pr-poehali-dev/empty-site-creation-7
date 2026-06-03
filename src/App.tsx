@@ -32,6 +32,7 @@ import ProductGroups from "./pages/ProductGroups";
 import Labels from "./pages/Labels";
 import OwnerSettings from "./pages/OwnerSettings";
 import OwnerBackup from "./pages/OwnerBackup";
+import PublicRecipe from "./pages/PublicRecipe";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DebugProvider from "./contexts/DebugContext";
 import KeyboardFab from "./components/KeyboardFab";
@@ -78,6 +79,7 @@ const App = () => (
           <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute><OwnerSettings /></ProtectedRoute>} />
           <Route path="/admin/backup" element={<ProtectedRoute><OwnerBackup /></ProtectedRoute>} />
+          <Route path="/share/recipe/:slug" element={<PublicRecipe />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
