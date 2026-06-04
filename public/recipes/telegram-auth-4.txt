@@ -1,0 +1,80 @@
+﻿РЕЦЕПТ: Авторизация через Telegram. ЧАСТЬ 4 из 5
+БЭКЕНД telegram-webhook/index.py + регистрация вебхука. Это ОТДЕЛЬНАЯ вторая функция.
+
+=== БЭКЕНД: telegram-webhook/index.py ===
+Привязывает chat_id к телефону при команде /start. Защищён секретом вебхука.
+
+import json
+import os
+import hmac
+import urllib.request
+import psycopg2
+
+def get_db():
+    return psycopg2.connect(os.environ['DATABASE_URL'])
+
+def send_message(chat_id, text):
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not bot_token:
+        return
+    url = 'https://api.telegram.org/bot' + bot_token + '/sendMessage'
+    payload = json.dumps({'chat_id': chat_id, 'text': text}).encode()
+    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+def handler(event, context):
+    if event.get('httpMethod') == 'OPTIONS':
+        return {'statusCode': 200, 'headers': {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Telegram-Bot-Api-Secret-Token'}, 'body': ''}
+    headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
+    if event.get('httpMethod') != 'POST':
+        return {'statusCode': 405, 'headers': headers, 'body': json.dumps({'error': 'method'})}
+
+    expected = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+    req_headers = event.get('headers') or {}
+    received = ''
+    for k, v in req_headers.items():
+        if k.lower() == 'x-telegram-bot-api-secret-token':
+            received = v or ''
+            break
+    if not expected or not received or not hmac.compare_digest(received, expected):
+        return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'forbidden'})}
+
+    body = json.loads(event.get('body') or '{}')
+    message = body.get('message', {})
+    text = (message.get('text') or '').strip()
+    chat_id = (message.get('chat') or {}).get('id')
+    if not chat_id or not text:
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+    if text.startswith('/start'):
+        parts = text.split(maxsplit=1)
+        if len(parts) == 2:
+            phone = parts[1].strip().replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
+            if not phone.startswith('+'):
+                phone = '+' + phone
+            conn = get_db(); cur = conn.cursor()
+            cur.execute("SELECT id FROM users WHERE phone = %s", (phone,))
+            if cur.fetchone():
+                cur.execute("UPDATE users SET telegram_chat_id = %s WHERE phone = %s", (chat_id, phone))
+                conn.commit()
+                send_message(chat_id, "Telegram privyazan k nomeru " + phone)
+            else:
+                send_message(chat_id, "Nomer " + phone + " ne nayden.")
+            cur.close(); conn.close()
+        else:
+            send_message(chat_id, "Dlya privyazki ispolzuyte knopku na sayte.")
+    return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+=== РЕГИСТРАЦИЯ ВЕБХУКА (один раз) ===
+Открыть в браузере, подставив значения:
+https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=<URL_telegram-webhook>&secret_token=<TELEGRAM_WEBHOOK_SECRET>
+
+---
+ПРОДОЛЖЕНИЕ В ЧАСТИ 5 (фронтенд + роуты + порядок внедрения):
+/recipes/telegram-auth-5.txt

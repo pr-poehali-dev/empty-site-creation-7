@@ -1,0 +1,73 @@
+﻿РЕЦЕПТ: Авторизация через Telegram + переходы по ролям
+ЧАСТЬ 1 из 5 — обзор, схема, таблицы БД, секреты.
+
+ПРИВЕТ, ЮРА!
+Это рабочее решение: вход в админ-панель по номеру телефона с подтверждением через Telegram-бота, плюс разделение доступа по ролям (владелец / управленец) и редиректы после входа. Ниже полный обезличенный код, разбитый на 5 частей. Реальные токены и телефоны заведёт владелец. ВАЖНО: читай части по очереди — ссылка на следующую в конце каждой.
+
+ЧТО СПРОСИТЬ У ВЛАДЕЛЬЦА
+1. Имя Telegram-бота (username, например my_shop_bot) — для ссылки t.me/<bot>?start=...
+2. Токен бота от @BotFather — в секрет TELEGRAM_BOT_TOKEN.
+3. Секрет вебхука — случайная строка 32-64 символа в TELEGRAM_WEBHOOK_SECRET.
+4. Телефон владельца (роль owner в таблице users). Остальные — управленцы.
+5. Нужны ли роли управленцев (таблица roles).
+6. Заголовок на экране входа.
+7. После деплоя — зарегистрировать вебхук бота (см. часть 4).
+
+КАК УСТРОЕНО
+1. Пользователь вводит телефон -> фронт зовёт бэкенд check_phone.
+2. Если Telegram не привязан — экран привязки: открывается бот с ?start=<телефон>, пользователь пишет боту -> вебхук сохраняет chat_id.
+3. send_code генерирует 6-значный код, кладёт в login_codes (5 минут) и шлёт в Telegram.
+4. verify_code проверяет код -> создаёт сессию (токен 30 дней) в user_sessions -> возвращает токен и роль.
+5. Фронт сохраняет токен в localStorage и редиректит: owner -> дашборд, иначе -> кабинет управленца.
+6. ProtectedRoute пускает только при наличии токена.
+
+=== ТАБЛИЦЫ БД (SQL) ===
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    phone VARCHAR(20) UNIQUE NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'manager',
+    telegram_chat_id BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE user_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(128) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE login_codes (
+    id SERIAL PRIMARY KEY,
+    phone VARCHAR(20) NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE roles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE managers (
+    id SERIAL PRIMARY KEY,
+    phone VARCHAR(20) UNIQUE NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    role_id INTEGER REFERENCES roles(id),
+    telegram_chat_id BIGINT,
+    status VARCHAR(20) NOT NULL DEFAULT 'not_authorized'
+);
+
+-- Владелец: INSERT INTO users (phone, role) VALUES ('+70000000000', 'owner');
+
+=== СЕКРЕТЫ ===
+- DATABASE_URL
+- TELEGRAM_BOT_TOKEN
+- TELEGRAM_WEBHOOK_SECRET
+
+---
+ПРОДОЛЖЕНИЕ В ЧАСТИ 2 (бэкенд owner-auth, часть 1):
+/recipes/telegram-auth-2.txt

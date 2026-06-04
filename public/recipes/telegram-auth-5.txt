@@ -1,0 +1,126 @@
+﻿РЕЦЕПТ: Авторизация через Telegram. ЧАСТЬ 5 из 5 (последняя)
+ФРОНТЕНД + роуты + порядок внедрения.
+
+=== ФРОНТЕНД: AdminLogin.tsx ===
+
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import Icon from "@/components/ui/icon";
+
+const AUTH_URL = "<URL_owner-auth>";
+const BOT_USERNAME = "<bot_username>";
+
+export default function AdminLogin() {
+  const [phone, setPhone] = useState("+");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState("phone");
+  const [loading, setLoading] = useState(false);
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  const handlePhoneChange = (e) => {
+    let value = e.target.value;
+    if (!value.startsWith("+")) value = "+" + value;
+    const cleaned = "+" + value.replace(/[^0-9]/g, "");
+    if (cleaned.length <= 16) setPhone(cleaned);
+  };
+
+  const openTelegramBot = () => {
+    window.open("https://t.me/" + BOT_USERNAME + "?start=" + phone.replace("+", ""), "_blank");
+  };
+
+  const checkPhone = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(AUTH_URL + "/?action=check_phone", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await resp.json();
+      if (!data.allowed) { toast({ title: "Dostup zapreshchen", description: data.error }); return; }
+      if (data.need_telegram) { setStep("telegram"); return; }
+      await sendCode();
+    } finally { setLoading(false); }
+  };
+
+  const sendCode = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(AUTH_URL + "/?action=send_code", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await resp.json();
+      if (resp.ok) { setStep("code"); toast({ title: "Kod otpravlen" }); }
+      else toast({ title: "Oshibka", description: data.error });
+    } finally { setLoading(false); }
+  };
+
+  const checkTelegramLink = async () => {
+    const resp = await fetch(AUTH_URL + "/?action=check_telegram", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await resp.json();
+    if (data.linked) { setTelegramLinked(true); toast({ title: "Telegram privyazan" }); }
+    else toast({ title: "Telegram ne privyazan" });
+  };
+
+  const verifyCode = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(AUTH_URL + "/?action=verify_code", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, code }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        localStorage.setItem("auth_token", data.token);
+        localStorage.setItem("auth_user", JSON.stringify(data.user));
+        if (data.user.role === "owner") navigate("/admin/dashboard");
+        else navigate("/admin/manager");
+      } else toast({ title: "Oshibka", description: data.error });
+    } finally { setLoading(false); }
+  };
+
+  // step phone: input + knopka checkPhone
+  // step telegram: knopki openTelegramBot, checkTelegramLink, sendCode
+  // step code: input code + knopka verifyCode
+  // razmetku sdelay pod svoy proekt
+}
+
+=== ФРОНТЕНД: ProtectedRoute.tsx ===
+
+import { Navigate } from "react-router-dom";
+
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem("auth_token");
+  if (!token) return <Navigate to="/admin" replace />;
+  return children;
+};
+
+export default ProtectedRoute;
+
+=== ЗАЩИТА ПО РОЛИ (только владелец) ===
+const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
+if (user.role !== "owner") { navigate("/admin/dashboard"); return null; }
+
+=== РОУТЫ (App.tsx) ===
+/admin -> AdminLogin
+/admin/dashboard -> ProtectedRoute -> AdminDashboard
+/admin/manager -> ProtectedRoute -> ManagerDashboard
+
+=== ПОРЯДОК ВНЕДРЕНИЯ ===
+1. Применить SQL (users, user_sessions, login_codes; опц. roles, managers).
+2. Завести секреты TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET.
+3. Создать функции owner-auth и telegram-webhook, задеплоить, взять URL.
+4. Зарегистрировать вебхук бота (setWebhook) один раз.
+5. Создать фронт AdminLogin, ProtectedRoute; подставить AUTH_URL и BOT_USERNAME.
+6. Прописать роуты, проверить редиректы по ролям.
+7. Добавить владельца в users (role=owner) и протестировать.
+
+КОНЕЦ РЕЦЕПТА. Это была последняя часть (5 из 5).

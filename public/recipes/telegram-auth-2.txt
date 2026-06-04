@@ -1,0 +1,76 @@
+﻿РЕЦЕПТ: Авторизация через Telegram. ЧАСТЬ 2 из 5
+БЭКЕНД owner-auth/index.py (часть 1: импорты, check_access, OPTIONS, check_phone, check_telegram).
+
+=== БЭКЕНД: owner-auth/index.py ===
+
+import json
+import os
+import secrets
+import urllib.request
+from datetime import datetime, timedelta
+import psycopg2
+
+def get_db():
+    return psycopg2.connect(os.environ['DATABASE_URL'])
+
+def check_access(cur, phone):
+    cur.execute("SELECT id, role, telegram_chat_id FROM users WHERE phone = %s", (phone,))
+    user = cur.fetchone()
+    if not user:
+        return None, None, None
+    if user[1] == 'owner':
+        return 'owner', user, None
+    cur.execute("SELECT id, status FROM managers WHERE phone = %s", (phone,))
+    mgr = cur.fetchone()
+    if not mgr:
+        return 'denied', user, 'Dostup zapreshchen.'
+    if mgr[1] == 'not_authorized':
+        return 'not_authorized', user, 'Privyazhite Telegram.'
+    if mgr[1] == 'pending':
+        return 'pending', user, 'Akkaunt ozhidaet avtorizacii.'
+    if mgr[1] == 'authorized':
+        return 'authorized', user, None
+    return 'denied', user, 'Dostup zapreshchen.'
+
+def handler(event, context):
+    if event.get('httpMethod') == 'OPTIONS':
+        return {'statusCode': 200, 'headers': {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Authorization',
+            'Access-Control-Max-Age': '86400'}, 'body': ''}
+
+    headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
+    method = event.get('httpMethod', 'GET')
+    params = event.get('queryStringParameters') or {}
+    action = params.get('action', '')
+    body = json.loads(event.get('body') or '{}')
+
+    if method == 'POST' and action == 'check_phone':
+        phone = body.get('phone', '').strip()
+        if not phone:
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'no phone'})}
+        conn = get_db(); cur = conn.cursor()
+        status, user, message = check_access(cur, phone)
+        cur.close(); conn.close()
+        if status is None:
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'allowed': False, 'error': 'denied'})}
+        if status == 'denied':
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'allowed': False, 'error': message})}
+        if status == 'not_authorized':
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'allowed': True, 'need_telegram': True})}
+        if status == 'pending':
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'allowed': False, 'error': message})}
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'allowed': True, 'need_telegram': user[2] is None})}
+
+    if method == 'POST' and action == 'check_telegram':
+        phone = body.get('phone', '').strip()
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT telegram_chat_id FROM users WHERE phone = %s", (phone,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'linked': bool(row and row[0])})}
+
+---
+ПРОДОЛЖЕНИЕ В ЧАСТИ 3 (owner-auth: send_code, verify_code, me):
+/recipes/telegram-auth-3.txt

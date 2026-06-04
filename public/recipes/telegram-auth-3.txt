@@ -1,0 +1,70 @@
+﻿РЕЦЕПТ: Авторизация через Telegram. ЧАСТЬ 3 из 5
+БЭКЕНД owner-auth/index.py (часть 2: send_code, verify_code, me, финал handler). Этот код идёт ВНУТРИ той же функции handler, после блоков из части 2.
+
+    if method == 'POST' and action == 'send_code':
+        phone = body.get('phone', '').strip()
+        conn = get_db(); cur = conn.cursor()
+        status, user, message = check_access(cur, phone)
+        if status not in ('owner', 'authorized'):
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': message or 'denied'})}
+        if not user[2]:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'no telegram'})}
+        code = str(secrets.randbelow(900000) + 100000)
+        expires_at = datetime.now() + timedelta(minutes=5)
+        cur.execute("DELETE FROM login_codes WHERE phone = %s", (phone,))
+        cur.execute("INSERT INTO login_codes (phone, code, expires_at) VALUES (%s, %s, %s)", (phone, code, expires_at))
+        conn.commit()
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+        if bot_token:
+            url = 'https://api.telegram.org/bot' + bot_token + '/sendMessage'
+            payload = json.dumps({'chat_id': user[2], 'text': code + ' - kod avtorizacii. Deystvitelen 5 minut.'}).encode()
+            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(req, timeout=10)
+            except Exception:
+                cur.close(); conn.close()
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'send failed'})}
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'success': True})}
+
+    if method == 'POST' and action == 'verify_code':
+        phone = body.get('phone', '').strip()
+        code = body.get('code', '').strip()
+        conn = get_db(); cur = conn.cursor()
+        status, user, message = check_access(cur, phone)
+        if status not in ('owner', 'authorized'):
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': message or 'denied'})}
+        cur.execute("SELECT id FROM login_codes WHERE phone = %s AND code = %s AND expires_at > NOW()", (phone, code))
+        if not cur.fetchone():
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'bad code'})}
+        cur.execute("DELETE FROM login_codes WHERE phone = %s", (phone,))
+        token = secrets.token_hex(32)
+        expires_at = datetime.now() + timedelta(days=30)
+        cur.execute("INSERT INTO user_sessions (user_id, token, expires_at) VALUES (%s, %s, %s)", (user[0], token, expires_at))
+        conn.commit()
+        user_data = {'id': user[0], 'phone': phone, 'role': status}
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'token': token, 'user': user_data})}
+
+    if method == 'GET' and action == 'me':
+        auth = event.get('headers', {}).get('X-Authorization', '')
+        token = auth.replace('Bearer ', '').strip()
+        if not token:
+            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'no auth'})}
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT u.id, u.phone, u.role FROM users u JOIN user_sessions s ON s.user_id = u.id WHERE s.token = %s AND s.expires_at > NOW()", (token,))
+        user = cur.fetchone()
+        cur.close(); conn.close()
+        if not user:
+            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'expired'})}
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'user': {'id': user[0], 'phone': user[1], 'role': user[2]}})}
+
+    return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'unknown action'})}
+
+---
+ПРОДОЛЖЕНИЕ В ЧАСТИ 4 (бэкенд telegram-webhook + регистрация вебхука):
+/recipes/telegram-auth-4.txt
