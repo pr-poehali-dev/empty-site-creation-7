@@ -10,7 +10,7 @@ import labelsJournal from "@/data/journal/labels.md?raw";
 import orderLockJournal from "@/data/journal/order-lock.md?raw";
 import ordersRestructure34Journal from "@/data/journal/orders-restructure-stages-3-4.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
-import { REPOSITORY_RULE, RECIPES, getRecipe } from "@/data/repository";
+import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
 const JOURNAL_TABS = [
   { key: "scanner", label: "Сканер штрихкодов", content: scannerJournal },
@@ -552,6 +552,9 @@ const Instructions = () => {
           <div className="space-y-4">
             <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4 sm:p-6">
               <RecipeMarkdown text={REPOSITORY_RULE} />
+            </div>
+            <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4 sm:p-6">
+              <RecipeMarkdown text={REPOSITORY_RULE_CREATE} />
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
               <h2 className="text-lg font-semibold mb-3">Рецепты</h2>
