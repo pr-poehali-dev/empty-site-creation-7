@@ -362,6 +362,109 @@ Python-функции находятся в папке \`/backend/\`. Вариа
 ## Минимальный набор
 VPS за 500-1000Br/мес + PostgreSQL + Nginx + Python. Всё поместится на одном сервере.`;
 
+const TAB_ABOUT = `# О проекте «Мир Техники Плюс»
+
+**Юра, читай это первым.** Здесь рабочая карта всей системы: что это, как устроено, где что лежит. Прочитав документ, ты понимаешь проект целиком и НЕ перечитываешь все файлы. В отдельные файлы лезешь только за конкретным кодом, когда правишь именно его. После каждой значимой правки — обновляй этот документ.
+
+## 1. Что это за система
+«Мир Техники Плюс» — внутренняя складская/оптовая ERP для торговой компании (техника). Это не витрина для покупателей, а рабочий инструмент сотрудников: ведут каталог, оформляют оптовые заявки и возвраты, принимают оплаты, считают цены по правилам, сканируют штрихкоды, печатают этикетки, обмениваются с 1С, делают бэкапы. Публичной части почти нет: \`/\` — заглушка с кнопкой «Войти», вся работа в \`/admin/*\` под авторизацией. Масштаб: ~17 300 товаров, ~15 000 штрихкодов, 278 категорий, 44 бренда, 12 оптовиков, 71 заявка.
+
+## 2. Стек и архитектура
+- **Фронт:** React + TypeScript + Vite, маршруты в \`src/App.tsx\`, UI на shadcn/ui + Tailwind, тёмная тема, акцент оранжевый.
+- **Бэкенд:** 22 Python-функции в \`/backend/<имя>/index.py\`, каждая — отдельный HTTP-endpoint. URL в \`backend/func2url.json\`.
+- **БД:** PostgreSQL, прямой psycopg2 (без ORM). Схема \`t_p69702834_empty_site_creation_\`.
+- **Файлы:** S3 (\`bucket.poehali.dev\`) → отдаются через \`cdn.poehali.dev\`. Используется для фото товаров.
+- **Связь:** фронт зовёт функции через \`fetch\`, URL прописаны прямо в страницах (общего api-клиента нет).
+
+Поток: Фронт (fetch + Bearer-токен) → Python-функция → PostgreSQL / S3.
+
+## 3. Авторизация (основа всего)
+Вход по номеру телефона с подтверждением через Telegram-бота (\`mirtehniki_plus_bot\`). SMS нет, код приходит в Telegram.
+1. Телефон → \`check_phone\` (есть ли номер, какой доступ).
+2. Если Telegram не привязан → ссылка \`t.me/mirtehniki_plus_bot?start=<телефон>\`, бот \`/start\`, вебхук (\`telegram-webhook\`) сохраняет \`chat_id\`.
+3. \`send_code\` → 6-значный код в \`login_codes\` (5 минут), шлёт в Telegram.
+4. \`verify_code\` → проверка, сессия в \`user_sessions\` (токен 30 дней), возврат токена и роли.
+5. Фронт хранит в localStorage: \`auth_token\` (Bearer) и \`auth_user\` (роль и данные).
+
+**Роли:** \`owner\` (полный доступ) и \`manager\`. Под-роли в \`roles\` (Управляющий, Менеджер опта, Менеджер розницы, Продавец) — от них зависят разделы в ManagerDashboard. Менеджер: \`not_authorized\` → \`pending\` → \`authorized\`. Защита: \`ProtectedRoute.tsx\` (нет токена → \`/admin\`); бэк проверяет токен из \`X-Authorization\`/\`Authorization\` через \`user_sessions\`.
+
+## 4. Карта страниц (фронт)
+| Маршрут | Файл | Что делает |
+|---|---|---|
+| / | Index | Заглушка с кнопкой входа |
+| /admin | AdminLogin | Вход: телефон → Telegram → код |
+| /admin/dashboard | AdminDashboard | Кабинет владельца: менеджеры, роли, Telegram |
+| /admin/manager | ManagerDashboard | Кабинет менеджера: меню по роли |
+| /admin/authorize/:id | AuthorizeManager | Владелец подтверждает менеджера |
+| /admin/catalog | Catalog | Каталог: поиск, правка, фото, цены |
+| /admin/catalog/new | CatalogNewProducts | Создание товаров |
+| /admin/orders | WholesaleOrders | Список оптовых заявок (статусы, архив) |
+| /admin/orders/create, /:id/edit | OrderCreatePage | Создание/правка заявки (с блокировкой) |
+| /admin/orders/:orderId/payments | OrderPayments | Оплаты по заявке |
+| /admin/orders/unknown-barcode/:barcode | UnknownBarcodePage | Неизвестный штрихкод при сборке |
+| /admin/returns + create/edit | WholesaleReturns, ReturnCreatePage | Возвраты |
+| /admin/scan, /admin/shared/scan | ScanBarcode, BarcodeScanPage | Сканер штрихкодов (камера) |
+| /admin/shared/bulk-paste | BulkPastePage | Массовая вставка по штрихкодам |
+| /admin/exchange-1c | Exchange1C | Обмен с 1С: API-ключ, экспорт |
+| /admin/instructions | Instructions | Этот раздел: инструкции, журналы, рецепты, «О проекте» |
+| /admin/wholesalers | Wholesalers | Справочник оптовиков |
+| /admin/pricing, /:id | PricingRules, PricingRulesEdit | Правила расчёта цен по оптовику |
+| /admin/new-products | NewProducts | Временные товары (вне каталога) |
+| /admin/new-barcodes | NewBarcodes | Новые штрихкоды: подтвердить/удалить |
+| /admin/brands | Brands | Бренды (слияние, переименование) |
+| /admin/product-groups | ProductGroups | Группы товаров (из 1С) |
+| /admin/labels | Labels | Печать этикеток: шаблоны, предпросмотр |
+| /admin/settings | OwnerSettings | Настройки владельца |
+| /admin/backup | OwnerBackup | Бэкапы БД: ручные, авто, восстановление |
+
+**Заметные компоненты:** KeyboardFab + VirtualKeyboard (виртуальная клавиатура для iOS-сканера), DebugBadge/DebugContext (режим отладки, \`debug_mode\` в localStorage), RecipeMarkdown (рендер рецептов).
+
+## 5. Карта бэкенда (функции)
+| Функция | Назначение | Главные таблицы |
+|---|---|---|
+| owner-auth | Вход: check_phone/send_code/verify_code/me | users, managers, roles, login_codes, user_sessions |
+| telegram-webhook | Приём /start, привязка chat_id | users, managers |
+| telegram-setup, telegram-notify | Настройка бота, уведомления | users |
+| admin-managers | CRUD менеджеров и ролей | managers, roles |
+| owner-employees | Сотрудники | employees |
+| catalog-products | Товары: CRUD, фото на S3 (Pillow→webp) | products, product_images, product_barcodes |
+| catalog-categories | Категории (дерево parent_id) | categories |
+| brands | Бренды (DISTINCT) | products, temp_products |
+| temp-products | Временные товары | temp_products |
+| new-barcodes | Новые штрихкоды | new_barcodes |
+| wholesale-orders | Заявки: позиции, блокировки, авто-цены | wholesale_orders, wholesale_order_items, pricing_rules, order_locks |
+| wholesale-orders-bulk-resolve | Массовая смена статусов | wholesale_orders |
+| wholesale-returns | Возвраты | wholesale_returns, wholesale_return_items |
+| order-payments | Оплаты и зачёты | order_payments, wholesale_orders, wholesale_returns |
+| pricing-rules | Правила цен (фильтр + формула) | pricing_rules |
+| wholesalers | Оптовики | wholesalers |
+| 1c-exchange | Обмен с 1С (товары, цены) | products, categories |
+| export-order | ВАЖНО: экспорт заявки в Excel через openpyxl (заголовок, таблица, формулы, merge, base64) | wholesale_orders, wholesale_order_items, products, temp_products, product_barcodes |
+| label-templates | Шаблоны этикеток | label_templates |
+| app-settings, data-backup | Настройки, бэкапы БД | app_settings, backups, backup_settings |
+
+**Общие правила функций:** OPTIONS/CORS в начале; \`DATABASE_URL\` из env; токен из \`X-Authorization\`; ответ JSON \`{statusCode, headers, body}\`.
+
+## 6. Таблицы БД (схема t_p69702834_empty_site_creation_)
+- **Люди/доступ:** users, user_sessions, login_codes, managers, roles, employees, owners, owner_sessions.
+- **Товары:** products (17302), product_barcodes (14996), product_images, categories (278), brands (44), temp_products, new_barcodes.
+- **Опт:** wholesalers (12), wholesale_orders (71), wholesale_order_items (5522), wholesale_returns, wholesale_return_items, order_payments, order_lock_history, pricing_rules (16).
+- **Прочее:** label_templates, app_settings, settings, backups, backup_settings.
+
+## 7. Особенности и подводные камни
+- **export-order = готовый образец генерации Excel** (openpyxl: merge, стили, формулы \`=E*F\`, \`=SUM\`, отдача base64). Фундамент для будущей задачи ТТН.
+- **Блокировка заявок:** при правке заявка лочится на сессию (\`order_locks\` + heartbeat), чтобы двое не правили одновременно. Есть версионирование.
+- **Цены по правилам:** \`pricing_rules\` = фильтр (по группе товара) + формула (\`+10\`, \`*1.2\`); при добавлении товара цена подставляется автоматически.
+- **Временные товары:** отсканировали штрихкод, которого нет в каталоге → создаётся \`temp_product\` (бренд+артикул), позже сопоставляется с реальной номенклатурой.
+- **Обмен с 1С:** товары и группы приходят из 1С, UUID из 1С в \`external_id\`. Группа товара = Родитель из 1С, пишется в поле «Группа», не в категорию сайта.
+- **Раздел «Инструкции от Юры»** (\`src/pages/Instructions.tsx\`) — набор markdown-констант (\`TAB_*\`) и список вкладок. Здесь же этот документ. Рядом: рецепты (\`src/data/repository/\`) и журналы фич (\`src/data/journal/\`).
+
+## 8. Правила репозитория (для Юры)
+В \`src/data/repository/\` два правила: «Публикация рецепта» (рецепт → \`public/recipes/<slug>.html\` UTF-8, ссылку только владельцу) и «Создание рецепта» (структура и порядок). Рецепты — переносимые инструкции по внедрению фич.
+
+## 9. Планы на будущее
+- Генерация ТТН (товарно-транспортной накладной) из Excel-шаблона + загрузка файла товаров (xlsx/docx) с парсингом на бэкенде. Опираться на \`export-order\`.`;
+
 const TAB_PLANS = `# Планы
 
 - Создание Нового товара отдельная страница`;
@@ -415,7 +518,7 @@ const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "plans" | "backup" | "repo">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "plans" | "backup" | "repo" | "about">("menu");
   const [activeTab, setActiveTab] = useState("creation");
   const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
   const [openRecipe, setOpenRecipe] = useState<string | null>(null);
@@ -450,6 +553,8 @@ const Instructions = () => {
       ? "Автокопии (будильник)"
       : section === "repo"
       ? "Репозиторий"
+      : section === "about"
+      ? "О проекте"
       : "Инструкции от Юры";
 
   return (
@@ -473,6 +578,18 @@ const Instructions = () => {
       <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
         {section === "menu" && (
           <div className="grid gap-4 sm:grid-cols-2">
+            <button
+              onClick={() => setSection("about")}
+              className="sm:col-span-2 rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-rose-500/20 flex items-center justify-center">
+                  <Icon name="Info" size={20} className="text-rose-400" />
+                </div>
+                <span className="text-lg font-semibold">О проекте</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Карта всей системы для Юры: страницы, бэкенд, база, особенности — чтобы не изучать файлы заново</p>
+            </button>
             <button
               onClick={() => setSection("1c")}
               className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
@@ -595,6 +712,12 @@ const Instructions = () => {
         {section === "plans" && (
           <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
             {renderMarkdown(TAB_PLANS)}
+          </div>
+        )}
+
+        {section === "about" && (
+          <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+            {renderMarkdown(TAB_ABOUT)}
           </div>
         )}
 
