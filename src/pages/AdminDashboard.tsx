@@ -532,6 +532,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Определение цен</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.ttn" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/ttn")}
+            >
+              <Icon name="FileText" size={20} />
+              <span className="font-medium">Создание ТТН</span>
+            </Button>
+          </DebugBadge>
           <DebugBadge id="Admin:nav.instructions" className="flex-1">
             <Button
               variant="outline"

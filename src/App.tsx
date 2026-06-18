@@ -32,6 +32,8 @@ import ProductGroups from "./pages/ProductGroups";
 import Labels from "./pages/Labels";
 import OwnerSettings from "./pages/OwnerSettings";
 import OwnerBackup from "./pages/OwnerBackup";
+import TTN from "./pages/TTN";
+import TTNSettings from "./pages/TTNSettings";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DebugProvider from "./contexts/DebugContext";
 import KeyboardFab from "./components/KeyboardFab";
@@ -78,6 +80,8 @@ const App = () => (
           <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute><OwnerSettings /></ProtectedRoute>} />
           <Route path="/admin/backup" element={<ProtectedRoute><OwnerBackup /></ProtectedRoute>} />
+          <Route path="/admin/ttn" element={<ProtectedRoute><TTN /></ProtectedRoute>} />
+          <Route path="/admin/ttn/settings" element={<ProtectedRoute><TTNSettings /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
