@@ -21,6 +21,8 @@ def handler(event: dict, context) -> dict:
 
     params = event.get('queryStringParameters') or {}
     s3_key = params.get('s3_key', 'ttn/cea0379d6d7e4c9aae4f0ca404e0bbc3.xlsx')
+    row_from = int(params.get('row_from', '0') or '0')
+    row_to = int(params.get('row_to', '0') or '0')
 
     s3 = boto3.client(
         's3',
@@ -38,6 +40,10 @@ def handler(event: dict, context) -> dict:
     for row in ws.iter_rows():
         for cell in row:
             if cell.value is not None and str(cell.value).strip() != '':
+                if row_from and cell.row < row_from:
+                    continue
+                if row_to and cell.row > row_to:
+                    continue
                 cells.append({'coord': cell.coordinate, 'value': str(cell.value)})
 
     merged = [str(r) for r in ws.merged_cells.ranges]
