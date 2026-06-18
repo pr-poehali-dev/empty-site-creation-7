@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import Icon from "@/components/ui/icon";
 
 const TTN_URL = "https://functions.poehali.dev/ca436342-bff6-4616-96c6-d0470df5c242";
@@ -92,8 +93,13 @@ const TTNSettings = () => {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8 space-y-6">
-        <div className="rounded-xl border border-white/[0.08] bg-card p-5 sm:p-6">
+      <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
+        <Tabs defaultValue="templates" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="templates">Шаблоны ТТН</TabsTrigger>
+          </TabsList>
+          <TabsContent value="templates" className="space-y-6">
+            <div className="rounded-xl border border-white/[0.08] bg-card p-5 sm:p-6">
           <h2 className="font-semibold mb-1">Загрузка Excel-файла</h2>
           <p className="text-sm text-muted-foreground mb-4">
             Загрузите образец ТТН в формате .xlsx. Файл сохранится здесь, и его можно будет скачать
@@ -152,7 +158,9 @@ const TTNSettings = () => {
               ))}
             </div>
           )}
-        </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
