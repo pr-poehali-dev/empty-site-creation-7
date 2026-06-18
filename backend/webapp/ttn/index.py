@@ -1,63 +1,84 @@
 import json
 import os
+import uuid
+import base64
 import boto3
-import openpyxl
-from io import BytesIO
+import psycopg2
 
 
 def handler(event: dict, context) -> dict:
-    '''Разбирает загруженный Excel-файл ТТН: ячейки, текст, объединённые диапазоны.'''
-    if event.get('httpMethod') == 'OPTIONS':
+    '''Загрузка образцов ТТН (.xlsx) в S3 и хранение списка в БД.'''
+    method = event.get('httpMethod', 'GET')
+    if method == 'OPTIONS':
         return {
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
                 'Access-Control-Max-Age': '86400',
             },
             'body': '',
         }
 
-    params = event.get('queryStringParameters') or {}
-    s3_key = params.get('s3_key', 'ttn/cea0379d6d7e4c9aae4f0ca404e0bbc3.xlsx')
+    cors = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
+    dsn = os.environ['DATABASE_URL']
+    schema = 't_p69702834_empty_site_creation_'
 
-    s3 = boto3.client(
-        's3',
-        endpoint_url='https://bucket.poehali.dev',
-        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
-        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
-    )
-    obj = s3.get_object(Bucket='files', Key=s3_key)
-    data = obj['Body'].read()
+    if method == 'GET':
+        conn = psycopg2.connect(dsn)
+        cur = conn.cursor()
+        cur.execute(
+            f'SELECT id, filename, cdn_url, uploaded_at FROM {schema}.ttn_files ORDER BY uploaded_at DESC'
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        files = [
+            {'id': r[0], 'filename': r[1], 'cdn_url': r[2], 'uploaded_at': r[3].isoformat()}
+            for r in rows
+        ]
+        return {'statusCode': 200, 'headers': cors, 'isBase64Encoded': False,
+                'body': json.dumps({'files': files}, ensure_ascii=False)}
 
-    wb = openpyxl.load_workbook(BytesIO(data), data_only=True)
-    ws = wb.active
+    if method == 'POST':
+        body = json.loads(event.get('body') or '{}')
+        filename = body.get('filename', 'file.xlsx')
+        file_b64 = body.get('file', '')
+        if not file_b64:
+            return {'statusCode': 400, 'headers': cors, 'isBase64Encoded': False,
+                    'body': json.dumps({'error': 'Файл не передан'}, ensure_ascii=False)}
 
-    cells = []
-    for row in ws.iter_rows():
-        for cell in row:
-            if cell.value is not None and str(cell.value).strip() != '':
-                cells.append({'coord': cell.coordinate, 'value': str(cell.value)})
+        data = base64.b64decode(file_b64)
+        key = f'ttn/{uuid.uuid4().hex}.xlsx'
 
-    merged = [str(r) for r in ws.merged_cells.ranges]
+        s3 = boto3.client(
+            's3',
+            endpoint_url='https://bucket.poehali.dev',
+            aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+            aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+        )
+        s3.put_object(
+            Bucket='files', Key=key, Body=data,
+            ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
-    result = {
-        'sheet': ws.title,
-        'dimensions': ws.dimensions,
-        'max_row': ws.max_row,
-        'max_col': ws.max_column,
-        'cells': cells,
-        'merged_ranges': merged,
-    }
+        conn = psycopg2.connect(dsn)
+        cur = conn.cursor()
+        safe_name = filename.replace("'", "''")
+        cur.execute(
+            f"INSERT INTO {schema}.ttn_files (filename, s3_key, cdn_url) "
+            f"VALUES ('{safe_name}', '{key}', '{cdn_url}') RETURNING id"
+        )
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
 
-    print('TTN_PARSE_START')
-    print(json.dumps(result, ensure_ascii=False))
-    print('TTN_PARSE_END')
+        return {'statusCode': 200, 'headers': cors, 'isBase64Encoded': False,
+                'body': json.dumps({'id': new_id, 'filename': filename, 'cdn_url': cdn_url},
+                                   ensure_ascii=False)}
 
-    return {
-        'statusCode': 200,
-        'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
-        'isBase64Encoded': False,
-        'body': json.dumps(result, ensure_ascii=False),
-    }
+    return {'statusCode': 405, 'headers': cors, 'isBase64Encoded': False,
+            'body': json.dumps({'error': 'Method not allowed'}, ensure_ascii=False)}
