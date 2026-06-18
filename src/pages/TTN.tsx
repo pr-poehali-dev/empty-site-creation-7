@@ -14,19 +14,28 @@ const TTN = () => {
   const [parsing, setParsing] = useState(false);
   const [rows, setRows] = useState<string[][]>([]);
   const [fileName, setFileName] = useState("");
+  const [status, setStatus] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(",")[1] || "");
+      };
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл в браузере"));
+      reader.readAsDataURL(file);
+    });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setParsing(true);
     setRows([]);
+    setStatus(null);
     setFileName(file.name);
     try {
-      const buf = await file.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      const b64 = btoa(binary);
+      const b64 = await fileToBase64(file);
 
       const resp = await fetch(GOODS_PARSER_URL, {
         method: "POST",
@@ -36,12 +45,16 @@ const TTN = () => {
       const data = await resp.json();
       if (resp.ok) {
         setRows(data.rows || []);
+        setStatus({ type: "ok", text: `Файл разобран. Найдено строк: ${data.row_count}` });
         toast({ title: "Файл разобран", description: `Найдено строк: ${data.row_count}` });
       } else {
+        setStatus({ type: "error", text: data.error || `Ошибка сервера (${resp.status})` });
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
-    } catch {
-      toast({ title: "Ошибка", description: "Не удалось разобрать файл", variant: "destructive" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus({ type: "error", text: msg });
+      toast({ title: "Ошибка", description: msg, variant: "destructive" });
     } finally {
       setParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -103,11 +116,30 @@ const TTN = () => {
             )}
             {parsing ? "Разбор…" : "Загрузить файл с товарами"}
           </Button>
-          {fileName && !parsing && (
-            <p className="text-xs text-muted-foreground mt-3">
-              <Icon name="FileCheck" size={14} className="inline mr-1" />
-              {fileName}
+          {parsing && (
+            <p className="text-sm text-muted-foreground mt-3 flex items-center gap-2">
+              <Icon name="Loader2" size={14} className="animate-spin" />
+              Идёт разбор файла «{fileName}»…
             </p>
+          )}
+          {!parsing && status && (
+            <div
+              className={`text-sm mt-3 flex items-start gap-2 rounded-lg px-3 py-2 ${
+                status.type === "ok"
+                  ? "bg-emerald-500/10 text-emerald-400"
+                  : "bg-red-500/10 text-red-400"
+              }`}
+            >
+              <Icon
+                name={status.type === "ok" ? "CircleCheck" : "CircleAlert"}
+                size={16}
+                className="mt-0.5 shrink-0"
+              />
+              <span>
+                {fileName && <span className="opacity-70">{fileName}: </span>}
+                {status.text}
+              </span>
+            </div>
           )}
         </div>
 
