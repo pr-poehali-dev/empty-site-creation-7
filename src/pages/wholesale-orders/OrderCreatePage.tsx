@@ -1190,9 +1190,11 @@ const OrderCreatePage = () => {
         }),
       });
       const data = await resp.json();
+      console.log("[recalc_preview] status", resp.status, "data", data);
       if (resp.ok) setPrPreview(data);
       else setPrPreview(null);
-    } catch {
+    } catch (err) {
+      console.log("[recalc_preview] error", err);
       setPrPreview(null);
     } finally {
       setPrPreviewLoading(false);
