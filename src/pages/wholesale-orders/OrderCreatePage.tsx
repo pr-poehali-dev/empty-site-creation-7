@@ -152,6 +152,7 @@ const OrderCreatePage = () => {
   const [tempArticle, setTempArticle] = useState("");
   const [tempPrice, setTempPrice] = useState("");
   const [allBrands, setAllBrands] = useState<string[]>([]);
+  const [recalcBrands, setRecalcBrands] = useState<string[]>([]);
   const [showBrandList, setShowBrandList] = useState(false);
   const [articleSuggestions, setArticleSuggestions] = useState<ProductSearchItem[]>([]);
   const [showArticleList, setShowArticleList] = useState(false);
@@ -1202,6 +1203,28 @@ const OrderCreatePage = () => {
     if (!showPriceRecalc) return;
     loadRecalcPreview();
   }, [showPriceRecalc, loadRecalcPreview]);
+
+  useEffect(() => {
+    if (!showPriceRecalc) return;
+    const grp = prUseGroup && prGroup ? prGroup : "";
+    const url = grp
+      ? `${PRODUCTS_URL}?distinct=brand&group=${encodeURIComponent(grp)}`
+      : `${PRODUCTS_URL}?distinct=brand`;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(url, { headers: authHeaders });
+        const data = await resp.json();
+        if (cancelled) return;
+        const list: string[] = resp.ok && Array.isArray(data.brands) ? data.brands : [];
+        setRecalcBrands(list);
+        if (prBrand && !list.includes(prBrand)) setPrBrand("");
+      } catch {
+        if (!cancelled) setRecalcBrands([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showPriceRecalc, prUseGroup, prGroup]);
 
   const applyPriceRecalc = async () => {
     if (!editId || !prConditionReady) return;
@@ -2395,7 +2418,7 @@ const OrderCreatePage = () => {
                   onChange={(e) => setPrBrand(e.target.value)}
                 >
                   <option value="">Выберите бренд</option>
-                  {allBrands.map((b) => (
+                  {recalcBrands.map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
                 </select>

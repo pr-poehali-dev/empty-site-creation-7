@@ -256,6 +256,18 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'groups': groups})}
 
+        if distinct_param == 'brand':
+            group_filter = params.get('group', '').strip()
+            if group_filter:
+                group_esc = group_filter.replace("'", "''")
+                cur.execute(f"SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND brand != '' AND is_archived = false AND product_group = '{group_esc}' ORDER BY brand")
+            else:
+                cur.execute("SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND brand != '' AND is_archived = false ORDER BY brand")
+            brands = [r[0] for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'brands': brands})}
+
         category_id = params.get('category_id')
         search = params.get('search', '').strip()
         search_type = params.get('search_type', 'all')
