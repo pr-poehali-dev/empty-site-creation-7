@@ -176,6 +176,7 @@ const OrderCreatePage = () => {
   const [prOverwriteManual, setPrOverwriteManual] = useState(false);
   const [prPreview, setPrPreview] = useState<{ count: number; zero_count: number; sum_now: number; sum_after: number } | null>(null);
   const [prPreviewLoading, setPrPreviewLoading] = useState(false);
+  const [prDebug, setPrDebug] = useState<string>("");
   const [prApplying, setPrApplying] = useState(false);
 
   const canRecalcPrices =
@@ -1173,9 +1174,11 @@ const OrderCreatePage = () => {
   const loadRecalcPreview = useCallback(async () => {
     if (!editId) {
       setPrPreview(null);
+      setPrDebug("editId пустой");
       return;
     }
     setPrPreviewLoading(true);
+    setPrDebug("отправка запроса...");
     try {
       const resp = await fetch(ORDERS_URL, {
         method: "PUT",
@@ -1188,10 +1191,14 @@ const OrderCreatePage = () => {
           overwrite_manual: prOverwriteManual,
         }),
       });
-      const data = await resp.json();
-      if (resp.ok) setPrPreview(data);
+      const text = await resp.text();
+      setPrDebug(`status=${resp.status} body=${text.slice(0, 300)}`);
+      let data: unknown = null;
+      try { data = JSON.parse(text); } catch { /* ignore */ }
+      if (resp.ok && data) setPrPreview(data as typeof prPreview);
       else setPrPreview(null);
-    } catch {
+    } catch (e) {
+      setPrDebug(`fetch error: ${e instanceof Error ? e.message : String(e)}`);
       setPrPreview(null);
     } finally {
       setPrPreviewLoading(false);
@@ -2429,7 +2436,7 @@ const OrderCreatePage = () => {
                   <div className="flex justify-between font-medium"><span>Сумма после пересчёта</span><span>{prPreview.sum_after.toLocaleString("ru-RU")} ₽</span></div>
                 </div>
               ) : (
-                <p className="text-muted-foreground">Нет данных</p>
+                <p className="text-muted-foreground break-all">Нет данных. {prDebug}</p>
               )}
             </div>
           </div>
