@@ -1168,12 +1168,10 @@ const OrderCreatePage = () => {
     setShowPriceRecalc(true);
   };
 
-  const prConditionReady =
-    (prUseGroup && !!prGroup) || (prUseBrand && !!prBrand);
+  const prConditionReady = true;
 
   const loadRecalcPreview = useCallback(async () => {
-    console.log("[recalc_preview] call", { editId, prConditionReady, prUseGroup, prGroup, prUseBrand, prBrand });
-    if (!editId || !prConditionReady) {
+    if (!editId) {
       setPrPreview(null);
       return;
     }
@@ -1191,11 +1189,9 @@ const OrderCreatePage = () => {
         }),
       });
       const data = await resp.json();
-      console.log("[recalc_preview] status", resp.status, "data", data);
       if (resp.ok) setPrPreview(data);
       else setPrPreview(null);
-    } catch (err) {
-      console.log("[recalc_preview] error", err);
+    } catch {
       setPrPreview(null);
     } finally {
       setPrPreviewLoading(false);
