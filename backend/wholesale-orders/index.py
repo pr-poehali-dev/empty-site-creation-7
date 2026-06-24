@@ -605,7 +605,12 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 if not group and not brand:
                     return json_resp(400, {'error': 'Укажите группу или бренд'})
-                targets = collect_recalc_targets(cur, order_id, group, brand, overwrite_manual)
+                try:
+                    targets = collect_recalc_targets(cur, order_id, group, brand, overwrite_manual)
+                except Exception as e:
+                    import traceback
+                    conn.rollback()
+                    return json_resp(500, {'error': f'preview: {e}', 'tb': traceback.format_exc()[-500:]})
                 affected = [t for t in targets if not t['is_manual']]
                 count = len(affected)
                 zero_count = sum(1 for t in affected if t['old_price'] == 0)
