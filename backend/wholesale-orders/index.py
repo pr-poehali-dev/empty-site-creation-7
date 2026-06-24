@@ -307,6 +307,83 @@ def fetch_item_view(cur, item_id):
     }
 
 
+def load_rules_for_customer(cur, customer_name):
+    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
+    w = cur.fetchone()
+    if not w:
+        return []
+    cur.execute(
+        """SELECT filter_type, filter_value, price_field, formula,
+                  condition_price_field, condition_operator, condition_value
+           FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
+        (w[0],)
+    )
+    return cur.fetchall()
+
+
+def calc_price_in_memory(prod, rules):
+    price_map = {
+        'price_base': prod['price_base'], 'price_retail': prod['price_retail'],
+        'price_wholesale': prod['price_wholesale'], 'price_purchase': prod['price_purchase'],
+    }
+    if not rules:
+        return float(price_map.get('price_wholesale') or 0)
+    matched = None
+    for r in rules:
+        if r[0] == 'product_group' and prod['product_group'] == r[1]:
+            if check_condition(price_map, r[4], r[5], r[6]):
+                matched = r
+                break
+    if not matched:
+        return float(price_map.get('price_wholesale') or 0)
+    base = float(price_map.get(matched[2]) or 0)
+    return apply_formula(base, matched[3])
+
+
+def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
+    """Возвращает список позиций заявки под условие (группа/бренд) с текущей и новой ценой.
+    Фильтр: если заданы и group и brand — совпадать должны оба. Временные позиции пропускаются."""
+    cur.execute(
+        """SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.price_changed_by,
+                  p.product_group, p.brand,
+                  p.price_base, p.price_retail, p.price_wholesale, p.price_purchase
+           FROM wholesale_order_items oi
+           JOIN products p ON p.id = oi.product_id
+           WHERE oi.order_id = %s AND oi.temp_product_id IS NULL
+             AND oi.product_id IS NOT NULL AND oi.product_id <> %s""",
+        (order_id, TEMP_PRODUCT_ID)
+    )
+    rows = cur.fetchall()
+    cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+    crow = cur.fetchone()
+    customer_name = (crow[0] if crow else '') or ''
+    rules = load_rules_for_customer(cur, customer_name)
+    targets = []
+    for r in rows:
+        item_id, pid, qty, price, price_changed_by = r[0], r[1], r[2], r[3], r[4]
+        p_group, p_brand = r[5], r[6]
+        if group and (p_group or '') != group:
+            continue
+        if brand and (p_brand or '') != brand:
+            continue
+        if (not overwrite_manual) and price_changed_by and price_changed_by not in ('', 'Ф'):
+            is_manual = True
+        else:
+            is_manual = False
+        prod = {
+            'price_base': r[7], 'price_retail': r[8],
+            'price_wholesale': r[9], 'price_purchase': r[10],
+            'product_group': p_group,
+        }
+        new_price = calc_price_in_memory(prod, rules)
+        targets.append({
+            'item_id': item_id, 'quantity': int(qty or 0),
+            'old_price': float(price or 0), 'new_price': float(new_price or 0),
+            'is_manual': is_manual,
+        })
+    return targets
+
+
 def json_resp(status, body, extra_headers=None):
     headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
     if extra_headers:
@@ -517,6 +594,60 @@ def handler(event: dict, context) -> dict:
                 if v is None:
                     return json_resp(404, {'error': 'Заявка не найдена'})
                 return json_resp(200, {'version': v})
+
+            # Превью пересчёта цен по группе/бренду (ничего не меняет).
+            if action == 'recalc_preview':
+                order_id = body.get('order_id')
+                group = (body.get('group') or '').strip() or None
+                brand = (body.get('brand') or '').strip() or None
+                overwrite_manual = bool(body.get('overwrite_manual'))
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                if not group and not brand:
+                    return json_resp(400, {'error': 'Укажите группу или бренд'})
+                targets = collect_recalc_targets(cur, order_id, group, brand, overwrite_manual)
+                affected = [t for t in targets if not t['is_manual']]
+                count = len(affected)
+                zero_count = sum(1 for t in affected if t['old_price'] == 0)
+                sum_now = round(sum(t['old_price'] * t['quantity'] for t in affected), 2)
+                sum_after = round(sum(t['new_price'] * t['quantity'] for t in affected), 2)
+                manual_skipped = sum(1 for t in targets if t['is_manual'])
+                conn.commit()
+                return json_resp(200, {
+                    'count': count, 'zero_count': zero_count,
+                    'sum_now': sum_now, 'sum_after': sum_after,
+                    'manual_skipped': manual_skipped,
+                })
+
+            # Применение пересчёта цен по группе/бренду.
+            if action == 'recalc_apply':
+                order_id = body.get('order_id')
+                group = (body.get('group') or '').strip() or None
+                brand = (body.get('brand') or '').strip() or None
+                overwrite_manual = bool(body.get('overwrite_manual'))
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                if not group and not brand:
+                    return json_resp(400, {'error': 'Укажите группу или бренд'})
+                cur.execute("SELECT status FROM wholesale_orders WHERE id = %s", (order_id,))
+                srow = cur.fetchone()
+                if not srow:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                targets = collect_recalc_targets(cur, order_id, group, brand, overwrite_manual)
+                updated = 0
+                for t in targets:
+                    if t['is_manual']:
+                        continue
+                    new_price = t['new_price']
+                    amount = new_price * t['quantity']
+                    cur.execute(
+                        "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
+                        (new_price, amount, actor, t['item_id'])
+                    )
+                    updated += 1
+                total, ver = recalc_total(cur, order_id)
+                conn.commit()
+                return json_resp(200, {'updated': updated, 'total_amount': total, 'version': ver})
 
             # Создание пустой заявки-черновика. Возвращает id и version.
             if action == 'create_draft':

@@ -13,6 +13,14 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
@@ -156,6 +164,24 @@ const OrderCreatePage = () => {
   const isOwner = user.role === "owner";
   const [lockSettingEnabled, setLockSettingEnabled] = useState(false);
   const [recalcInProgress, setRecalcInProgress] = useState(false);
+
+  // Пересчёт цен по группе/бренду
+  const [recalcOnlyNew, setRecalcOnlyNew] = useState(false);
+  const [recalcAllowedUsers, setRecalcAllowedUsers] = useState<string[]>([]);
+  const [showPriceRecalc, setShowPriceRecalc] = useState(false);
+  const [prUseGroup, setPrUseGroup] = useState(false);
+  const [prGroup, setPrGroup] = useState("");
+  const [prUseBrand, setPrUseBrand] = useState(false);
+  const [prBrand, setPrBrand] = useState("");
+  const [prOverwriteManual, setPrOverwriteManual] = useState(false);
+  const [prPreview, setPrPreview] = useState<{ count: number; zero_count: number; sum_now: number; sum_after: number } | null>(null);
+  const [prPreviewLoading, setPrPreviewLoading] = useState(false);
+  const [prApplying, setPrApplying] = useState(false);
+
+  const canRecalcPrices =
+    isOwner || recalcAllowedUsers.includes(user.phone);
+  const recalcBtnVisible =
+    !!editId && !copyMode && canRecalcPrices && (!recalcOnlyNew || orderStatus === "new");
 
   // Single-user lock
   const sessionIdRef = useRef<string>("");
@@ -488,6 +514,13 @@ const OrderCreatePage = () => {
         if (resp.ok) {
           const data = await resp.json();
           setLockSettingEnabled(data.lock_non_new_orders === "true");
+          setRecalcOnlyNew(data.recalc_only_new === "true");
+          try {
+            const ids = JSON.parse(data.recalc_allowed_users || "[]");
+            setRecalcAllowedUsers(Array.isArray(ids) ? ids : []);
+          } catch {
+            setRecalcAllowedUsers([]);
+          }
         }
       } catch { /* ignore */ }
     };
@@ -1122,6 +1155,81 @@ const OrderCreatePage = () => {
       toast({ title: "Не удалось пересчитать", description: msg, variant: "destructive" });
     } finally {
       setRecalculating(false);
+    }
+  };
+
+  const openPriceRecalc = () => {
+    setPrUseGroup(false);
+    setPrGroup("");
+    setPrUseBrand(false);
+    setPrBrand("");
+    setPrOverwriteManual(false);
+    setPrPreview(null);
+    setShowPriceRecalc(true);
+  };
+
+  const prConditionReady =
+    (prUseGroup && !!prGroup) || (prUseBrand && !!prBrand);
+
+  const loadRecalcPreview = useCallback(async () => {
+    if (!editId || !prConditionReady) {
+      setPrPreview(null);
+      return;
+    }
+    setPrPreviewLoading(true);
+    try {
+      const resp = await fetch(ORDERS_URL, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          action: "recalc_preview",
+          order_id: editId,
+          group: prUseGroup ? prGroup : "",
+          brand: prUseBrand ? prBrand : "",
+          overwrite_manual: prOverwriteManual,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok) setPrPreview(data);
+      else setPrPreview(null);
+    } catch {
+      setPrPreview(null);
+    } finally {
+      setPrPreviewLoading(false);
+    }
+  }, [editId, prUseGroup, prGroup, prUseBrand, prBrand, prOverwriteManual, prConditionReady]);
+
+  useEffect(() => {
+    if (!showPriceRecalc) return;
+    loadRecalcPreview();
+  }, [showPriceRecalc, loadRecalcPreview]);
+
+  const applyPriceRecalc = async () => {
+    if (!editId || !prConditionReady) return;
+    setPrApplying(true);
+    try {
+      const resp = await fetch(ORDERS_URL, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          action: "recalc_apply",
+          order_id: editId,
+          group: prUseGroup ? prGroup : "",
+          brand: prUseBrand ? prBrand : "",
+          overwrite_manual: prOverwriteManual,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Ошибка пересчёта");
+      versionRef.current = data.version;
+      await reloadOrder(true);
+      toast({ title: `Пересчитано позиций: ${data.updated}` });
+      setShowPriceRecalc(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка пересчёта";
+      toast({ title: "Не удалось пересчитать", description: msg, variant: "destructive" });
+    } finally {
+      setPrApplying(false);
     }
   };
 
@@ -2107,6 +2215,16 @@ const OrderCreatePage = () => {
                 {recalculating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
                 <span className="ml-2">Обновить все нулевые цены</span>
               </Button>
+              {recalcBtnVisible && (
+                <Button
+                  variant="outline"
+                  className="rounded-xl border-white/[0.08]"
+                  onClick={openPriceRecalc}
+                >
+                  <Icon name="RefreshCw" size={16} />
+                  <span className="ml-2">Пересчёт цен</span>
+                </Button>
+              )}
             </div>
             <div className="flex gap-2 flex-wrap">
               {orderStatus === "confirmed" && (
@@ -2227,6 +2345,111 @@ const OrderCreatePage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showPriceRecalc} onOpenChange={setShowPriceRecalc}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
+          <DialogHeader>
+            <DialogTitle>Пересчёт цен</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Цены пересчитаются по действующим правилам оптовика и актуальным ценам каталога.
+            </p>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="pr-use-group"
+                  checked={prUseGroup}
+                  onCheckedChange={(c) => { setPrUseGroup(c === true); if (c !== true) setPrGroup(""); }}
+                />
+                <label htmlFor="pr-use-group" className="text-sm font-medium cursor-pointer">Группа товаров</label>
+              </div>
+              {prUseGroup && (
+                <select
+                  className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-sm"
+                  value={prGroup}
+                  onChange={(e) => setPrGroup(e.target.value)}
+                >
+                  <option value="">Выберите группу</option>
+                  {productGroups.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="pr-use-brand"
+                  checked={prUseBrand}
+                  onCheckedChange={(c) => { setPrUseBrand(c === true); if (c !== true) setPrBrand(""); }}
+                />
+                <label htmlFor="pr-use-brand" className="text-sm font-medium cursor-pointer">Бренд</label>
+              </div>
+              {prUseBrand && (
+                <select
+                  className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-sm"
+                  value={prBrand}
+                  onChange={(e) => setPrBrand(e.target.value)}
+                >
+                  <option value="">Выберите бренд</option>
+                  {allBrands.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="pr-overwrite"
+                checked={prOverwriteManual}
+                onCheckedChange={(c) => setPrOverwriteManual(c === true)}
+                className="mt-0.5"
+              />
+              <label htmlFor="pr-overwrite" className="text-sm cursor-pointer">
+                Перезаписывать цены, изменённые вручную
+              </label>
+            </div>
+
+            <div className="rounded-xl border border-white/[0.08] bg-secondary/50 p-3 text-sm">
+              {!prConditionReady ? (
+                <p className="text-muted-foreground">Выберите группу или бренд для расчёта</p>
+              ) : prPreviewLoading ? (
+                <p className="text-muted-foreground flex items-center gap-2">
+                  <Icon name="Loader2" size={14} className="animate-spin" /> Считаем...
+                </p>
+              ) : prPreview ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Товаров под условие</span><span>{prPreview.count}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">С нулевой ценой</span><span>{prPreview.zero_count}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Сумма сейчас</span><span>{prPreview.sum_now.toLocaleString("ru-RU")} ₽</span></div>
+                  <div className="flex justify-between font-medium"><span>Сумма после пересчёта</span><span>{prPreview.sum_after.toLocaleString("ru-RU")} ₽</span></div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">Нет данных</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+            <Button variant="outline" className="rounded-xl border-white/[0.08]" onClick={() => setShowPriceRecalc(false)}>
+              Отмена
+            </Button>
+            <Button
+              className="rounded-xl"
+              onClick={applyPriceRecalc}
+              disabled={!prConditionReady || prApplying || !prPreview || prPreview.count === 0}
+            >
+              {prApplying ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="RefreshCw" size={16} />}
+              <span className="ml-2">Пересчитать</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {undoData && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl border border-white/[0.08] bg-card px-4 py-3 shadow-lg max-w-[92vw]">
