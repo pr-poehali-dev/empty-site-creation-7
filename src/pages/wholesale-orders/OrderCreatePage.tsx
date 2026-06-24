@@ -1172,6 +1172,7 @@ const OrderCreatePage = () => {
     (prUseGroup && !!prGroup) || (prUseBrand && !!prBrand);
 
   const loadRecalcPreview = useCallback(async () => {
+    console.log("[recalc_preview] call", { editId, prConditionReady, prUseGroup, prGroup, prUseBrand, prBrand });
     if (!editId || !prConditionReady) {
       setPrPreview(null);
       return;
