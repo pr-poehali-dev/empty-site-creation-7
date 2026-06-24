@@ -1192,7 +1192,7 @@ const OrderCreatePage = () => {
         }),
       });
       const text = await resp.text();
-      setPrDebug(`status=${resp.status} body=${text.slice(0, 300)}`);
+      setPrDebug(`editId=${editId} url=${window.location.pathname} status=${resp.status} body=${text.slice(0, 200)}`);
       let data: unknown = null;
       try { data = JSON.parse(text); } catch { /* ignore */ }
       if (resp.ok && data) setPrPreview(data as typeof prPreview);
