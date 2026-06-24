@@ -176,7 +176,6 @@ const OrderCreatePage = () => {
   const [prOverwriteManual, setPrOverwriteManual] = useState(false);
   const [prPreview, setPrPreview] = useState<{ count: number; zero_count: number; sum_now: number; sum_after: number } | null>(null);
   const [prPreviewLoading, setPrPreviewLoading] = useState(false);
-  const [prDebug, setPrDebug] = useState<string>("");
   const [prApplying, setPrApplying] = useState(false);
 
   const canRecalcPrices =
@@ -1174,14 +1173,12 @@ const OrderCreatePage = () => {
   const loadRecalcPreview = useCallback(async () => {
     if (!editId) {
       setPrPreview(null);
-      setPrDebug("editId пустой");
       return;
     }
     setPrPreviewLoading(true);
-    setPrDebug("отправка запроса...");
     try {
       const resp = await fetch(ORDERS_URL, {
-        method: "PUT",
+        method: "POST",
         headers: authHeaders,
         body: JSON.stringify({
           action: "recalc_preview",
@@ -1191,14 +1188,10 @@ const OrderCreatePage = () => {
           overwrite_manual: prOverwriteManual,
         }),
       });
-      const text = await resp.text();
-      setPrDebug(`editId=${editId} url=${window.location.pathname} status=${resp.status} body=${text.slice(0, 200)}`);
-      let data: unknown = null;
-      try { data = JSON.parse(text); } catch { /* ignore */ }
-      if (resp.ok && data) setPrPreview(data as typeof prPreview);
+      const data = await resp.json();
+      if (resp.ok) setPrPreview(data);
       else setPrPreview(null);
-    } catch (e) {
-      setPrDebug(`fetch error: ${e instanceof Error ? e.message : String(e)}`);
+    } catch {
       setPrPreview(null);
     } finally {
       setPrPreviewLoading(false);
@@ -1215,7 +1208,7 @@ const OrderCreatePage = () => {
     setPrApplying(true);
     try {
       const resp = await fetch(ORDERS_URL, {
-        method: "PUT",
+        method: "POST",
         headers: authHeaders,
         body: JSON.stringify({
           action: "recalc_apply",
@@ -2436,7 +2429,7 @@ const OrderCreatePage = () => {
                   <div className="flex justify-between font-medium"><span>Сумма после пересчёта</span><span>{prPreview.sum_after.toLocaleString("ru-RU")} ₽</span></div>
                 </div>
               ) : (
-                <p className="text-muted-foreground break-all">Нет данных. {prDebug}</p>
+                <p className="text-muted-foreground">Нет данных</p>
               )}
             </div>
           </div>
