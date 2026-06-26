@@ -606,14 +606,12 @@ def handler(event: dict, context) -> dict:
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 targets = collect_recalc_targets(cur, order_id, group, brand, overwrite_manual)
-                count = len(targets)
-                count_sum = round(sum(t['old_price'] * t['quantity'] for t in targets), 2)
-                zero_count = sum(1 for t in targets if t['old_price'] == 0)
+                active = [t for t in targets if not t['is_manual']]
+                count = len(active)
+                count_sum = round(sum(t['old_price'] * t['quantity'] for t in active), 2)
+                zero_count = sum(1 for t in active if t['old_price'] == 0)
                 sum_now = count_sum
-                sum_after = round(sum(
-                    (t['old_price'] if t['is_manual'] else t['new_price']) * t['quantity']
-                    for t in targets
-                ), 2)
+                sum_after = round(sum(t['new_price'] * t['quantity'] for t in active), 2)
                 manual_targets = [t for t in targets if t['price_is_manual']]
                 manual_count = len(manual_targets)
                 manual_sum = round(sum(t['old_price'] * t['quantity'] for t in manual_targets), 2)
