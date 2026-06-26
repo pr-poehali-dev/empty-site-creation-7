@@ -82,6 +82,7 @@ export interface ServerOrderItem {
   qty_changed_by?: string | null;
   price_changed_by?: string | null;
   restored_by?: string | null;
+  price_is_manual?: boolean;
 }
 
 export interface ItemPayload {

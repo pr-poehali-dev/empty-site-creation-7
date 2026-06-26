@@ -1,0 +1,1 @@
+ALTER TABLE wholesale_order_items ADD COLUMN IF NOT EXISTS price_is_manual BOOLEAN NOT NULL DEFAULT false;

@@ -261,7 +261,8 @@ def fetch_item_view(cur, item_id):
                   oi.temp_product_id, oi.item_name, oi.from_bulk,
                   tp.brand, tp.article, tp.nomenclature_id,
                   np.name, np.article, np.brand, oi.was_restored,
-                  oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by
+                  oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by,
+                  oi.price_is_manual
            FROM wholesale_order_items oi
            JOIN products p ON p.id = oi.product_id
            LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -304,6 +305,7 @@ def fetch_item_view(cur, item_id):
         'qty_changed_by': r[18],
         'price_changed_by': r[19],
         'restored_by': r[20],
+        'price_is_manual': bool(r[21]),
     }
 
 
@@ -456,7 +458,8 @@ def handler(event: dict, context) -> dict:
                               oi.temp_product_id, oi.item_name, oi.from_bulk,
                               tp.brand, tp.article, tp.nomenclature_id,
                               np.name, np.article, np.brand, oi.was_restored,
-                              oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by
+                              oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by,
+                              oi.price_is_manual
                        FROM wholesale_order_items oi
                        JOIN products p ON p.id = oi.product_id
                        LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -499,6 +502,7 @@ def handler(event: dict, context) -> dict:
                         'qty_changed_by': r[18],
                         'price_changed_by': r[19],
                         'restored_by': r[20],
+                        'price_is_manual': bool(r[21]),
                     })
 
                 created_by_str = "Владелец" if row[11] else f"{row[6]} {row[7]}"
@@ -637,7 +641,7 @@ def handler(event: dict, context) -> dict:
                     new_price = t['new_price']
                     amount = new_price * t['quantity']
                     cur.execute(
-                        "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
+                        "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s, price_is_manual = false WHERE id = %s",
                         (new_price, amount, actor, t['item_id'])
                     )
                     updated += 1
@@ -909,7 +913,7 @@ def handler(event: dict, context) -> dict:
                                 while True:
                                     try:
                                         cur.execute(
-                                            "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s WHERE id = %s",
+                                            "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s, price_is_manual = false WHERE id = %s",
                                             (new_price, amount, actor, item_id)
                                         )
                                         break
@@ -1098,6 +1102,7 @@ def handler(event: dict, context) -> dict:
                 if price_changed:
                     set_fields.append("price_changed_by = %s")
                     set_vals.append(actor)
+                    set_fields.append("price_is_manual = true")
                 set_vals.append(item_id)
                 cur.execute(
                     f"UPDATE wholesale_order_items SET {', '.join(set_fields)} WHERE id = %s",

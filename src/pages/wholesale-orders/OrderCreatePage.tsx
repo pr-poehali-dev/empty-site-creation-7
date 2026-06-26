@@ -52,6 +52,7 @@ interface OrderLine {
   qty_changed_by?: string | null;
   price_changed_by?: string | null;
   restored_by?: string | null;
+  price_is_manual?: boolean;
 }
 
 interface ProductSearchItem {
@@ -370,6 +371,7 @@ const OrderCreatePage = () => {
                 qty_changed_by: srv.qty_changed_by,
                 price_changed_by: srv.price_changed_by,
                 restored_by: srv.restored_by,
+                price_is_manual: srv.price_is_manual,
               }));
               if (!editId) {
                 navigate(`/admin/orders/${orderId}/edit`, { replace: true });
@@ -487,6 +489,7 @@ const OrderCreatePage = () => {
                 qty_changed_by: srv.qty_changed_by,
                 price_changed_by: srv.price_changed_by,
                 restored_by: srv.restored_by,
+                price_is_manual: srv.price_is_manual,
               }));
               if (!editId) {
                 navigate(`/admin/orders/${orderId}/edit`, { replace: true });
@@ -557,6 +560,7 @@ const OrderCreatePage = () => {
             qty_changed_by: item.qty_changed_by,
             price_changed_by: item.price_changed_by,
             restored_by: item.restored_by,
+            price_is_manual: item.price_is_manual,
           }))
         );
         versionRef.current = data.order.version || null;
@@ -2119,9 +2123,12 @@ const OrderCreatePage = () => {
                         />
                         <span className="text-xs text-muted-foreground">Br</span>
                       </div>
-                      {isOwner && line.price_changed_by && (
-                        <span className="text-[9px] text-blue-400 leading-none mt-0.5">id={line.price_changed_by}</span>
-                      )}
+                      {(isOwner && line.price_changed_by) || line.price_is_manual ? (
+                        <span className="text-[9px] text-blue-400 leading-none mt-0.5">
+                          {isOwner && line.price_changed_by ? `id=${line.price_changed_by}` : ""}
+                          {line.price_is_manual ? (isOwner && line.price_changed_by ? " Р" : "Р") : ""}
+                        </span>
+                      ) : null}
                     </div>
                     <span className="text-xs font-medium flex-shrink-0 mt-1">
                       = {(line.price * line.quantity).toLocaleString()} Br
