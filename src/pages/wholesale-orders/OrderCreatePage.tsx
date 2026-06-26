@@ -1124,7 +1124,9 @@ const OrderCreatePage = () => {
   const updatePrice = (index: number, price: number) => {
     setLines((prev) => prev.map((l, i) => {
       if (i !== index) return l;
-      const next = { ...l, price: Math.max(0, price) };
+      const newPrice = Math.max(0, price);
+      const priceChanged = newPrice !== l.price;
+      const next = { ...l, price: newPrice, price_is_manual: priceChanged ? true : l.price_is_manual };
       if (next.id) scheduleItemUpdate(next.id, next.quantity, next.price);
       return next;
     }));
