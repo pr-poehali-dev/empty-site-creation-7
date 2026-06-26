@@ -176,7 +176,7 @@ const OrderCreatePage = () => {
   const [prUseBrand, setPrUseBrand] = useState(false);
   const [prBrand, setPrBrand] = useState("");
   const [prOverwriteManual, setPrOverwriteManual] = useState(false);
-  const [prPreview, setPrPreview] = useState<{ count: number; zero_count: number; sum_now: number; sum_after: number } | null>(null);
+  const [prPreview, setPrPreview] = useState<{ count: number; count_sum: number; zero_count: number; sum_now: number; sum_after: number; manual_count: number; manual_sum: number } | null>(null);
   const [prPreviewLoading, setPrPreviewLoading] = useState(false);
   const [prApplying, setPrApplying] = useState(false);
 
@@ -2455,10 +2455,11 @@ const OrderCreatePage = () => {
                 </p>
               ) : prPreview ? (
                 <div className="space-y-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Товаров под условие</span><span>{prPreview.count}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">С нулевой ценой</span><span>{prPreview.zero_count}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Сумма сейчас</span><span>{prPreview.sum_now.toLocaleString("ru-RU")} ₽</span></div>
-                  <div className="flex justify-between font-medium"><span>Сумма после пересчёта</span><span>{prPreview.sum_after.toLocaleString("ru-RU")} ₽</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Товаров под условие</span><span>{prPreview.count} шт / {prPreview.count_sum.toLocaleString("ru-RU")} Br</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">С нулевой ценой</span><span>{prPreview.zero_count} шт</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Ручных цен</span><span>{prPreview.manual_count} шт / {prPreview.manual_sum.toLocaleString("ru-RU")} Br</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Сумма сейчас</span><span>{prPreview.sum_now.toLocaleString("ru-RU")} Br</span></div>
+                  <div className="flex justify-between font-medium"><span>Сумма после пересчёта</span><span>{prPreview.sum_after.toLocaleString("ru-RU")} Br</span></div>
                 </div>
               ) : (
                 <p className="text-muted-foreground">Нет данных</p>

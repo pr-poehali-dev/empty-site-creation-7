@@ -346,7 +346,7 @@ def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
     """Возвращает список позиций заявки под условие (группа/бренд) с текущей и новой ценой.
     Фильтр: если заданы и group и brand — совпадать должны оба. Временные позиции пропускаются."""
     cur.execute(
-        """SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.price_changed_by,
+        """SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.price_is_manual,
                   p.product_group, p.brand,
                   p.price_base, p.price_retail, p.price_wholesale, p.price_purchase
            FROM wholesale_order_items oi
@@ -362,16 +362,13 @@ def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
     rules = load_rules_for_customer(cur, customer_name)
     targets = []
     for r in rows:
-        item_id, pid, qty, price, price_changed_by = r[0], r[1], r[2], r[3], r[4]
+        item_id, pid, qty, price, price_is_manual = r[0], r[1], r[2], r[3], r[4]
         p_group, p_brand = r[5], r[6]
         if group and (p_group or '') != group:
             continue
         if brand and (p_brand or '') != brand:
             continue
-        if (not overwrite_manual) and price_changed_by and price_changed_by not in ('', 'Ф'):
-            is_manual = True
-        else:
-            is_manual = False
+        is_manual = (not overwrite_manual) and bool(price_is_manual)
         prod = {
             'price_base': r[7], 'price_retail': r[8],
             'price_wholesale': r[9], 'price_purchase': r[10],
@@ -382,6 +379,7 @@ def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
             'item_id': item_id, 'quantity': int(qty or 0),
             'old_price': float(price or 0), 'new_price': float(new_price or 0),
             'is_manual': is_manual,
+            'price_is_manual': bool(price_is_manual),
         })
     return targets
 
@@ -609,15 +607,20 @@ def handler(event: dict, context) -> dict:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 targets = collect_recalc_targets(cur, order_id, group, brand, overwrite_manual)
                 affected = [t for t in targets if not t['is_manual']]
-                count = len(affected)
-                zero_count = sum(1 for t in affected if t['old_price'] == 0)
+                count = len(targets)
+                count_sum = round(sum(t['old_price'] * t['quantity'] for t in targets), 2)
+                zero_count = sum(1 for t in targets if t['old_price'] == 0)
                 sum_now = round(sum(t['old_price'] * t['quantity'] for t in affected), 2)
                 sum_after = round(sum(t['new_price'] * t['quantity'] for t in affected), 2)
+                manual_targets = [t for t in targets if t['price_is_manual']]
+                manual_count = len(manual_targets)
+                manual_sum = round(sum(t['old_price'] * t['quantity'] for t in manual_targets), 2)
                 manual_skipped = sum(1 for t in targets if t['is_manual'])
                 conn.commit()
                 return json_resp(200, {
-                    'count': count, 'zero_count': zero_count,
+                    'count': count, 'count_sum': count_sum, 'zero_count': zero_count,
                     'sum_now': sum_now, 'sum_after': sum_after,
+                    'manual_count': manual_count, 'manual_sum': manual_sum,
                     'manual_skipped': manual_skipped,
                 })
 
