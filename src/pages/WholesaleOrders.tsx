@@ -60,7 +60,15 @@ const WholesaleOrders = () => {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showArchive, setShowArchive] = useState(false);
+  const [showArchive, setShowArchive] = useState(
+    () => sessionStorage.getItem("orders_show_archive") === "1"
+  );
+
+  const openOrder = (path: string) => {
+    sessionStorage.setItem("orders_scroll", String(window.scrollY));
+    sessionStorage.setItem("orders_show_archive", showArchive ? "1" : "0");
+    navigate(path);
+  };
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [drafts, setDrafts] = useState<Order[]>([]);
 
@@ -79,11 +87,20 @@ const WholesaleOrders = () => {
   }, [token]);
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(showArchive);
     localStorage.removeItem("draft_order");
     localStorage.removeItem("draft_order_items");
     localStorage.removeItem("draft_order_returning");
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const saved = sessionStorage.getItem("orders_scroll");
+    if (saved !== null) {
+      sessionStorage.removeItem("orders_scroll");
+      requestAnimationFrame(() => window.scrollTo(0, parseInt(saved) || 0));
+    }
+  }, [loading]);
 
   useEffect(() => {
     fetch(`${ORDERS_URL}?my_drafts=1`, { headers: authHeaders })
@@ -122,6 +139,7 @@ const WholesaleOrders = () => {
   const toggleArchive = () => {
     const next = !showArchive;
     setShowArchive(next);
+    sessionStorage.setItem("orders_show_archive", next ? "1" : "0");
     fetchOrders(next);
   };
 
@@ -177,7 +195,7 @@ const WholesaleOrders = () => {
             {drafts.map((d) => (
               <button
                 key={d.id}
-                onClick={() => navigate(`/admin/orders/${d.id}/edit`)}
+                onClick={() => openOrder(`/admin/orders/${d.id}/edit`)}
                 className="block w-full text-left text-sm py-1 hover:underline"
               >
                 Заявка #{d.id} {d.customer_name ? `— ${d.customer_name}` : "(без имени)"} {d.total_amount ? `— ${d.total_amount} ₽` : ""}
@@ -214,7 +232,7 @@ const WholesaleOrders = () => {
                       ? "border bg-purple-500/5 border-purple-500/15"
                       : "border bg-card border-white/[0.08]"
                   }`}
-                  onClick={() => navigate(`/admin/orders/${order.id}/edit`)}
+                  onClick={() => openOrder(`/admin/orders/${order.id}/edit`)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
