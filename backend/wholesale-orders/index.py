@@ -25,6 +25,17 @@ def get_manager_info(cur, phone):
     )
     return cur.fetchone()
 
+def can_manager_see_order(cur, order_id, created_by, created_by_owner, visibility, manager_id):
+    if visibility == 'all':
+        return True
+    if not created_by_owner and created_by == manager_id:
+        return True
+    cur.execute(
+        "SELECT 1 FROM wholesale_order_shares WHERE order_id = %s AND manager_id = %s LIMIT 1",
+        (order_id, manager_id)
+    )
+    return cur.fetchone() is not None
+
 ALLOWED_ROLES = ['Управляющий', 'Менеджер опта']
 CAN_CREATE_ROLES = ['Управляющий', 'Менеджер опта']
 ALLOWED_STATUSES = ['draft', 'new', 'confirmed', 'shipped', 'completed', 'archived']
@@ -441,7 +452,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(
                     """SELECT o.id, o.customer_name, o.comment, o.status, o.total_amount,
                               o.created_at, m.first_name, m.last_name, o.payment_status, o.paid_amount, o.is_restored,
-                              o.created_by_owner, o.created_by, o.recalc_in_progress
+                              o.created_by_owner, o.created_by, o.recalc_in_progress, o.visibility
                        FROM wholesale_orders o
                        JOIN managers m ON m.id = o.created_by
                        WHERE o.id = %s""",
@@ -450,6 +461,9 @@ def handler(event: dict, context) -> dict:
                 row = cur.fetchone()
                 if not row:
                     return json_resp(404, {'error': 'Заявка не найдена'})
+
+                if not is_owner and not can_manager_see_order(cur, row[0], row[12], row[11], row[14], manager_id):
+                    return json_resp(403, {'error': 'Нет доступа к этой заявке'})
 
                 cur.execute(
                     """SELECT oi.id, oi.product_id, p.name, p.article, oi.quantity, oi.price, oi.amount,
@@ -517,6 +531,8 @@ def handler(event: dict, context) -> dict:
                     'payment_status': row[8], 'paid_amount': float(row[9]),
                     'is_restored': row[10],
                     'recalc_in_progress': bool(row[13]),
+                    'visibility': row[14],
+                    'created_by_owner': bool(row[11]),
                     'version': version,
                     'lock': lock_info,
                     'items': items,
@@ -546,6 +562,15 @@ def handler(event: dict, context) -> dict:
                     conditions.append("o.status = 'archived'")
                 else:
                     conditions.append("o.status != 'archived'")
+
+            if not is_owner and not only_my_drafts:
+                conditions.append(
+                    "(o.visibility = 'all' "
+                    "OR (o.created_by = %s AND o.created_by_owner = false) "
+                    "OR EXISTS(SELECT 1 FROM wholesale_order_shares s WHERE s.order_id = o.id AND s.manager_id = %s))"
+                )
+                values.append(manager_id)
+                values.append(manager_id)
 
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -596,6 +621,78 @@ def handler(event: dict, context) -> dict:
                 if v is None:
                     return json_resp(404, {'error': 'Заявка не найдена'})
                 return json_resp(200, {'version': v})
+
+            # Получить настройки видимости заявки + список менеджеров для выбора.
+            if action == 'get_visibility':
+                order_id = body.get('order_id')
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                cur.execute(
+                    "SELECT created_by, created_by_owner, visibility FROM wholesale_orders WHERE id = %s",
+                    (order_id,)
+                )
+                o = cur.fetchone()
+                if not o:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                is_author = (not o[1]) and o[0] == manager_id
+                can_manage = is_owner or is_author
+                if not can_manage:
+                    return json_resp(403, {'error': 'Нет прав на настройку видимости'})
+                cur.execute(
+                    "SELECT manager_id FROM wholesale_order_shares WHERE order_id = %s",
+                    (order_id,)
+                )
+                shared_ids = [r[0] for r in cur.fetchall()]
+                cur.execute(
+                    "SELECT id, first_name, last_name FROM managers WHERE status = 'authorized' ORDER BY first_name, last_name"
+                )
+                managers = [
+                    {'id': r[0], 'name': f"{r[1] or ''} {r[2] or ''}".strip() or f"#{r[0]}"}
+                    for r in cur.fetchall()
+                    if not (not o[1] and r[0] == o[0])
+                ]
+                return json_resp(200, {
+                    'visibility': o[2],
+                    'shared_manager_ids': shared_ids,
+                    'managers': managers,
+                })
+
+            # Сохранить настройки видимости заявки.
+            if action == 'set_visibility':
+                order_id = body.get('order_id')
+                visibility = body.get('visibility')
+                shared_ids = body.get('shared_manager_ids') or []
+                if not order_id:
+                    return json_resp(400, {'error': 'Не указан order_id'})
+                if visibility not in ('private', 'all'):
+                    return json_resp(400, {'error': 'Некорректное значение видимости'})
+                cur.execute(
+                    "SELECT created_by, created_by_owner FROM wholesale_orders WHERE id = %s",
+                    (order_id,)
+                )
+                o = cur.fetchone()
+                if not o:
+                    return json_resp(404, {'error': 'Заявка не найдена'})
+                is_author = (not o[1]) and o[0] == manager_id
+                if not (is_owner or is_author):
+                    return json_resp(403, {'error': 'Нет прав на настройку видимости'})
+                clean_ids = []
+                for x in shared_ids:
+                    try:
+                        clean_ids.append(int(x))
+                    except (TypeError, ValueError):
+                        pass
+                cur.execute("UPDATE wholesale_orders SET visibility = %s WHERE id = %s", (visibility, order_id))
+                cur.execute("DELETE FROM wholesale_order_shares WHERE order_id = %s", (order_id,))
+                for mid in set(clean_ids):
+                    if not o[1] and mid == o[0]:
+                        continue
+                    cur.execute(
+                        "INSERT INTO wholesale_order_shares (order_id, manager_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        (order_id, mid)
+                    )
+                conn.commit()
+                return json_resp(200, {'ok': True, 'visibility': visibility, 'shared_manager_ids': list(set(clean_ids))})
 
             # Превью пересчёта цен по группе/бренду (ничего не меняет).
             if action == 'recalc_preview':

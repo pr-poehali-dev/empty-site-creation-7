@@ -154,4 +154,22 @@ export const orderApi = {
       "force_unlock",
       { order_id: orderId }
     ),
+  getVisibility: (orderId: number) =>
+    postAction<VisibilityInfo>("get_visibility", { order_id: orderId }),
+  setVisibility: (orderId: number, visibility: 'private' | 'all', sharedManagerIds: number[]) =>
+    postAction<{ ok: boolean; visibility: 'private' | 'all'; shared_manager_ids: number[] }>(
+      "set_visibility",
+      { order_id: orderId, visibility, shared_manager_ids: sharedManagerIds }
+    ),
 };
+
+export interface VisibilityManager {
+  id: number;
+  name: string;
+}
+
+export interface VisibilityInfo {
+  visibility: 'private' | 'all';
+  shared_manager_ids: number[];
+  managers: VisibilityManager[];
+}

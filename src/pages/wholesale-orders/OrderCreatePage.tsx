@@ -26,6 +26,7 @@ import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 import { orderApi, ItemPayload, VersionConflictError, LockInfo, setSessionId as setApiSessionId } from "./orderApi";
+import OrderVisibilityDialog from "./OrderVisibilityDialog";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -119,6 +120,7 @@ const OrderCreatePage = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!editId);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [showVisibility, setShowVisibility] = useState(false);
 
   const [searchMode, setSearchMode] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1586,22 +1588,35 @@ const OrderCreatePage = () => {
               </span>
             )}
           </div>
-          <Button
-            size="sm"
-            className="h-9 rounded-lg px-3 sm:px-4"
-            onClick={handleSave}
-            disabled={saving || isLocked}
-            title="Сохранить заявку"
-          >
-            {saving ? (
-              <Icon name="Loader2" size={16} className="animate-spin" />
-            ) : (
-              <Icon name="Check" size={16} />
+          <div className="flex items-center gap-2">
+            {editId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-9 p-0 rounded-lg"
+                onClick={() => setShowVisibility(true)}
+                title="Настройки видимости заявки"
+              >
+                <Icon name="Settings" size={18} />
+              </Button>
             )}
-            <span className="ml-2 hidden sm:inline">
-              {saving ? "Сохранение..." : "Сохранить"}
-            </span>
-          </Button>
+            <Button
+              size="sm"
+              className="h-9 rounded-lg px-3 sm:px-4"
+              onClick={handleSave}
+              disabled={saving || isLocked}
+              title="Сохранить заявку"
+            >
+              {saving ? (
+                <Icon name="Loader2" size={16} className="animate-spin" />
+              ) : (
+                <Icon name="Check" size={16} />
+              )}
+              <span className="ml-2 hidden sm:inline">
+                {saving ? "Сохранение..." : "Сохранить"}
+              </span>
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -2376,6 +2391,14 @@ const OrderCreatePage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {editId && (
+        <OrderVisibilityDialog
+          orderId={editId}
+          open={showVisibility}
+          onOpenChange={setShowVisibility}
+        />
+      )}
 
       <Dialog open={showPriceRecalc} onOpenChange={setShowPriceRecalc}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
