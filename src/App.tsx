@@ -12,6 +12,7 @@ import ManagerDashboard from "./pages/ManagerDashboard";
 import Catalog from "./pages/Catalog";
 import CatalogNewProducts from "./pages/CatalogNewProducts";
 import WholesaleOrders from "./pages/WholesaleOrders";
+import Receipts from "./pages/Receipts";
 import OrderPayments from "./pages/OrderPayments";
 import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
 import UnknownBarcodePage from "./pages/wholesale-orders/UnknownBarcodePage";
@@ -58,6 +59,7 @@ const App = () => (
           <Route path="/admin/catalog" element={<ProtectedRoute><Catalog /></ProtectedRoute>} />
           <Route path="/admin/catalog/new" element={<ProtectedRoute><CatalogNewProducts /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute><WholesaleOrders /></ProtectedRoute>} />
+          <Route path="/admin/receipts" element={<ProtectedRoute><Receipts /></ProtectedRoute>} />
           <Route path="/admin/orders/:orderId/payments" element={<ProtectedRoute><OrderPayments /></ProtectedRoute>} />
           <Route path="/admin/orders/create" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
           <Route path="/admin/orders/:id/edit" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />

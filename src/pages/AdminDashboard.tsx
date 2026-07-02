@@ -462,6 +462,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Заявки</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.receipts" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/receipts")}
+            >
+              <Icon name="PackagePlus" size={20} />
+              <span className="font-medium">Приёмки</span>
+            </Button>
+          </DebugBadge>
           <DebugBadge id="Admin:nav.returns" className="flex-1">
             <Button
               variant="outline"
