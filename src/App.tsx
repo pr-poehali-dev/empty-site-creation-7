@@ -23,6 +23,7 @@ import BarcodeScanPage from "./pages/shared/BarcodeScanPage";
 import BulkPastePage from "./pages/shared/BulkPastePage";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
+import AuctionsInfo from "./pages/AuctionsInfo";
 import Wholesalers from "./pages/Wholesalers";
 import PricingRules from "./pages/PricingRules";
 import PricingRulesEdit from "./pages/PricingRulesEdit";
@@ -72,6 +73,7 @@ const App = () => (
           <Route path="/admin/shared/bulk-paste" element={<ProtectedRoute><BulkPastePage /></ProtectedRoute>} />
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />
+          <Route path="/admin/auctions" element={<ProtectedRoute><AuctionsInfo /></ProtectedRoute>} />
           <Route path="/admin/wholesalers" element={<ProtectedRoute><Wholesalers /></ProtectedRoute>} />
           <Route path="/admin/pricing" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
           <Route path="/admin/pricing/:id" element={<ProtectedRoute><PricingRulesEdit /></ProtectedRoute>} />
