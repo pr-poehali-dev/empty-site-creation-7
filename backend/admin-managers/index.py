@@ -51,7 +51,7 @@ def handler(event: dict, context) -> dict:
         if status_filter:
             cur.execute(
                 """SELECT m.id, m.phone, m.telegram_chat_id, m.first_name, m.last_name,
-                          r.id, r.name, m.status, m.created_at
+                          r.id, r.name, m.status, m.created_at, m.auction_role
                    FROM managers m
                    LEFT JOIN roles r ON r.id = m.role_id
                    WHERE m.status = %s
@@ -61,7 +61,7 @@ def handler(event: dict, context) -> dict:
         else:
             cur.execute(
                 """SELECT m.id, m.phone, m.telegram_chat_id, m.first_name, m.last_name,
-                          r.id, r.name, m.status, m.created_at
+                          r.id, r.name, m.status, m.created_at, m.auction_role
                    FROM managers m
                    LEFT JOIN roles r ON r.id = m.role_id
                    ORDER BY m.created_at DESC"""
@@ -76,7 +76,8 @@ def handler(event: dict, context) -> dict:
                 'last_name': r[4],
                 'role': {'id': r[5], 'name': r[6]} if r[5] else None,
                 'status': r[7],
-                'created_at': r[8].isoformat() if r[8] else None
+                'created_at': r[8].isoformat() if r[8] else None,
+                'auction_role': r[9] or 'none'
             }
             for r in rows
         ]
@@ -143,11 +144,17 @@ def handler(event: dict, context) -> dict:
         first_name = body.get('first_name', '').strip()
         last_name = body.get('last_name', '').strip()
         role_id = body.get('role_id')
+        auction_role = body.get('auction_role', 'none')
 
         if not first_name or not last_name or not role_id:
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите имя, фамилию и роль'})}
+
+        if auction_role not in ('none', 'operator', 'admin'):
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный доступ к аукциону'})}
 
         cur.execute("SELECT id FROM roles WHERE id = %s", (role_id,))
         if not cur.fetchone():
@@ -157,10 +164,10 @@ def handler(event: dict, context) -> dict:
 
         cur.execute(
             """UPDATE managers
-               SET first_name = %s, last_name = %s, role_id = %s, status = 'authorized'
+               SET first_name = %s, last_name = %s, role_id = %s, auction_role = %s, status = 'authorized'
                WHERE id = %s AND status IN ('pending', 'authorized')
                RETURNING id, phone, first_name, last_name, status""",
-            (first_name, last_name, role_id, manager_id)
+            (first_name, last_name, role_id, auction_role, manager_id)
         )
         row = cur.fetchone()
         if not row:

@@ -43,7 +43,14 @@ interface Manager {
   role: { id: number; name: string } | null;
   status: string;
   created_at: string | null;
+  auction_role?: string;
 }
+
+const AUCTION_ROLES = [
+  { value: "none", label: "Нет доступа" },
+  { value: "operator", label: "Оператор (создаёт лоты)" },
+  { value: "admin", label: "Администратор (видит ставки)" },
+];
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -64,6 +71,7 @@ const AdminDashboard = () => {
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [editRoleId, setEditRoleId] = useState("");
+  const [editAuctionRole, setEditAuctionRole] = useState("none");
   const [editing, setEditing] = useState(false);
   const [resettingWebhook, setResettingWebhook] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<"loading" | "ok" | "error" | "unset">("loading");
@@ -184,6 +192,7 @@ const AdminDashboard = () => {
     setEditFirstName(manager.first_name || "");
     setEditLastName(manager.last_name || "");
     setEditRoleId(manager.role ? String(manager.role.id) : "");
+    setEditAuctionRole(manager.auction_role || "none");
   };
 
   const handleEdit = async () => {
@@ -201,6 +210,7 @@ const AdminDashboard = () => {
           first_name: editFirstName.trim(),
           last_name: editLastName.trim(),
           role_id: Number(editRoleId),
+          auction_role: editAuctionRole,
         }),
       });
       const data = await resp.json();
@@ -801,6 +811,21 @@ const AdminDashboard = () => {
                     </SelectContent>
                   </Select>
                 </DebugBadge>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Доступ к аукциону</label>
+                <Select value={editAuctionRole} onValueChange={setEditAuctionRole}>
+                  <SelectTrigger className="h-11 rounded-xl bg-secondary border-white/[0.08]">
+                    <SelectValue placeholder="Выберите доступ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUCTION_ROLES.map((ar) => (
+                      <SelectItem key={ar.value} value={ar.value}>
+                        {ar.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}
