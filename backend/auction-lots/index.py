@@ -63,18 +63,25 @@ def resolve_manager(cur, telegram_id):
     return manager_id, auction_role
 
 
-def upload_photos(photos):
-    """Загружает список base64-фото в S3, возвращает список CDN-ссылок."""
-    if not photos:
-        return []
-    s3 = boto3.client(
+def s3_client():
+    return boto3.client(
         's3',
         endpoint_url='https://bucket.poehali.dev',
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
     )
+
+
+def upload_photos(photos):
+    """Загружает base64-фото в S3, готовые CDN-ссылки пропускает. Возвращает список ссылок."""
+    if not photos:
+        return []
+    s3 = None
     urls = []
     for photo in photos[:5]:
+        if isinstance(photo, str) and photo.startswith('http'):
+            urls.append(photo)
+            continue
         raw = photo
         content_type = 'image/jpeg'
         ext = 'jpg'
@@ -84,11 +91,50 @@ def upload_photos(photos):
                 content_type, ext = 'image/png', 'png'
             elif 'image/webp' in head:
                 content_type, ext = 'image/webp', 'webp'
+        if s3 is None:
+            s3 = s3_client()
         data = base64.b64decode(raw)
         key = f"auction/{uuid.uuid4().hex}.{ext}"
         s3.put_object(Bucket='files', Key=key, Body=data, ContentType=content_type)
         urls.append(f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}")
     return urls
+
+
+def delete_photos(urls):
+    """Удаляет фото лота из S3 по CDN-ссылкам."""
+    if not urls:
+        return
+    s3 = s3_client()
+    prefix = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/"
+    for url in urls:
+        if isinstance(url, str) and url.startswith(prefix):
+            key = url[len(prefix):]
+            try:
+                s3.delete_object(Bucket='files', Key=key)
+            except Exception:
+                pass
+
+
+def can_manage(cur, lot_id, manager_id, auction_role):
+    """Возвращает (row, error). Право: создатель лота или admin."""
+    cur.execute(
+        """SELECT id, created_by, status, photo_urls
+           FROM auction_lots WHERE id = %s LIMIT 1""",
+        (lot_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, 'Лот не найден'
+    if row[1] != manager_id and auction_role != 'admin':
+        return None, 'Нет прав на этот лот'
+    return row, None
+
+
+def parse_ends_at(raw):
+    dt = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def handler(event: dict, context) -> dict:
@@ -133,19 +179,14 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет доступа к созданию лотов'})}
 
     if method == 'GET':
-        cur.execute(
-            """SELECT id, title, desired_price, quantity, quantity_left, status, ends_at, photo_urls, created_at
-               FROM auction_lots
-               WHERE created_by = %s
-               ORDER BY created_at DESC
-               LIMIT 100""",
-            (manager_id,)
-        )
-        lots = []
-        for r in cur.fetchall():
-            lots.append({
+        params = event.get('queryStringParameters') or {}
+        lot_id_raw = params.get('lot_id') or body.get('lot_id')
+
+        def serialize(r):
+            return {
                 'id': r[0],
                 'title': r[1],
+                'description': r[9] if len(r) > 9 else None,
                 'desired_price': float(r[2]) if r[2] is not None else 0,
                 'quantity': r[3],
                 'quantity_left': r[4],
@@ -153,13 +194,138 @@ def handler(event: dict, context) -> dict:
                 'ends_at': r[6].isoformat() if r[6] else None,
                 'photo_urls': r[7] or [],
                 'created_at': r[8].isoformat() if r[8] else None,
-            })
+                'payment_deadline_minutes': r[10] if len(r) > 10 else None,
+                'created_by': r[11] if len(r) > 11 else None,
+            }
+
+        if lot_id_raw:
+            cur.execute(
+                """SELECT id, title, desired_price, quantity, quantity_left, status, ends_at,
+                          photo_urls, created_at, description, payment_deadline_minutes, created_by
+                   FROM auction_lots WHERE id = %s LIMIT 1""",
+                (int(lot_id_raw),)
+            )
+            r = cur.fetchone()
+            if not r:
+                cur.close(); conn.close()
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Лот не найден'})}
+            if r[11] != manager_id and auction_role != 'admin':
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав на этот лот'})}
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': serialize(r)})}
+
+        cur.execute(
+            """SELECT id, title, desired_price, quantity, quantity_left, status, ends_at,
+                      photo_urls, created_at, description, payment_deadline_minutes, created_by
+               FROM auction_lots
+               WHERE created_by = %s
+               ORDER BY
+                 (status = 'cancelled') ASC,
+                 cancelled_at DESC NULLS LAST,
+                 created_at DESC
+               LIMIT 100""",
+            (manager_id,)
+        )
+        lots = [serialize(r) for r in cur.fetchall()]
         cur.close()
         conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lots': lots})}
 
     if method == 'POST':
         action = body.get('action', 'create')
+
+        if action == 'cancel':
+            row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
+            if err:
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
+            if row[2] == 'cancelled':
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Лот уже отменён'})}
+            cur.execute(
+                "UPDATE auction_lots SET status = 'cancelled', cancelled_at = now() WHERE id = %s",
+                (row[0],)
+            )
+            conn.commit()
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+        if action == 'delete':
+            row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
+            if err:
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
+            if row[2] not in ('cancelled', 'finished'):
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Сначала отмените лот'})}
+            cur.execute("DELETE FROM auction_lots WHERE id = %s", (row[0],))
+            conn.commit()
+            delete_photos(row[3] or [])
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+        if action == 'update':
+            row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
+            if err:
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
+            if row[2] in ('cancelled', 'finished'):
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нельзя редактировать завершённый или отменённый лот'})}
+
+            title = (body.get('title') or '').strip()
+            description = (body.get('description') or '').strip() or None
+            desired_price = body.get('desired_price')
+            quantity = body.get('quantity') or 1
+            ends_at_raw = body.get('ends_at')
+            payment_deadline = body.get('payment_deadline_minutes') or 60
+            photos = body.get('photos') or []
+
+            errors = []
+            if not title:
+                errors.append('Укажите название лота')
+            try:
+                desired_price = float(desired_price)
+                if desired_price <= 0:
+                    errors.append('Цена должна быть больше нуля')
+            except (TypeError, ValueError):
+                errors.append('Некорректная цена')
+            try:
+                quantity = int(quantity)
+                if quantity < 1:
+                    errors.append('Количество должно быть не меньше 1')
+            except (TypeError, ValueError):
+                errors.append('Некорректное количество')
+            ends_at = None
+            if not ends_at_raw:
+                errors.append('Укажите срок окончания')
+            else:
+                try:
+                    ends_at = parse_ends_at(ends_at_raw)
+                except ValueError:
+                    errors.append('Некорректный срок окончания')
+            if errors:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': '; '.join(errors)})}
+
+            old_urls = row[3] or []
+            new_urls = upload_photos(photos)
+            removed = [u for u in old_urls if u not in new_urls]
+
+            cur.execute(
+                """UPDATE auction_lots
+                   SET title = %s, description = %s, desired_price = %s, quantity = %s,
+                       ends_at = %s, payment_deadline_minutes = %s, photo_urls = %s
+                   WHERE id = %s""",
+                (title, description, desired_price, quantity, ends_at,
+                 payment_deadline, new_urls, row[0])
+            )
+            conn.commit()
+            delete_photos(removed)
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True, 'photo_urls': new_urls})}
+
         if action != 'create':
             cur.close()
             conn.close()

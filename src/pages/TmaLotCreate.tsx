@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 
 const LOTS_URL = "https://functions.poehali.dev/ccf1033f-bcff-4801-a6dc-8597eec21344";
@@ -29,8 +29,17 @@ const defaultEndsAt = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+const isoToLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const TmaLotCreate = () => {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
+  const [loading, setLoading] = useState(Boolean(id));
   const [initData, setInitData] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [title, setTitle] = useState("");
@@ -47,13 +56,51 @@ const TmaLotCreate = () => {
   const fallbackInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const tg = getTg();
-    if (tg) {
+    const start = () => {
+      const tg = getTg();
+      if (!tg) return;
       tg.ready();
       tg.expand();
-      setInitData(tg.initData || "");
+      const data = tg.initData || "";
+      setInitData(data);
+      if (isEdit && data) loadLot(data);
+    };
+    const tg = getTg();
+    if (tg) {
+      start();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://telegram.org/js/telegram-web-app.js";
+      script.async = true;
+      script.onload = start;
+      document.body.appendChild(script);
     }
+     
   }, []);
+
+  const loadLot = async (data: string) => {
+    try {
+      const resp = await fetch(`${LOTS_URL}?lot_id=${id}&init_data=${encodeURIComponent(data)}`);
+      const res = await resp.json();
+      if (!resp.ok || !res.lot) {
+        setError(res.error || "Не удалось загрузить лот");
+        setLoading(false);
+        return;
+      }
+      const lot = res.lot;
+      setTitle(lot.title || "");
+      setDescription(lot.description || "");
+      setPrice(String(lot.desired_price || ""));
+      setQuantity(String(lot.quantity || 1));
+      if (lot.ends_at) setEndsAt(isoToLocalInput(lot.ends_at));
+      setPaymentMin(String(lot.payment_deadline_minutes || 60));
+      setPhotos(lot.photo_urls || []);
+    } catch {
+      setError("Ошибка соединения.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -128,7 +175,8 @@ const TmaLotCreate = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           init_data: initData,
-          action: "create",
+          action: isEdit ? "update" : "create",
+          lot_id: id ? Number(id) : undefined,
           title: title.trim(),
           description: description.trim(),
           desired_price: Number(price),
@@ -160,8 +208,16 @@ const TmaLotCreate = () => {
         >
           <Icon name="ArrowLeft" size={18} />
         </button>
-        <h1 className="text-xl font-bold">Новый лот</h1>
+        <h1 className="text-xl font-bold">{isEdit ? "Редактирование лота" : "Новый лот"}</h1>
       </div>
+
+      {loading && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Icon name="Loader2" size={28} className="animate-spin opacity-70" />
+          <p className="text-muted-foreground text-sm">Загрузка…</p>
+        </div>
+      )}
+      {!loading && (
 
       <div className="flex flex-col gap-4 max-w-md w-full mx-auto">
         <div>
@@ -284,9 +340,10 @@ const TmaLotCreate = () => {
           className="mt-2 w-full rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {saving && <Icon name="Loader2" size={18} className="animate-spin" />}
-          {saving ? "Сохранение…" : "Опубликовать лот"}
+          {saving ? "Сохранение…" : isEdit ? "Сохранить изменения" : "Опубликовать лот"}
         </button>
       </div>
+      )}
 
       {cameraOpen && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">

@@ -59,6 +59,7 @@ const App = () => (
           <Route path="/tma" element={<TmaHome />} />
           <Route path="/tma/cabinet" element={<TmaCabinet />} />
           <Route path="/tma/lot/new" element={<TmaLotCreate />} />
+          <Route path="/tma/lot/:id/edit" element={<TmaLotCreate />} />
           <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />

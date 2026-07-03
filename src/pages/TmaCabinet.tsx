@@ -43,6 +43,34 @@ const TmaCabinet = () => {
   const [loading, setLoading] = useState(true);
   const [lots, setLots] = useState<Lot[]>([]);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<Lot | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const action = async (act: "cancel" | "delete", lot: Lot) => {
+    const tg = getTg();
+    const initData = tg?.initData || "";
+    if (act === "delete" && !window.confirm("Удалить лот навсегда? Действие необратимо.")) return;
+    setBusy(true);
+    try {
+      const resp = await fetch(LOTS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ init_data: initData, action: act, lot_id: lot.id }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        window.alert(data.error || "Не удалось выполнить действие");
+        setBusy(false);
+        return;
+      }
+      setSelected(null);
+      await load();
+    } catch {
+      window.alert("Ошибка соединения.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const load = async () => {
     const tg = getTg();
@@ -139,9 +167,10 @@ const TmaCabinet = () => {
       {!loading && !error && lots.length > 0 && (
         <div className="flex flex-col gap-3 max-w-md w-full mx-auto">
           {lots.map((lot) => (
-            <div
+            <button
               key={lot.id}
-              className="flex gap-3 rounded-2xl border border-border bg-card p-3"
+              onClick={() => setSelected(lot)}
+              className="flex gap-3 rounded-2xl border border-border bg-card p-3 text-left w-full"
             >
               <div className="h-16 w-16 flex-shrink-0 rounded-xl overflow-hidden bg-white/[0.04] flex items-center justify-center">
                 {lot.photo_urls[0] ? (
@@ -164,8 +193,66 @@ const TmaCabinet = () => {
                   )}
                 </div>
               </div>
-            </div>
+              <Icon name="ChevronRight" size={18} className="self-center text-muted-foreground" />
+            </button>
           ))}
+        </div>
+      )}
+
+      {selected && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/50"
+          onClick={() => !busy && setSelected(null)}
+        >
+          <div
+            className="w-full rounded-t-3xl bg-card p-5 pb-8 max-w-md mx-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
+            <div className="font-semibold text-lg mb-1 truncate">{selected.title}</div>
+            <div className="text-sm text-muted-foreground mb-5">
+              {STATUS_LABEL[selected.status] || selected.status}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {selected.status === "active" && (
+                <button
+                  onClick={() => navigate(`/tma/lot/${selected.id}/edit`)}
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 font-semibold text-primary-foreground"
+                >
+                  <Icon name="Pencil" size={18} />
+                  Редактировать
+                </button>
+              )}
+              {selected.status === "active" && (
+                <button
+                  disabled={busy}
+                  onClick={() => action("cancel", selected)}
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-3.5 font-medium disabled:opacity-60"
+                >
+                  <Icon name="Ban" size={18} />
+                  Отменить лот
+                </button>
+              )}
+              {(selected.status === "cancelled" || selected.status === "finished") && (
+                <button
+                  disabled={busy}
+                  onClick={() => action("delete", selected)}
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-3.5 font-medium text-red-400 disabled:opacity-60"
+                >
+                  <Icon name="Trash2" size={18} />
+                  Удалить окончательно
+                </button>
+              )}
+              <button
+                disabled={busy}
+                onClick={() => setSelected(null)}
+                className="flex items-center justify-center rounded-2xl px-5 py-3 text-muted-foreground"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
