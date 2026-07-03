@@ -35,6 +35,22 @@ def handler(event: dict, context) -> dict:
         except Exception as e:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
 
+    if method == 'GET' and action == 'menu_info':
+        url = f'https://api.telegram.org/bot{bot_token}/getChatMenuButton'
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            result = data.get('result', {})
+            web_app = result.get('web_app', {})
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
+                'type': result.get('type', ''),
+                'text': result.get('text', ''),
+                'url': web_app.get('url', ''),
+                'configured_base': os.environ.get('WEBAPP_BASE_URL', '')
+            })}
+        except Exception as e:
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
+
     if method == 'GET' and action == 'webhook_info':
         url = f'https://api.telegram.org/bot{bot_token}/getWebhookInfo'
         try:
