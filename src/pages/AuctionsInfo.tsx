@@ -205,6 +205,66 @@ const Stage2Content = () => (
   </div>
 );
 
+const Stage3Content = () => (
+  <div className="space-y-6 text-sm leading-relaxed">
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Что появилось на этом этапе</h3>
+      <p className="text-muted-foreground">
+        Сотрудник теперь может не только войти, но и <span className="text-foreground font-medium">создавать лоты</span> прямо
+        из мини-приложения в Telegram. Это первый рабочий инструмент кабинета: заполнил форму —
+        лот сохранился в системе и готов к торгам.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">1. Владелец всегда с полным доступом</h3>
+      <p className="text-muted-foreground">
+        Раньше владелец не видел кнопку создания лотов, потому что его не было в списке сотрудников
+        аукциона. Мы это исправили: <span className="text-foreground font-medium">владелец теперь автоматически считается
+        администратором аукциона</span> и всегда видит кнопку «Кабинет аукциона», как бы ни были настроены
+        права. Это соответствует правилу «владелец видит всё и всегда».
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">2. Кабинет аукциона</h3>
+      <p className="text-muted-foreground">
+        В мини-приложении по кнопке «Кабинет аукциона» открывается список <span className="text-foreground font-medium">ваших лотов</span>:
+        фото-обложка, название, цена, остаток, статус (идёт / закрыт / на оплате / завершён / отменён)
+        и срок окончания. Сверху — большая кнопка <span className="text-foreground font-medium">«Новый лот»</span>.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">3. Создание лота</h3>
+      <p className="text-muted-foreground">
+        Форма создания лота позволяет указать: <span className="text-foreground font-medium">до 5 фото</span> (первое — обложка),
+        название, описание, желаемую цену, количество, срок окончания аукциона и срок на оплату для
+        победителя. Фото загружаются в защищённое хранилище, лот сохраняется — и сразу появляется
+        в списке кабинета.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">4. Защита на сервере</h3>
+      <p className="text-muted-foreground">
+        Создавать лоты может <span className="text-foreground font-medium">только сотрудник с доступом «оператор» или «администратор»</span>
+        (и владелец). Сервер проверяет подпись Telegram и права при каждом действии — обойти это со
+        стороны приложения нельзя.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Итог этапа</h3>
+      <p className="text-muted-foreground">
+        Сотрудник и владелец заходят в кабинет аукциона, создают лоты с фото и параметрами, видят
+        список своих лотов со статусами. Дальше — публикация лотов в каналы бота и мини-приложение
+        покупателя со ставками.
+      </p>
+    </div>
+  </div>
+);
+
 const StageStub = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
     <div className="w-12 h-12 rounded-xl bg-white/[0.06] flex items-center justify-center mb-3">
@@ -218,7 +278,7 @@ const StageStub = ({ title }: { title: string }) => (
 const STAGES: Stage[] = [
   { key: "stage1", label: "Этап 1", done: true, content: <Stage1Content /> },
   { key: "stage2", label: "Этап 2", done: true, content: <Stage2Content /> },
-  { key: "stage3", label: "Этап 3", done: false, content: <StageStub title="Этап 3. Мини-приложение сотрудника" /> },
+  { key: "stage3", label: "Этап 3", done: true, content: <Stage3Content /> },
   { key: "stage4", label: "Этап 4", done: false, content: <StageStub title="Этап 4. Мини-приложение покупателя и ставки" /> },
 ];
 

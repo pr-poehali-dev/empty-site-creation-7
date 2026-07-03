@@ -25,6 +25,8 @@ import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
 import AuctionsInfo from "./pages/AuctionsInfo";
 import TmaHome from "./pages/TmaHome";
+import TmaCabinet from "./pages/TmaCabinet";
+import TmaLotCreate from "./pages/TmaLotCreate";
 import Wholesalers from "./pages/Wholesalers";
 import PricingRules from "./pages/PricingRules";
 import PricingRulesEdit from "./pages/PricingRulesEdit";
@@ -55,6 +57,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/tma" element={<TmaHome />} />
+          <Route path="/tma/cabinet" element={<TmaCabinet />} />
+          <Route path="/tma/lot/new" element={<TmaLotCreate />} />
           <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />

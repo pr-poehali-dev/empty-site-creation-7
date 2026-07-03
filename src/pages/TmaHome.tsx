@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 
 const AUCTION_ME_URL = "https://functions.poehali.dev/ba801f3a-94dd-46a8-9d24-a830a5ff56aa";
@@ -27,6 +28,7 @@ declare global {
 }
 
 const TmaHome = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string>("");
@@ -115,7 +117,7 @@ const TmaHome = () => {
         {isStaff && (
           <button
             className="w-full flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-left transition hover:bg-white/[0.04]"
-            onClick={() => alert("Кабинет аукциона — скоро")}
+            onClick={() => navigate("/tma/cabinet")}
           >
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
               <Icon name="LayoutDashboard" size={22} />
