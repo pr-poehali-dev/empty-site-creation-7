@@ -130,10 +130,23 @@ const TmaLotCreate = () => {
                 )}
               </div>
             ))}
-            {photos.length < 5 && (
-              <label className="aspect-square rounded-xl border border-dashed border-border flex flex-col items-center justify-center gap-1 cursor-pointer text-muted-foreground">
-                <Icon name="Plus" size={22} />
-                <span className="text-xs">Добавить</span>
+          </div>
+          {photos.length < 5 && (
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <label className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 cursor-pointer text-sm">
+                <Icon name="Camera" size={18} />
+                Сделать фото
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => addPhotos(e.target.files)}
+                />
+              </label>
+              <label className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 cursor-pointer text-sm">
+                <Icon name="Image" size={18} />
+                Из галереи
                 <input
                   type="file"
                   accept="image/*"
@@ -142,8 +155,8 @@ const TmaLotCreate = () => {
                   onChange={(e) => addPhotos(e.target.files)}
                 />
               </label>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <Field label="Название">
