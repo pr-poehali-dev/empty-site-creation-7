@@ -53,7 +53,17 @@ def verify_init_data(init_data: str, bot_token: str, max_age: int = 86400):
 
 
 def resolve_role(cur, telegram_id):
-    """Определяет аукционную роль по telegram_chat_id среди сотрудников."""
+    """Определяет аукционную роль по telegram_chat_id. Владелец всегда admin."""
+    cur.execute(
+        """SELECT 1
+           FROM users
+           WHERE role = 'owner' AND telegram_chat_id = %s
+           LIMIT 1""",
+        (telegram_id,)
+    )
+    if cur.fetchone():
+        return 'admin', None
+
     cur.execute(
         """SELECT auction_role, status, first_name, last_name
            FROM managers
