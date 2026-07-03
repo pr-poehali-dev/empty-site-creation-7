@@ -254,12 +254,114 @@ const Stage3Content = () => (
       </p>
     </div>
 
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">5. Редактирование, отмена и удаление лота</h3>
+      <p className="text-muted-foreground">
+        Лот можно <span className="text-foreground font-medium">изменить</span> (в том числе фото), <span className="text-foreground font-medium">отменить</span>
+        {" "}(торги закрываются, лот уходит в конец списка) или <span className="text-foreground font-medium">удалить совсем</span>
+        {" "}(только отменённые или завершённые). Оператор видит и правит только свои лоты, администратор и
+        владелец — любые.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">6. Подключение каналов бота</h3>
+      <p className="text-muted-foreground">
+        В кабинете появился раздел <span className="text-foreground font-medium">«Каналы»</span>. Канал можно добавить двумя способами:
+        вручную по имени (@канал) или через кнопку <span className="text-foreground font-medium">«Найти мои каналы»</span> — система сама
+        покажет каналы, где бот уже назначен администратором. Подключить можно только те каналы, где у
+        бота есть право публиковать сообщения.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">7. Публикация лота в каналы</h3>
+      <p className="text-muted-foreground">
+        У каждого лота есть кнопка <span className="text-foreground font-medium">«Опубликовать»</span>. Сотрудник выбирает нужные каналы,
+        и бот размещает пост с фото, названием, ценой и кнопкой <span className="text-foreground font-medium">«Участвовать»</span>. Один лот
+        можно опубликовать сразу в несколько каналов — ставки и остаток при этом общие. Когда лот
+        отменяют или он завершается, посты в каналах обновляются автоматически.
+      </p>
+    </div>
+
     <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
       <h3 className="text-base font-semibold text-foreground mb-2">Итог этапа</h3>
       <p className="text-muted-foreground">
-        Сотрудник и владелец заходят в кабинет аукциона, создают лоты с фото и параметрами, видят
-        список своих лотов со статусами. Дальше — публикация лотов в каналы бота и мини-приложение
-        покупателя со ставками.
+        Сотрудник и владелец заходят в кабинет аукциона, создают, редактируют, отменяют и удаляют лоты,
+        подключают каналы бота и публикуют в них лоты с кнопкой «Участвовать». Дальше — мини-приложение
+        покупателя, где люди делают ставки и забирают товар.
+      </p>
+    </div>
+  </div>
+);
+
+const Stage4Content = () => (
+  <div className="space-y-6 text-sm leading-relaxed">
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Что появляется на этом этапе</h3>
+      <p className="text-muted-foreground">
+        Теперь очередь <span className="text-foreground font-medium">покупателя</span>. Человек нажимает в канале кнопку
+        «Участвовать» под лотом — и попадает в мини-приложение прямо внутри Telegram, где может
+        предложить свою цену или сразу забрать товар. Ничего скачивать не нужно.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">1. Экран лота для покупателя</h3>
+      <p className="text-muted-foreground">
+        Покупатель видит фото товара, описание, желаемую цену продавца, сколько осталось времени до
+        конца аукциона и свою текущую ставку, если он её уже делал. Всё обновляется само — цена и
+        таймер не требуют перезагрузки.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">2. Две кнопки: забрать сразу или предложить цену</h3>
+      <p className="text-muted-foreground mb-2">У покупателя есть два пути:</p>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li>
+          <span className="text-foreground font-medium">«Забрать по начальной цене»</span> — согласиться купить по цене,
+          которую назначил продавец, не дожидаясь конца аукциона.
+        </li>
+        <li>
+          <span className="text-foreground font-medium">«Предложить свою цену»</span> — назвать свою сумму (обычно ниже).
+          Ставку можно менять сколько угодно, пока идёт аукцион.
+        </li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">3. Покупатель не видит чужие ставки</h3>
+      <p className="text-muted-foreground">
+        Человек видит только <span className="text-foreground font-medium">свою</span> ставку. Ставки других людей и то, проходит он
+        в отбор или нет, ему не показываются — это честно и не даёт подглядывать за конкурентами.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">4. «Мои лоты»</h3>
+      <p className="text-muted-foreground">
+        У покупателя есть личный список — <span className="text-foreground font-medium">только те лоты, где он участвовал</span>, с ценой,
+        которую он предложил. Не нужно листать тысячи чужих лотов: под рукой лишь свои. По тапу можно
+        снова открыть лот и изменить ставку.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Что будет дальше (следующий этап)</h3>
+      <p className="text-muted-foreground">
+        Когда аукцион заканчивается, система сама отберёт лучшие ставки под количество товара и
+        предложит победителям выкуп. Если кто-то не оплатит вовремя — право перейдёт следующему. Это
+        уже отдельный, следующий этап.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Итог этапа</h3>
+      <p className="text-muted-foreground">
+        Покупатель заходит из канала на экран лота, забирает товар по начальной цене или предлагает
+        свою, меняет ставку и видит список своих участий. Видимая часть для покупателя готова —
+        остаётся подведение итогов и оплата.
       </p>
     </div>
   </div>
@@ -279,7 +381,7 @@ const STAGES: Stage[] = [
   { key: "stage1", label: "Этап 1", done: true, content: <Stage1Content /> },
   { key: "stage2", label: "Этап 2", done: true, content: <Stage2Content /> },
   { key: "stage3", label: "Этап 3", done: true, content: <Stage3Content /> },
-  { key: "stage4", label: "Этап 4", done: false, content: <StageStub title="Этап 4. Мини-приложение покупателя и ставки" /> },
+  { key: "stage4", label: "Этап 4", done: false, content: <Stage4Content /> },
 ];
 
 const AuctionsInfo = () => {
