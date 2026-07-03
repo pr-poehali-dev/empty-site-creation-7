@@ -33,6 +33,25 @@ const TmaChannels = () => {
 
   const initData = () => getTg()?.initData || "";
 
+  const copyId = (chatId: number) => {
+    const text = String(chatId);
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        /* ignore */
+      }
+      document.body.removeChild(ta);
+    }
+    window.alert(`ID скопирован: ${text}`);
+  };
+
   const discover = async () => {
     setDiscovering(true);
     setError("");
@@ -232,6 +251,13 @@ const TmaChannels = () => {
                     {ch.username && (
                       <div className="text-xs text-muted-foreground">@{ch.username}</div>
                     )}
+                    <button
+                      onClick={() => copyId(ch.chat_id)}
+                      className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                      ID: {ch.chat_id}
+                      <Icon name="Copy" size={11} />
+                    </button>
                   </div>
                   <button
                     onClick={() => addByChatId(ch)}
@@ -273,6 +299,13 @@ const TmaChannels = () => {
             <div className="flex-1 min-w-0">
               <div className="font-semibold truncate">{ch.title || `Канал ${ch.chat_id}`}</div>
               {ch.username && <div className="text-sm text-muted-foreground">@{ch.username}</div>}
+              <button
+                onClick={() => copyId(ch.chat_id)}
+                className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"
+              >
+                ID: {ch.chat_id}
+                <Icon name="Copy" size={11} />
+              </button>
             </div>
             <button
               onClick={() => remove(ch)}

@@ -114,8 +114,9 @@ def handle_my_chat_member(upd):
     try:
         if is_admin:
             cur.execute(
-                """INSERT INTO auction_discovered_channels (chat_id, title, username, is_admin, updated_at)
-                   VALUES (%s, %s, %s, TRUE, now())
+                """INSERT INTO auction_discovered_channels (id, chat_id, title, username, is_admin, updated_at)
+                   VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM auction_discovered_channels),
+                           %s, %s, %s, TRUE, now())
                    ON CONFLICT (chat_id) DO UPDATE
                    SET title = EXCLUDED.title, username = EXCLUDED.username,
                        is_admin = TRUE, updated_at = now()""",

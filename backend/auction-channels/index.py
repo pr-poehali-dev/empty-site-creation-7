@@ -166,8 +166,8 @@ def handler(event: dict, context) -> dict:
                 cur.close(); conn.close()
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Бот больше не администратор этого канала'})}
             cur.execute(
-                """INSERT INTO auction_channels (chat_id, title, username, added_by)
-                   VALUES (%s, %s, %s, %s)
+                """INSERT INTO auction_channels (id, chat_id, title, username, added_by)
+                   VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM auction_channels), %s, %s, %s, %s)
                    ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title, username = EXCLUDED.username
                    RETURNING id""",
                 (chat_id, d[0], d[1], manager_id)
@@ -203,8 +203,8 @@ def handler(event: dict, context) -> dict:
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Добавьте бота администратором канала'})}
 
             cur.execute(
-                """INSERT INTO auction_channels (chat_id, title, username, added_by)
-                   VALUES (%s, %s, %s, %s)
+                """INSERT INTO auction_channels (id, chat_id, title, username, added_by)
+                   VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM auction_channels), %s, %s, %s, %s)
                    ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title, username = EXCLUDED.username
                    RETURNING id""",
                 (chat['id'], chat.get('title'), chat.get('username'), manager_id)
