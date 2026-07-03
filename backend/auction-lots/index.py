@@ -68,7 +68,7 @@ def mark_posts(cur, bot_token, lot_id, note):
     """Редактирует посты лота: добавляет пометку и убирает кнопку. note — текст статуса."""
     cur.execute(
         """SELECT p.channel_id, p.message_id, c.chat_id
-           FROM auction_lot_posts p
+           FROM auction_lot_channels p
            JOIN auction_channels c ON c.id = p.channel_id
            WHERE p.lot_id = %s AND p.status = 'published'""",
         (lot_id,)
@@ -82,7 +82,7 @@ def mark_posts(cur, bot_token, lot_id, note):
             'caption': f"<b>{esc(note)}</b>", 'parse_mode': 'HTML',
         })
     cur.execute(
-        "UPDATE auction_lot_posts SET status = 'closed' WHERE lot_id = %s AND status = 'published'",
+        "UPDATE auction_lot_channels SET status = 'closed' WHERE lot_id = %s AND status = 'published'",
         (lot_id,)
     )
 
@@ -295,7 +295,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             """SELECT l.id, l.title, l.desired_price, l.quantity, l.quantity_left, l.status, l.ends_at,
                       l.photo_urls, l.created_at, l.description, l.payment_deadline_minutes, l.created_by,
-                      (SELECT COUNT(*) FROM auction_lot_posts p
+                      (SELECT COUNT(*) FROM auction_lot_channels p
                        WHERE p.lot_id = l.id AND p.status = 'published')
                FROM auction_lots l
                WHERE l.created_by = %s
@@ -366,7 +366,7 @@ def handler(event: dict, context) -> dict:
                 if ok_send:
                     message_id = res.get('message_id')
                     cur.execute(
-                        """INSERT INTO auction_lot_posts (lot_id, channel_id, message_id, status)
+                        """INSERT INTO auction_lot_channels (lot_id, channel_id, message_id, status)
                            VALUES (%s, %s, %s, 'published')
                            ON CONFLICT (lot_id, channel_id)
                            DO UPDATE SET message_id = EXCLUDED.message_id, status = 'published'""",
