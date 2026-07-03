@@ -5,10 +5,86 @@ import hashlib
 import time
 import base64
 import uuid
+import urllib.request
+import urllib.error
 from urllib.parse import parse_qsl
 from datetime import datetime, timezone
 import psycopg2
 import boto3
+
+
+TMA_BASE_URL = os.environ.get('TMA_BASE_URL', 'https://t.me')
+
+
+def tg_api(bot_token, method, payload):
+    """Вызов Telegram Bot API. Возвращает (ok, result_or_error)."""
+    url = f'https://api.telegram.org/bot{bot_token}/{method}'
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            res = json.loads(resp.read().decode())
+        if res.get('ok'):
+            return True, res.get('result')
+        return False, res.get('description', 'Ошибка Telegram')
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode())
+            return False, err.get('description', f'HTTP {e.code}')
+        except Exception:
+            return False, f'HTTP {e.code}'
+    except Exception as e:
+        return False, str(e)
+
+
+def esc(text):
+    if text is None:
+        return ''
+    return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def build_caption(lot):
+    """lot: dict с title, description, desired_price, quantity_left, ends_at(datetime)."""
+    lines = [f"<b>{esc(lot['title'])}</b>"]
+    if lot.get('description'):
+        lines.append(esc(lot['description']))
+    lines.append('')
+    lines.append(f"Цена: <b>{int(lot['desired_price'])} ₽</b>")
+    lines.append(f"Осталось: {lot['quantity_left']} шт.")
+    if lot.get('ends_at'):
+        lines.append(f"До: {lot['ends_at'].strftime('%d.%m.%Y %H:%M')}")
+    return '\n'.join(lines)
+
+
+def lot_keyboard(bot_username, lot_id):
+    if bot_username:
+        url = f"https://t.me/{bot_username}?startapp=lot_{lot_id}"
+    else:
+        url = f"https://t.me"
+    return {'inline_keyboard': [[{'text': 'Участвовать', 'url': url}]]}
+
+
+def mark_posts(cur, bot_token, lot_id, note):
+    """Редактирует посты лота: добавляет пометку и убирает кнопку. note — текст статуса."""
+    cur.execute(
+        """SELECT p.channel_id, p.message_id, c.chat_id
+           FROM auction_lot_posts p
+           JOIN auction_channels c ON c.id = p.channel_id
+           WHERE p.lot_id = %s AND p.status = 'published'""",
+        (lot_id,)
+    )
+    posts = cur.fetchall()
+    for _, message_id, chat_id in posts:
+        if not message_id:
+            continue
+        tg_api(bot_token, 'editMessageCaption', {
+            'chat_id': chat_id, 'message_id': message_id,
+            'caption': f"<b>{esc(note)}</b>", 'parse_mode': 'HTML',
+        })
+    cur.execute(
+        "UPDATE auction_lot_posts SET status = 'closed' WHERE lot_id = %s AND status = 'published'",
+        (lot_id,)
+    )
 
 
 def get_db():
@@ -196,6 +272,7 @@ def handler(event: dict, context) -> dict:
                 'created_at': r[8].isoformat() if r[8] else None,
                 'payment_deadline_minutes': r[10] if len(r) > 10 else None,
                 'created_by': r[11] if len(r) > 11 else None,
+                'published_count': r[12] if len(r) > 12 else 0,
             }
 
         if lot_id_raw:
@@ -216,14 +293,16 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': serialize(r)})}
 
         cur.execute(
-            """SELECT id, title, desired_price, quantity, quantity_left, status, ends_at,
-                      photo_urls, created_at, description, payment_deadline_minutes, created_by
-               FROM auction_lots
-               WHERE created_by = %s
+            """SELECT l.id, l.title, l.desired_price, l.quantity, l.quantity_left, l.status, l.ends_at,
+                      l.photo_urls, l.created_at, l.description, l.payment_deadline_minutes, l.created_by,
+                      (SELECT COUNT(*) FROM auction_lot_posts p
+                       WHERE p.lot_id = l.id AND p.status = 'published')
+               FROM auction_lots l
+               WHERE l.created_by = %s
                ORDER BY
-                 (status = 'cancelled') ASC,
-                 cancelled_at DESC NULLS LAST,
-                 created_at DESC
+                 (l.status = 'cancelled') ASC,
+                 l.cancelled_at DESC NULLS LAST,
+                 l.created_at DESC
                LIMIT 100""",
             (manager_id,)
         )
@@ -234,6 +313,73 @@ def handler(event: dict, context) -> dict:
 
     if method == 'POST':
         action = body.get('action', 'create')
+
+        if action == 'publish':
+            row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
+            if err:
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
+            if row[2] != 'active':
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Публиковать можно только активный лот'})}
+
+            channel_ids = body.get('channel_ids') or []
+            if not channel_ids:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Выберите каналы'})}
+
+            cur.execute(
+                """SELECT id, title, description, desired_price, quantity_left, ends_at, photo_urls
+                   FROM auction_lots WHERE id = %s""",
+                (row[0],)
+            )
+            lr = cur.fetchone()
+            lot = {
+                'id': lr[0], 'title': lr[1], 'description': lr[2],
+                'desired_price': float(lr[3]), 'quantity_left': lr[4],
+                'ends_at': lr[5], 'photo_urls': lr[6] or [],
+            }
+
+            _, me = tg_api(bot_token, 'getMe', {})
+            bot_username = me.get('username') if isinstance(me, dict) else None
+            caption = build_caption(lot)
+            keyboard = lot_keyboard(bot_username, lot['id'])
+            photo = lot['photo_urls'][0] if lot['photo_urls'] else None
+
+            cur.execute(
+                "SELECT id, chat_id FROM auction_channels WHERE id = ANY(%s)",
+                (list(channel_ids),)
+            )
+            targets = cur.fetchall()
+            published, failed = 0, []
+            for ch_id, chat_id in targets:
+                if photo:
+                    ok_send, res = tg_api(bot_token, 'sendPhoto', {
+                        'chat_id': chat_id, 'photo': photo, 'caption': caption,
+                        'parse_mode': 'HTML', 'reply_markup': keyboard,
+                    })
+                else:
+                    ok_send, res = tg_api(bot_token, 'sendMessage', {
+                        'chat_id': chat_id, 'text': caption,
+                        'parse_mode': 'HTML', 'reply_markup': keyboard,
+                    })
+                if ok_send:
+                    message_id = res.get('message_id')
+                    cur.execute(
+                        """INSERT INTO auction_lot_posts (lot_id, channel_id, message_id, status)
+                           VALUES (%s, %s, %s, 'published')
+                           ON CONFLICT (lot_id, channel_id)
+                           DO UPDATE SET message_id = EXCLUDED.message_id, status = 'published'""",
+                        (lot['id'], ch_id, message_id)
+                    )
+                    published += 1
+                else:
+                    failed.append(str(res))
+            conn.commit()
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
+                'published': published, 'failed': failed,
+            })}
 
         if action == 'cancel':
             row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
@@ -247,6 +393,7 @@ def handler(event: dict, context) -> dict:
                 "UPDATE auction_lots SET status = 'cancelled', cancelled_at = now() WHERE id = %s",
                 (row[0],)
             )
+            mark_posts(cur, bot_token, row[0], 'Лот отменён')
             conn.commit()
             cur.close(); conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}

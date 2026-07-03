@@ -27,6 +27,7 @@ import AuctionsInfo from "./pages/AuctionsInfo";
 import TmaHome from "./pages/TmaHome";
 import TmaCabinet from "./pages/TmaCabinet";
 import TmaLotCreate from "./pages/TmaLotCreate";
+import TmaChannels from "./pages/TmaChannels";
 import Wholesalers from "./pages/Wholesalers";
 import PricingRules from "./pages/PricingRules";
 import PricingRulesEdit from "./pages/PricingRulesEdit";
@@ -60,6 +61,7 @@ const App = () => (
           <Route path="/tma/cabinet" element={<TmaCabinet />} />
           <Route path="/tma/lot/new" element={<TmaLotCreate />} />
           <Route path="/tma/lot/:id/edit" element={<TmaLotCreate />} />
+          <Route path="/tma/channels" element={<TmaChannels />} />
           <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />

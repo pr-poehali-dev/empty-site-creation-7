@@ -13,7 +13,17 @@ interface Lot {
   status: string;
   ends_at: string | null;
   photo_urls: string[];
+  published_count?: number;
 }
+
+interface Channel {
+  id: number;
+  chat_id: number;
+  title: string | null;
+  username: string | null;
+}
+
+const CHANNELS_URL = "https://functions.poehali.dev/8e2deea6-70cc-4832-a1c0-b1cbc4ad1f2d";
 
 interface TgWebApp {
   initData: string;
@@ -45,6 +55,60 @@ const TmaCabinet = () => {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Lot | null>(null);
   const [busy, setBusy] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [picked, setPicked] = useState<number[]>([]);
+
+  const initData = () => getTg()?.initData || "";
+
+  const openPublish = async (lot: Lot) => {
+    setSelected(null);
+    setPublishing(true);
+    setPicked([]);
+    setChannels([]);
+    try {
+      const resp = await fetch(`${CHANNELS_URL}?init_data=${encodeURIComponent(initData())}`);
+      const data = await resp.json();
+      if (resp.ok) setChannels(data.channels || []);
+    } catch {
+      /* ignore */
+    }
+    setSelected(lot);
+  };
+
+  const publish = async (lot: Lot) => {
+    if (picked.length === 0) {
+      window.alert("Выберите хотя бы один канал");
+      return;
+    }
+    setBusy(true);
+    try {
+      const resp = await fetch(LOTS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          init_data: initData(),
+          action: "publish",
+          lot_id: lot.id,
+          channel_ids: picked,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        window.alert(data.error || "Не удалось опубликовать");
+        setBusy(false);
+        return;
+      }
+      window.alert(`Опубликовано в ${data.published} канал(ах)`);
+      setPublishing(false);
+      setSelected(null);
+      await load();
+    } catch {
+      window.alert("Ошибка соединения.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const action = async (act: "cancel" | "delete", lot: Lot) => {
     const tg = getTg();
@@ -135,13 +199,22 @@ const TmaCabinet = () => {
         <h1 className="text-xl font-bold">Кабинет аукциона</h1>
       </div>
 
-      <button
-        onClick={() => navigate("/tma/lot/new")}
-        className="mb-5 w-full flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground"
-      >
-        <Icon name="Plus" size={20} />
-        Новый лот
-      </button>
+      <div className="mb-5 flex gap-2">
+        <button
+          onClick={() => navigate("/tma/lot/new")}
+          className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground"
+        >
+          <Icon name="Plus" size={20} />
+          Новый лот
+        </button>
+        <button
+          onClick={() => navigate("/tma/channels")}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-4 font-medium"
+        >
+          <Icon name="Send" size={18} />
+          Каналы
+        </button>
+      </div>
 
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -191,6 +264,12 @@ const TmaCabinet = () => {
                   {lot.ends_at && (
                     <span className="text-muted-foreground">до {formatDate(lot.ends_at)}</span>
                   )}
+                  {!!lot.published_count && (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <Icon name="Send" size={11} />
+                      {lot.published_count}
+                    </span>
+                  )}
                 </div>
               </div>
               <Icon name="ChevronRight" size={18} className="self-center text-muted-foreground" />
@@ -202,7 +281,11 @@ const TmaCabinet = () => {
       {selected && (
         <div
           className="fixed inset-0 z-50 flex items-end bg-black/50"
-          onClick={() => !busy && setSelected(null)}
+          onClick={() => {
+            if (busy) return;
+            setPublishing(false);
+            setSelected(null);
+          }}
         >
           <div
             className="w-full rounded-t-3xl bg-card p-5 pb-8 max-w-md mx-auto"
@@ -214,44 +297,110 @@ const TmaCabinet = () => {
               {STATUS_LABEL[selected.status] || selected.status}
             </div>
 
-            <div className="flex flex-col gap-2">
-              {selected.status === "active" && (
-                <button
-                  onClick={() => navigate(`/tma/lot/${selected.id}/edit`)}
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 font-semibold text-primary-foreground"
-                >
-                  <Icon name="Pencil" size={18} />
-                  Редактировать
-                </button>
-              )}
-              {selected.status === "active" && (
+            {!publishing && (
+              <div className="flex flex-col gap-2">
+                {selected.status === "active" && (
+                  <button
+                    onClick={() => navigate(`/tma/lot/${selected.id}/edit`)}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 font-semibold text-primary-foreground"
+                  >
+                    <Icon name="Pencil" size={18} />
+                    Редактировать
+                  </button>
+                )}
+                {selected.status === "active" && (
+                  <button
+                    onClick={() => openPublish(selected)}
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-3.5 font-medium"
+                  >
+                    <Icon name="Send" size={18} />
+                    Опубликовать в канал
+                  </button>
+                )}
+                {selected.status === "active" && (
+                  <button
+                    disabled={busy}
+                    onClick={() => action("cancel", selected)}
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-3.5 font-medium disabled:opacity-60"
+                  >
+                    <Icon name="Ban" size={18} />
+                    Отменить лот
+                  </button>
+                )}
+                {(selected.status === "cancelled" || selected.status === "finished") && (
+                  <button
+                    disabled={busy}
+                    onClick={() => action("delete", selected)}
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-3.5 font-medium text-red-400 disabled:opacity-60"
+                  >
+                    <Icon name="Trash2" size={18} />
+                    Удалить окончательно
+                  </button>
+                )}
                 <button
                   disabled={busy}
-                  onClick={() => action("cancel", selected)}
-                  className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-3.5 font-medium disabled:opacity-60"
+                  onClick={() => setSelected(null)}
+                  className="flex items-center justify-center rounded-2xl px-5 py-3 text-muted-foreground"
                 >
-                  <Icon name="Ban" size={18} />
-                  Отменить лот
+                  Закрыть
                 </button>
-              )}
-              {(selected.status === "cancelled" || selected.status === "finished") && (
+              </div>
+            )}
+
+            {publishing && (
+              <div className="flex flex-col gap-2">
+                <div className="text-sm text-muted-foreground mb-1">Выберите каналы:</div>
+                {channels.length === 0 && (
+                  <div className="rounded-2xl border border-border bg-background p-4 text-center text-sm text-muted-foreground">
+                    Нет подключённых каналов.{" "}
+                    <button className="text-primary underline" onClick={() => navigate("/tma/channels")}>
+                      Добавить
+                    </button>
+                  </div>
+                )}
+                <div className="max-h-60 overflow-y-auto flex flex-col gap-2">
+                  {channels.map((ch) => {
+                    const on = picked.includes(ch.id);
+                    return (
+                      <button
+                        key={ch.id}
+                        onClick={() =>
+                          setPicked((p) => (on ? p.filter((x) => x !== ch.id) : [...p, ch.id]))
+                        }
+                        className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left ${
+                          on ? "border-primary bg-primary/10" : "border-border bg-background"
+                        }`}
+                      >
+                        <Icon
+                          name={on ? "CheckSquare" : "Square"}
+                          size={18}
+                          className={on ? "text-primary" : "text-muted-foreground"}
+                        />
+                        <span className="flex-1 truncate">{ch.title || `Канал ${ch.chat_id}`}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  disabled={busy || picked.length === 0}
+                  onClick={() => publish(selected)}
+                  className="mt-1 flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 font-semibold text-primary-foreground disabled:opacity-60"
+                >
+                  {busy && <Icon name="Loader2" size={18} className="animate-spin" />}
+                  Опубликовать
+                </button>
                 <button
                   disabled={busy}
-                  onClick={() => action("delete", selected)}
-                  className="flex items-center justify-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-3.5 font-medium text-red-400 disabled:opacity-60"
+                  onClick={() => {
+                    setPublishing(false);
+                    setSelected(null);
+                  }}
+                  className="flex items-center justify-center rounded-2xl px-5 py-3 text-muted-foreground"
                 >
-                  <Icon name="Trash2" size={18} />
-                  Удалить окончательно
+                  Отмена
                 </button>
-              )}
-              <button
-                disabled={busy}
-                onClick={() => setSelected(null)}
-                className="flex items-center justify-center rounded-2xl px-5 py-3 text-muted-foreground"
-              >
-                Закрыть
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
