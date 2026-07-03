@@ -165,15 +165,29 @@ def handler(event: dict, context) -> dict:
             if not d or not d[2]:
                 cur.close(); conn.close()
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Бот больше не администратор этого канала'})}
-            cur.execute(
-                """INSERT INTO auction_channels (id, chat_id, title, username, added_by)
-                   VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM auction_channels), %s, %s, %s, %s)
-                   ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title, username = EXCLUDED.username
-                   RETURNING id""",
-                (chat_id, d[0], d[1], manager_id)
-            )
-            channel_id = cur.fetchone()[0]
-            conn.commit()
+            try:
+                cur.execute(
+                    """INSERT INTO auction_channels (id, chat_id, title, username, added_by)
+                       VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM auction_channels), %s, %s, %s, %s)
+                       ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title, username = EXCLUDED.username
+                       RETURNING id""",
+                    (chat_id, d[0], d[1], manager_id)
+                )
+                channel_id = cur.fetchone()[0]
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                diag = {}
+                try:
+                    cur.execute("SELECT current_user, current_schema")
+                    who = cur.fetchone()
+                    diag = {'current_user': who[0], 'current_schema': who[1]}
+                except Exception:
+                    pass
+                cur.close(); conn.close()
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({
+                    'error': 'DEBUG insert failed', 'detail': str(e), 'diag': diag,
+                })}
             cur.close(); conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
                 'id': channel_id, 'chat_id': chat_id, 'title': d[0], 'username': d[1],
