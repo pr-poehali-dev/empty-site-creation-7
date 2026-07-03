@@ -5,7 +5,7 @@ import Icon from "@/components/ui/icon";
 const CHANNELS_URL = "https://functions.poehali.dev/8e2deea6-70cc-4832-a1c0-b1cbc4ad1f2d";
 
 interface Channel {
-  id: number;
+  id?: number;
   chat_id: number;
   title: string | null;
   username: string | null;
@@ -27,8 +27,56 @@ const TmaChannels = () => {
   const [error, setError] = useState("");
   const [value, setValue] = useState("");
   const [adding, setAdding] = useState(false);
+  const [discovered, setDiscovered] = useState<Channel[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [addingChat, setAddingChat] = useState<number | null>(null);
 
   const initData = () => getTg()?.initData || "";
+
+  const discover = async () => {
+    setDiscovering(true);
+    setError("");
+    try {
+      const resp = await fetch(CHANNELS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ init_data: initData(), action: "discover" }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setError(data.error || "Не удалось найти каналы");
+        return;
+      }
+      setDiscovered(data.discovered || []);
+    } catch {
+      setError("Ошибка соединения.");
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const addByChatId = async (ch: Channel) => {
+    setAddingChat(ch.chat_id);
+    setError("");
+    try {
+      const resp = await fetch(CHANNELS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ init_data: initData(), action: "add", channel: String(ch.chat_id) }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setError(data.error || "Не удалось добавить канал");
+        return;
+      }
+      setDiscovered((prev) => prev.filter((c) => c.chat_id !== ch.chat_id));
+      await load();
+    } catch {
+      setError("Ошибка соединения.");
+    } finally {
+      setAddingChat(null);
+    }
+  };
 
   const load = async () => {
     const tg = getTg();
@@ -152,6 +200,54 @@ const TmaChannels = () => {
           <p className="text-xs text-muted-foreground mt-2">
             Сначала добавьте бота администратором канала.
           </p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <button
+            onClick={discover}
+            disabled={discovering}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-3 font-medium disabled:opacity-60"
+          >
+            {discovering ? (
+              <Icon name="Loader2" size={18} className="animate-spin" />
+            ) : (
+              <Icon name="Search" size={18} />
+            )}
+            Найти мои каналы
+          </button>
+          <p className="text-xs text-muted-foreground mt-2">
+            Назначьте бота администратором канала — и он появится здесь.
+          </p>
+
+          {discovered.length > 0 && (
+            <div className="flex flex-col gap-2 mt-3">
+              {discovered.map((ch) => (
+                <div
+                  key={ch.chat_id}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
+                >
+                  <Icon name="Radio" size={18} className="text-primary" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{ch.title || `Канал ${ch.chat_id}`}</div>
+                    {ch.username && (
+                      <div className="text-xs text-muted-foreground">@{ch.username}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => addByChatId(ch)}
+                    disabled={addingChat === ch.chat_id}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-60 flex items-center gap-1"
+                  >
+                    {addingChat === ch.chat_id ? (
+                      <Icon name="Loader2" size={14} className="animate-spin" />
+                    ) : (
+                      "Добавить"
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}

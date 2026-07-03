@@ -40,6 +40,12 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Forbidden'})}
 
     body = json.loads(event.get('body') or '{}')
+
+    my_chat_member = body.get('my_chat_member')
+    if my_chat_member:
+        handle_my_chat_member(my_chat_member)
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
     message = body.get('message', {})
     text = message.get('text', '').strip()
     chat = message.get('chat', {})
@@ -91,6 +97,40 @@ def handler(event: dict, context) -> dict:
             send_message(chat_id, "Добро пожаловать! Для привязки аккаунта используйте кнопку на сайте.")
 
     return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+
+def handle_my_chat_member(upd):
+    """Ловит изменение прав бота в канале/группе и обновляет буфер обнаруженных каналов."""
+    chat = upd.get('chat', {})
+    chat_id = chat.get('id')
+    chat_type = chat.get('type')
+    if not chat_id or chat_type not in ('channel', 'supergroup', 'group'):
+        return
+    new_member = upd.get('new_chat_member', {})
+    status = new_member.get('status')
+    is_admin = status in ('administrator', 'creator')
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        if is_admin:
+            cur.execute(
+                """INSERT INTO auction_discovered_channels (chat_id, title, username, is_admin, updated_at)
+                   VALUES (%s, %s, %s, TRUE, now())
+                   ON CONFLICT (chat_id) DO UPDATE
+                   SET title = EXCLUDED.title, username = EXCLUDED.username,
+                       is_admin = TRUE, updated_at = now()""",
+                (chat_id, chat.get('title'), chat.get('username'))
+            )
+        else:
+            cur.execute(
+                "UPDATE auction_discovered_channels SET is_admin = FALSE, updated_at = now() WHERE chat_id = %s",
+                (chat_id,)
+            )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
 
 def notify_owner(cur, manager_phone):
     cur.execute("SELECT telegram_chat_id FROM users WHERE role = 'owner' AND telegram_chat_id IS NOT NULL")

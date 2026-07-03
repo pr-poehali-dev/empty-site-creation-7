@@ -136,6 +136,22 @@ def handler(event: dict, context) -> dict:
     if method == 'POST':
         action = body.get('action', 'add')
 
+        if action == 'discover':
+            cur.execute(
+                """SELECT d.chat_id, d.title, d.username
+                   FROM auction_discovered_channels d
+                   WHERE d.is_admin = TRUE
+                     AND d.chat_id NOT IN (SELECT chat_id FROM auction_channels)
+                   ORDER BY d.updated_at DESC"""
+            )
+            found = [{
+                'chat_id': r[0],
+                'title': r[1],
+                'username': r[2],
+            } for r in cur.fetchall()]
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'discovered': found})}
+
         if action == 'add':
             raw = (body.get('channel') or '').strip()
             if not raw:
