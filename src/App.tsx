@@ -24,6 +24,7 @@ import BulkPastePage from "./pages/shared/BulkPastePage";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
 import AuctionsInfo from "./pages/AuctionsInfo";
+import TmaHome from "./pages/TmaHome";
 import Wholesalers from "./pages/Wholesalers";
 import PricingRules from "./pages/PricingRules";
 import PricingRulesEdit from "./pages/PricingRulesEdit";
@@ -53,6 +54,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/tma" element={<TmaHome />} />
           <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />

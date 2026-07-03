@@ -132,6 +132,79 @@ const Stage1Content = () => (
   </div>
 );
 
+const Stage2Content = () => (
+  <div className="space-y-6 text-sm leading-relaxed">
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Что делаем на этом этапе</h3>
+      <p className="text-muted-foreground">
+        Появляется видимая часть: сотрудник заходит в мини-приложение прямо из Telegram, а бот
+        показывает удобную кнопку. Это первый экран, с которого начинается вся работа — и для
+        сотрудника, и для будущего покупателя.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">1. Одна кнопка в боте</h3>
+      <p className="text-muted-foreground">
+        У бота слева от поля ввода появляется <span className="text-foreground font-medium">синяя кнопка «Открыть»</span>. Нажатие
+        открывает мини-приложение прямо внутри Telegram — ничего скачивать не нужно. Покупателю
+        достаточно написать боту «Старт», и кнопка сразу под рукой.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">2. Приложение само понимает, кто зашёл</h3>
+      <p className="text-muted-foreground mb-2">
+        При открытии Telegram передаёт подписанные данные о том, кто именно вошёл. Приложение сверяет
+        их с базой сотрудников и показывает нужные кнопки:
+      </p>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li><span className="text-foreground font-medium">Сотрудник</span> (оператор или администратор) видит две кнопки: «Кабинет аукциона» и «Участвовать».</li>
+        <li><span className="text-foreground font-medium">Покупатель</span> видит одну кнопку: «Участвовать».</li>
+      </ul>
+      <p className="text-muted-foreground mt-2">
+        Пока кнопки ведут на заглушки «скоро» — их наполним на следующих шагах.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">3. Надёжная проверка на входе</h3>
+      <p className="text-muted-foreground">
+        Адрес приложения скрыть нельзя — так устроен Telegram у всех. Поэтому защита не на секретности
+        адреса, а на <span className="text-foreground font-medium">подписи Telegram</span>: если кто-то откроет адрес просто в браузере,
+        он увидит <span className="text-foreground font-medium">пустой экран</span> — без подписи сервер не отдаёт ни лотов, ни кабинета.
+        Кабинет открывается только тому, кого владелец добавил в сотрудники и выдал доступ к аукциону.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">4. Адрес — не в коде, а в настройке</h3>
+      <p className="text-muted-foreground">
+        Адрес сайта хранится в отдельной настройке, а не «зашит» в программу. Если вы смените домен —
+        меняется <span className="text-foreground font-medium">одно значение</span>, и кнопка бота сама начинает вести на новый адрес.
+        Ничего переписывать не нужно.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">5. Кнопка настройки — там же, где была</h3>
+      <p className="text-muted-foreground">
+        Синюю кнопку бота включает та же кнопка <span className="text-foreground font-medium">«Telegram»</span> в шапке панели владельца,
+        что и раньше настраивала связь с ботом. Один клик — и связь, и кнопка приложения обновляются разом.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Итог этапа</h3>
+      <p className="text-muted-foreground">
+        Сотрудник входит в мини-приложение из Telegram по одной кнопке, приложение само различает
+        сотрудника и покупателя и показывает нужные кнопки, а вход надёжно защищён подписью Telegram.
+        Дальше наполним кабинет: подключение каналов и создание лотов.
+      </p>
+    </div>
+  </div>
+);
+
 const StageStub = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
     <div className="w-12 h-12 rounded-xl bg-white/[0.06] flex items-center justify-center mb-3">
@@ -144,7 +217,7 @@ const StageStub = ({ title }: { title: string }) => (
 
 const STAGES: Stage[] = [
   { key: "stage1", label: "Этап 1", done: true, content: <Stage1Content /> },
-  { key: "stage2", label: "Этап 2", done: false, content: <StageStub title="Этап 2. Бот и публикация лотов" /> },
+  { key: "stage2", label: "Этап 2", done: true, content: <Stage2Content /> },
   { key: "stage3", label: "Этап 3", done: false, content: <StageStub title="Этап 3. Мини-приложение сотрудника" /> },
   { key: "stage4", label: "Этап 4", done: false, content: <StageStub title="Этап 4. Мини-приложение покупателя и ставки" /> },
 ];

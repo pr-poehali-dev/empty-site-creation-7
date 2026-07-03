@@ -68,8 +68,39 @@ def handler(event: dict, context) -> dict:
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
-            return {'statusCode': 200, 'headers': headers, 'body': json.dumps(data)}
         except Exception as e:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
 
+        menu_result = _set_menu_button(bot_token)
+        data['menu_button'] = menu_result
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps(data)}
+
+    if method == 'POST' and action == 'set_menu_button':
+        result = _set_menu_button(bot_token)
+        status = 200 if result.get('ok') else 500
+        return {'statusCode': status, 'headers': headers, 'body': json.dumps(result)}
+
     return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Not found'})}
+
+
+def _set_menu_button(bot_token: str) -> dict:
+    """Ставит синюю кнопку слева, открывающую мини-приложение аукциона"""
+    base_url = os.environ.get('WEBAPP_BASE_URL', '').strip().rstrip('/')
+    if not base_url:
+        return {'ok': False, 'error': 'WEBAPP_BASE_URL не настроен'}
+
+    webapp_url = f'{base_url}/tma'
+    payload = json.dumps({
+        'menu_button': {
+            'type': 'web_app',
+            'text': 'Открыть',
+            'web_app': {'url': webapp_url}
+        }
+    }).encode()
+    url = f'https://api.telegram.org/bot{bot_token}/setChatMenuButton'
+    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}

@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "No init_data returns denied",
+      "method": "POST",
+      "path": "/",
+      "body": {"init_data": ""},
+      "expectedStatus": 403,
+      "expectedBody": {"role": "denied"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Invalid signature returns denied",
+      "method": "POST",
+      "path": "/",
+      "body": {"init_data": "user=%7B%22id%22%3A1%7D&auth_date=1700000000&hash=deadbeef"},
+      "expectedStatus": 403,
+      "expectedBody": {"role": "denied"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
