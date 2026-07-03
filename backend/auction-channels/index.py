@@ -152,6 +152,33 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'discovered': found})}
 
+        if action == 'add_discovered':
+            chat_id = body.get('chat_id')
+            if chat_id is None:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите канал'})}
+            cur.execute(
+                "SELECT title, username, is_admin FROM auction_discovered_channels WHERE chat_id = %s",
+                (chat_id,)
+            )
+            d = cur.fetchone()
+            if not d or not d[2]:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Бот больше не администратор этого канала'})}
+            cur.execute(
+                """INSERT INTO auction_channels (chat_id, title, username, added_by)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title, username = EXCLUDED.username
+                   RETURNING id""",
+                (chat_id, d[0], d[1], manager_id)
+            )
+            channel_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
+                'id': channel_id, 'chat_id': chat_id, 'title': d[0], 'username': d[1],
+            })}
+
         if action == 'add':
             raw = (body.get('channel') or '').strip()
             if not raw:

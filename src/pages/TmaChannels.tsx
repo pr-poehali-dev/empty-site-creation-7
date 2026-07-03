@@ -62,7 +62,7 @@ const TmaChannels = () => {
       const resp = await fetch(CHANNELS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ init_data: initData(), action: "add", channel: String(ch.chat_id) }),
+        body: JSON.stringify({ init_data: initData(), action: "add_discovered", chat_id: ch.chat_id }),
       });
       const data = await resp.json();
       if (!resp.ok) {
