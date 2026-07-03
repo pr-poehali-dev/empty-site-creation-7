@@ -366,9 +366,8 @@ def handler(event: dict, context) -> dict:
                 if ok_send:
                     message_id = res.get('message_id')
                     cur.execute(
-                        """INSERT INTO auction_lot_posts (id, lot_id, channel_id, message_id, status)
-                           VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM auction_lot_posts),
-                                   %s, %s, %s, 'published')
+                        """INSERT INTO auction_lot_posts (lot_id, channel_id, message_id, status)
+                           VALUES (%s, %s, %s, 'published')
                            ON CONFLICT (lot_id, channel_id)
                            DO UPDATE SET message_id = EXCLUDED.message_id, status = 'published'""",
                         (lot['id'], ch_id, message_id)
