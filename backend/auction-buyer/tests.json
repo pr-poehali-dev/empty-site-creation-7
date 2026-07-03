@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET без подписи запрещён",
+      "method": "GET",
+      "path": "/?action=my_bids",
+      "expectedStatus": 403
+    },
+    {
+      "name": "POST без подписи запрещён",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "place_bid", "lot_id": 1, "price": 100},
+      "expectedStatus": 403
+    }
+  ]
+}

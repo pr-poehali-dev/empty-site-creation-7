@@ -19,6 +19,7 @@ declare global {
     Telegram?: {
       WebApp?: {
         initData: string;
+        initDataUnsafe?: { start_param?: string };
         ready: () => void;
         expand: () => void;
         colorScheme?: string;
@@ -58,6 +59,13 @@ const TmaHome = () => {
     }
     tg.ready();
     tg.expand();
+
+    const startParam = tg.initDataUnsafe?.start_param || "";
+    const lotMatch = startParam.match(/^lot_(\d+)$/);
+    if (lotMatch) {
+      navigate(`/tma/buy/${lotMatch[1]}`, { replace: true });
+      return;
+    }
 
     const initData = tg.initData || "";
     if (!initData) {
@@ -133,7 +141,7 @@ const TmaHome = () => {
 
         <button
           className="w-full flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-left transition hover:bg-white/[0.04]"
-          onClick={() => alert("Витрина аукциона — скоро")}
+          onClick={() => navigate("/tma/my")}
         >
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
             <Icon name="Gavel" size={22} />

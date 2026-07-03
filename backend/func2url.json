@@ -1,4 +1,5 @@
 {
+  "auction-buyer": "https://functions.poehali.dev/cef9517b-3f37-4b8b-be1c-5d94827ca738",
   "auction-channels": "https://functions.poehali.dev/8e2deea6-70cc-4832-a1c0-b1cbc4ad1f2d",
   "auction-lots": "https://functions.poehali.dev/ccf1033f-bcff-4801-a6dc-8597eec21344",
   "auction-me": "https://functions.poehali.dev/ba801f3a-94dd-46a8-9d24-a830a5ff56aa",
