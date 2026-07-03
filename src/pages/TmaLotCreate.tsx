@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 
@@ -8,6 +8,7 @@ interface TgWebApp {
   initData: string;
   ready: () => void;
   expand: () => void;
+  showAlert?: (msg: string) => void;
 }
 
 const getTg = (): TgWebApp | undefined =>
@@ -40,6 +41,10 @@ const TmaLotCreate = () => {
   const [paymentMin, setPaymentMin] = useState("60");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fallbackInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const tg = getTg();
@@ -49,6 +54,54 @@ const TmaLotCreate = () => {
       setInitData(tg.initData || "");
     }
   }, []);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
+  };
+
+  const openCamera = async () => {
+    if (photos.length >= 5) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      fallbackInputRef.current?.click();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 50);
+    } catch {
+      fallbackInputRef.current?.click();
+    }
+  };
+
+  const takeShot = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    setPhotos((prev) => [...prev, dataUrl].slice(0, 5));
+    stopCamera();
+  };
+
+  useEffect(() => () => stopCamera(), []);
 
   const addPhotos = async (files: FileList | null) => {
     if (!files) return;
@@ -133,17 +186,22 @@ const TmaLotCreate = () => {
           </div>
           {photos.length < 5 && (
             <div className="grid grid-cols-2 gap-2 mt-2">
-              <label className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 cursor-pointer text-sm">
+              <button
+                type="button"
+                onClick={openCamera}
+                className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 text-sm"
+              >
                 <Icon name="Camera" size={18} />
                 Сделать фото
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => addPhotos(e.target.files)}
-                />
-              </label>
+              </button>
+              <input
+                ref={fallbackInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => addPhotos(e.target.files)}
+              />
               <label className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 cursor-pointer text-sm">
                 <Icon name="Image" size={18} />
                 Из галереи
@@ -229,6 +287,30 @@ const TmaLotCreate = () => {
           {saving ? "Сохранение…" : "Опубликовать лот"}
         </button>
       </div>
+
+      {cameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="flex-1 w-full object-cover"
+          />
+          <div className="flex items-center justify-between px-8 py-6 bg-black">
+            <button
+              onClick={stopCamera}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white"
+            >
+              <Icon name="X" size={22} />
+            </button>
+            <button
+              onClick={takeShot}
+              className="h-16 w-16 rounded-full border-4 border-white bg-white/20"
+            />
+            <div className="h-12 w-12" />
+          </div>
+        </div>
+      )}
 
       <style>{`
         .tma-input {
