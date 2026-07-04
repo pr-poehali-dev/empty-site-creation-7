@@ -15,6 +15,8 @@ import boto3
 
 TMA_BASE_URL = os.environ.get('TMA_BASE_URL', 'https://t.me')
 
+AUCTION_BANNER_URL = 'https://cdn.poehali.dev/projects/39cc7db2-9243-4523-8ab8-03df0ae32645/files/62095435-d8af-481a-81e4-3907fc41bb49.jpg'
+
 
 def tg_api(bot_token, method, payload):
     """Вызов Telegram Bot API. Возвращает (ok, result_or_error)."""
@@ -45,7 +47,7 @@ def esc(text):
 
 def build_caption(lot):
     """lot: dict с title, description, desired_price, quantity_left, ends_at(datetime)."""
-    lines = [f"<b>{esc(lot['title'])}</b>"]
+    lines = ["🔥 <b>!АУКЦИОН!</b> 🔥", "", f"<b>{esc(lot['title'])}</b>"]
     if lot.get('description'):
         lines.append(esc(lot['description']))
     lines.append('')
@@ -77,9 +79,9 @@ def mark_posts(cur, bot_token, lot_id, note):
     for _, message_id, chat_id in posts:
         if not message_id:
             continue
-        tg_api(bot_token, 'editMessageCaption', {
+        tg_api(bot_token, 'editMessageText', {
             'chat_id': chat_id, 'message_id': message_id,
-            'caption': f"<b>{esc(note)}</b>", 'parse_mode': 'HTML',
+            'text': f"<b>{esc(note)}</b>", 'parse_mode': 'HTML',
         })
     cur.execute(
         "UPDATE auction_lot_channels SET status = 'closed' WHERE lot_id = %s AND status = 'published'",
@@ -346,7 +348,9 @@ def handler(event: dict, context) -> dict:
                 bot_username = me.get('username') if isinstance(me, dict) else None
             caption = build_caption(lot)
             keyboard = lot_keyboard(bot_username, lot['id'])
-            photo = lot['photo_urls'][0] if lot['photo_urls'] else None
+            media = [{'type': 'photo', 'media': AUCTION_BANNER_URL, 'caption': caption, 'parse_mode': 'HTML'}]
+            for p in lot['photo_urls'][:9]:
+                media.append({'type': 'photo', 'media': p})
 
             cur.execute(
                 "SELECT id, chat_id FROM auction_channels WHERE id = ANY(%s)",
@@ -355,18 +359,15 @@ def handler(event: dict, context) -> dict:
             targets = cur.fetchall()
             published, failed = 0, []
             for ch_id, chat_id in targets:
-                if photo:
-                    ok_send, res = tg_api(bot_token, 'sendPhoto', {
-                        'chat_id': chat_id, 'photo': photo, 'caption': caption,
-                        'parse_mode': 'HTML', 'reply_markup': keyboard,
-                    })
-                else:
-                    ok_send, res = tg_api(bot_token, 'sendMessage', {
-                        'chat_id': chat_id, 'text': caption,
-                        'parse_mode': 'HTML', 'reply_markup': keyboard,
-                    })
+                ok_send, res = tg_api(bot_token, 'sendMediaGroup', {
+                    'chat_id': chat_id, 'media': media,
+                })
                 if ok_send:
-                    message_id = res.get('message_id')
+                    btn_ok, btn_res = tg_api(bot_token, 'sendMessage', {
+                        'chat_id': chat_id, 'text': 'Нажмите, чтобы участвовать 👇',
+                        'reply_markup': keyboard,
+                    })
+                    message_id = btn_res.get('message_id') if btn_ok and isinstance(btn_res, dict) else None
                     cur.execute(
                         """INSERT INTO auction_lot_channels (lot_id, channel_id, message_id, status)
                            VALUES (%s, %s, %s, 'published')
