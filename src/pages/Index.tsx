@@ -1,9 +1,34 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 
 const Index = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    type TgWebApp = { initDataUnsafe?: { start_param?: string }; initData?: string };
+    const redirectIfLot = () => {
+      const tg = (window as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+      const startParam = tg?.initDataUnsafe?.start_param || "";
+      if (/^lot_\d+$/.test(startParam)) {
+        navigate("/tma", { replace: true });
+        return true;
+      }
+      return false;
+    };
+
+    if (redirectIfLot()) return;
+
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-web-app.js";
+    script.async = true;
+    script.onload = () => redirectIfLot();
+    document.body.appendChild(script);
+    return () => {
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+  }, [navigate]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
