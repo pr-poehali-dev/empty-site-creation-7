@@ -340,8 +340,10 @@ def handler(event: dict, context) -> dict:
                 'ends_at': lr[5], 'photo_urls': lr[6] or [],
             }
 
-            _, me = tg_api(bot_token, 'getMe', {})
-            bot_username = me.get('username') if isinstance(me, dict) else None
+            bot_username = os.environ.get('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+            if not bot_username:
+                _, me = tg_api(bot_token, 'getMe', {})
+                bot_username = me.get('username') if isinstance(me, dict) else None
             caption = build_caption(lot)
             keyboard = lot_keyboard(bot_username, lot['id'])
             photo = lot['photo_urls'][0] if lot['photo_urls'] else None
