@@ -367,6 +367,89 @@ const Stage4Content = () => (
   </div>
 );
 
+const StageCleanupContent = () => (
+  <div className="space-y-6 text-sm leading-relaxed">
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Зачем эта вкладка</h3>
+      <p className="text-muted-foreground">
+        Пока мы дорабатывали аукцион, структуру базы несколько раз перестраивали. После этого
+        остались «хвосты»: пустые таблицы-дубли с приставкой <span className="text-foreground font-medium">_old1</span> и
+        пара устаревших связей, которые всё ещё смотрят на старую таблицу каналов. Именно из-за
+        одной такой связи в логах появлялась ошибка при публикации поста. Ниже — что и в каком
+        порядке удалить, чтобы навести порядок. Все действия делаются вручную в панели:
+        <span className="text-foreground font-medium"> Ядро → База данных</span>.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-rose-500/20 bg-rose-500/[0.06] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Важный порядок</h3>
+      <p className="text-muted-foreground">
+        Сначала снимаем <span className="text-foreground font-medium">связи (ограничения)</span>, и только потом удаляем
+        сами таблицы. Если удалять таблицы раньше — база не даст, потому что на них ещё ссылаются.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Шаг 0. Вписать имя бота (для кнопки «Участвовать»)</h3>
+      <p className="text-muted-foreground">
+        Если ещё не сделано: в настройках проекта (секреты) поле
+        <span className="text-foreground font-medium"> TELEGRAM_BOT_USERNAME</span> должно содержать значение
+        <span className="text-foreground font-medium"> mirtehniki_plus_bot</span> (без «собаки», без ссылки — просто имя).
+        Без этого кнопка под постом ведёт на пустую страницу Telegram.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Шаг 1. Снять устаревшие связи</h3>
+      <p className="text-muted-foreground mb-2">
+        Открой <span className="text-foreground font-medium">Ядро → База данных</span>. Нужно удалить две старые связи,
+        которые ссылаются на ненужную таблицу <span className="text-foreground font-medium">auction_channels_old1</span>:
+      </p>
+      <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
+        <li>
+          Таблица <span className="text-foreground font-medium">auction_lot_channels</span> → раздел связей (Constraints) →
+          удалить связь <span className="text-foreground font-medium">auction_lot_channels_channel_id_fkey</span>.
+          <br />
+          <span className="text-amber-300/90">Не трогай</span> связь с приставкой
+          <span className="text-foreground font-medium"> _new</span> (auction_lot_channels_channel_id_fkey_new) — это правильная, она остаётся.
+        </li>
+        <li>
+          Таблица <span className="text-foreground font-medium">auction_lots</span> → удалить связь
+          <span className="text-foreground font-medium"> auction_lots_channel_id_fkey</span> (тоже смотрит на _old1).
+        </li>
+      </ul>
+      <p className="text-muted-foreground mt-2">
+        После этого шага ошибка при публикации поста в логах исчезнет.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Шаг 2. Удалить лишние таблицы-дубли</h3>
+      <p className="text-muted-foreground mb-2">
+        Это пустые копии, оставшиеся от переделок. Удаляй по одной (в той же панели → выбрать таблицу → удалить):
+      </p>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li><span className="text-foreground font-medium">auction_channels_old1</span></li>
+        <li><span className="text-foreground font-medium">auction_discovered_channels_old1</span></li>
+        <li><span className="text-foreground font-medium">auction_lot_posts_old1</span></li>
+      </ul>
+      <p className="text-muted-foreground mt-2">
+        Все три пустые (0–1 строк служебных данных), на рабочий аукцион они не влияют.
+      </p>
+    </div>
+
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Итог</h3>
+      <p className="text-muted-foreground">
+        После шагов 1 и 2 в базе не остаётся мусора от аукциона: нет дублей-таблиц и нет кривых
+        связей на старые каналы. Кнопка «Участвовать» открывает лот в мини-приложении, а публикация
+        постов проходит без ошибок в логах. Как у ракеты после сброса отработавших ступеней — лишний
+        вес отброшен, дальше только рабочая часть.
+      </p>
+    </div>
+  </div>
+);
+
 const StageStub = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
     <div className="w-12 h-12 rounded-xl bg-white/[0.06] flex items-center justify-center mb-3">
@@ -382,6 +465,7 @@ const STAGES: Stage[] = [
   { key: "stage2", label: "Этап 2", done: true, content: <Stage2Content /> },
   { key: "stage3", label: "Этап 3", done: true, content: <Stage3Content /> },
   { key: "stage4", label: "Этап 4", done: false, content: <Stage4Content /> },
+  { key: "cleanup", label: "Удаление косяков", done: false, content: <StageCleanupContent /> },
 ];
 
 const AuctionsInfo = () => {
