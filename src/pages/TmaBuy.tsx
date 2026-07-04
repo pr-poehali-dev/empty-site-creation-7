@@ -251,12 +251,12 @@ const TmaBuy = () => {
                   value={priceInput}
                   onChange={(e) => setPriceInput(e.target.value)}
                   placeholder="Ваша цена, ₽"
-                  className="flex-1 rounded-xl border border-border bg-background px-4 py-3 text-base outline-none focus:border-primary"
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-3 text-base outline-none focus:border-primary"
                 />
                 <button
                   disabled={busy}
                   onClick={() => submit("place_bid")}
-                  className="rounded-xl border border-primary bg-primary/15 px-5 font-medium text-primary disabled:opacity-50"
+                  className="flex-shrink-0 whitespace-nowrap rounded-xl border border-primary bg-primary/15 px-5 py-3 font-medium text-primary disabled:opacity-50"
                 >
                   {lot.my_bid !== null ? "Изменить" : "Предложить"}
                 </button>
