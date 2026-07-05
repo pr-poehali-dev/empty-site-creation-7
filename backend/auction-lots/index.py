@@ -585,7 +585,7 @@ def handler(event: dict, context) -> dict:
             if err:
                 cur.close(); conn.close()
                 return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
-            if row[2] not in ('cancelled', 'finished', 'unsold'):
+            if row[2] not in ('cancelled', 'finished', 'unsold', 'payment'):
                 cur.close(); conn.close()
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Сначала отмените лот'})}
             lot_pk = row[0]
@@ -593,6 +593,7 @@ def handler(event: dict, context) -> dict:
             cur.execute("DELETE FROM auction_winners WHERE lot_id = %s", (lot_pk,))
             cur.execute("DELETE FROM auction_bids WHERE lot_id = %s", (lot_pk,))
             cur.execute("DELETE FROM auction_lot_channels WHERE lot_id = %s", (lot_pk,))
+            cur.execute("DELETE FROM auction_lot_posts WHERE lot_id = %s", (lot_pk,))
             cur.execute("DELETE FROM auction_lots WHERE id = %s", (lot_pk,))
             conn.commit()
             delete_photos(row[3] or [])

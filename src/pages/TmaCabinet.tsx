@@ -564,7 +564,10 @@ const TmaCabinet = () => {
                   </div>
                 )}
 
-                {(selected.status === "cancelled" || selected.status === "finished" || selected.status === "unsold") && (
+                {(selected.status === "cancelled" ||
+                  selected.status === "finished" ||
+                  selected.status === "unsold" ||
+                  selected.status === "payment") && (
                   <button
                     disabled={busy}
                     onClick={() => action("delete", selected)}
