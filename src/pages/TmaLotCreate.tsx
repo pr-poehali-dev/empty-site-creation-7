@@ -340,7 +340,7 @@ const TmaLotCreate = () => {
           className="mt-2 w-full rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {saving && <Icon name="Loader2" size={18} className="animate-spin" />}
-          {saving ? "Сохранение…" : isEdit ? "Сохранить изменения" : "Опубликовать лот"}
+          {saving ? "Сохранение…" : isEdit ? "Сохранить изменения" : "Создать лот"}
         </button>
       </div>
       )}

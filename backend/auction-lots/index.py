@@ -304,7 +304,10 @@ def handler(event: dict, context) -> dict:
     if not bot_token:
         return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Бот не настроен'})}
 
-    body = json.loads(event.get('body') or '{}')
+    try:
+        body = json.loads(event.get('body') or '{}')
+    except (ValueError, TypeError):
+        body = {}
     init_data = body.get('init_data', '')
     if not init_data:
         params = event.get('queryStringParameters') or {}
