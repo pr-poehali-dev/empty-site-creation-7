@@ -20,23 +20,30 @@ def esc(text):
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def tg_api(bot_token, method, payload):
-    """Вызов Telegram Bot API. Возвращает (ok, result_or_error)."""
+def tg_api(bot_token, method, payload, retries=3):
+    """Вызов Telegram Bot API с повторами при сетевом таймауте."""
     url = f'https://api.telegram.org/bot{bot_token}/{method}'
     data = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            res = json.loads(resp.read().decode())
-        return bool(res.get('ok')), res.get('result') or res.get('description')
-    except urllib.error.HTTPError as e:
+    last_err = None
+    for attempt in range(1, retries + 1):
+        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+        t0 = time.time()
         try:
-            err = json.loads(e.read().decode())
-            return False, err.get('description', f'HTTP {e.code}')
-        except Exception:
-            return False, f'HTTP {e.code}'
-    except Exception as e:
-        return False, str(e)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                res = json.loads(resp.read().decode())
+            print(f'[tg_api] {method} attempt={attempt} took={time.time()-t0:.2f}s ok={res.get("ok")}')
+            return bool(res.get('ok')), res.get('result') or res.get('description')
+        except urllib.error.HTTPError as e:
+            try:
+                err = json.loads(e.read().decode())
+                return False, err.get('description', f'HTTP {e.code}')
+            except Exception:
+                return False, f'HTTP {e.code}'
+        except Exception as e:
+            last_err = str(e)
+            print(f'[tg_api] {method} attempt={attempt} took={time.time()-t0:.2f}s FAIL err={last_err}')
+            time.sleep(0.5)
+    return False, last_err
 
 
 def lot_app_url(bot_token, lot_id):
