@@ -439,6 +439,21 @@ def handler(event: dict, context) -> dict:
     if method == 'POST':
         action = body.get('action', 'create')
 
+        if action == 'upload_photo':
+            photo = body.get('photo')
+            if not photo:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нет фото'})}
+            try:
+                urls = upload_photos([photo])
+            except Exception:
+                cur.close(); conn.close()
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Не удалось загрузить фото'})}
+            cur.close(); conn.close()
+            if not urls:
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не удалось обработать фото'})}
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'url': urls[0]})}
+
         if action == 'publish':
             row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
             if err:

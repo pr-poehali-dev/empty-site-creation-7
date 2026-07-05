@@ -76,6 +76,7 @@ const TmaLotCreate = () => {
   const [endsAt, setEndsAt] = useState(defaultEndsAt());
   const [paymentMin, setPaymentMin] = useState("60");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(0);
   const [error, setError] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -161,6 +162,39 @@ const TmaLotCreate = () => {
     }
   };
 
+  /** Грузит одно сжатое фото на сервер, возвращает CDN-ссылку или null. */
+  const uploadOne = async (dataUrl: string): Promise<string | null> => {
+    const small = await compressImage(dataUrl);
+    try {
+      const resp = await fetch(LOTS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ init_data: initData, action: "upload_photo", photo: small }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.url) return data.url as string;
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const addUploaded = async (dataUrls: string[]) => {
+    const room = 5 - photos.length;
+    const list = dataUrls.slice(0, room);
+    if (list.length === 0) return;
+    setUploading((n) => n + list.length);
+    for (const d of list) {
+      const url = await uploadOne(d);
+      if (url) {
+        setPhotos((prev) => [...prev, url].slice(0, 5));
+      } else {
+        setError("Не удалось загрузить фото. Попробуйте другое или ещё раз.");
+      }
+      setUploading((n) => n - 1);
+    }
+  };
+
   const takeShot = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -171,10 +205,8 @@ const TmaLotCreate = () => {
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-    compressImage(dataUrl).then((small) =>
-      setPhotos((prev) => [...prev, small].slice(0, 5))
-    );
     stopCamera();
+    addUploaded([dataUrl]);
   };
 
   useEffect(() => () => stopCamera(), []);
@@ -183,10 +215,8 @@ const TmaLotCreate = () => {
     if (!files) return;
     const room = 5 - photos.length;
     const list = Array.from(files).slice(0, room);
-    const encoded = await Promise.all(
-      list.map(async (f) => compressImage(await fileToDataUrl(f)))
-    );
-    setPhotos((prev) => [...prev, ...encoded].slice(0, 5));
+    const dataUrls = await Promise.all(list.map(fileToDataUrl));
+    addUploaded(dataUrls);
   };
 
   const removePhoto = (idx: number) => {
@@ -195,50 +225,38 @@ const TmaLotCreate = () => {
 
   const submit = async () => {
     setError("");
+    if (uploading > 0) return setError("Дождитесь загрузки фото");
     if (!title.trim()) return setError("Укажите название лота");
     if (!price || Number(price) <= 0) return setError("Укажите цену больше нуля");
     if (!endsAt) return setError("Укажите срок окончания");
 
     setSaving(true);
-    const payload = JSON.stringify({
-      init_data: initData,
-      action: isEdit ? "update" : "create",
-      lot_id: id ? Number(id) : undefined,
-      title: title.trim(),
-      description: description.trim(),
-      desired_price: Number(price),
-      quantity: Number(quantity) || 1,
-      ends_at: new Date(endsAt).toISOString(),
-      payment_deadline_minutes: Number(paymentMin) || 60,
-      photos,
-    });
-    const sizeKb = Math.round(payload.length / 1024);
-    console.log(`[lot-save] отправка ${sizeKb} КБ, фото: ${photos.length}`);
     try {
       const resp = await fetch(LOTS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: payload,
+        body: JSON.stringify({
+          init_data: initData,
+          action: isEdit ? "update" : "create",
+          lot_id: id ? Number(id) : undefined,
+          title: title.trim(),
+          description: description.trim(),
+          desired_price: Number(price),
+          quantity: Number(quantity) || 1,
+          ends_at: new Date(endsAt).toISOString(),
+          payment_deadline_minutes: Number(paymentMin) || 60,
+          photos,
+        }),
       });
-      const raw = await resp.text();
-      console.log(`[lot-save] статус ${resp.status}, ответ: ${raw.slice(0, 300)}`);
-      let data: { error?: string } = {};
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        setError(`Сервер вернул неожиданный ответ (${resp.status}). Размер запроса: ${sizeKb} КБ.`);
-        setSaving(false);
-        return;
-      }
+      const data = await resp.json();
       if (!resp.ok) {
-        setError(data.error || `Не удалось сохранить лот (код ${resp.status})`);
+        setError(data.error || "Не удалось сохранить лот");
         setSaving(false);
         return;
       }
       navigate("/tma/cabinet");
-    } catch (e) {
-      console.log(`[lot-save] сетевая ошибка: ${String(e)} · размер ${sizeKb} КБ`);
-      setError(`Ошибка соединения (${sizeKb} КБ). Попробуйте позже.`);
+    } catch {
+      setError("Ошибка соединения. Попробуйте позже.");
       setSaving(false);
     }
   };
@@ -281,6 +299,14 @@ const TmaLotCreate = () => {
                     Обложка
                   </span>
                 )}
+              </div>
+            ))}
+            {Array.from({ length: uploading }).map((_, i) => (
+              <div
+                key={`up-${i}`}
+                className="flex aspect-square items-center justify-center rounded-xl border border-border bg-card"
+              >
+                <Icon name="Loader2" size={22} className="animate-spin text-muted-foreground" />
               </div>
             ))}
           </div>
@@ -380,11 +406,17 @@ const TmaLotCreate = () => {
 
         <button
           onClick={submit}
-          disabled={saving}
+          disabled={saving || uploading > 0}
           className="mt-2 w-full rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground disabled:opacity-60 flex items-center justify-center gap-2"
         >
-          {saving && <Icon name="Loader2" size={18} className="animate-spin" />}
-          {saving ? "Сохранение…" : isEdit ? "Сохранить изменения" : "Создать лот"}
+          {(saving || uploading > 0) && <Icon name="Loader2" size={18} className="animate-spin" />}
+          {uploading > 0
+            ? "Загрузка фото…"
+            : saving
+            ? "Сохранение…"
+            : isEdit
+            ? "Сохранить изменения"
+            : "Создать лот"}
         </button>
       </div>
       )}
