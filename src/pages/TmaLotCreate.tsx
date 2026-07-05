@@ -22,6 +22,33 @@ const fileToDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+/** Сжимает изображение: макс. сторона 1280px, JPEG 0.8 — чтобы тело запроса было лёгким. */
+const compressImage = (dataUrl: string, maxSide = 1280, quality = 0.8): Promise<string> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxSide || height > maxSide) {
+        if (width >= height) {
+          height = Math.round((height * maxSide) / width);
+          width = maxSide;
+        } else {
+          width = Math.round((width * maxSide) / height);
+          height = maxSide;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(dataUrl);
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
 const defaultEndsAt = () => {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
   d.setSeconds(0, 0);
@@ -144,7 +171,9 @@ const TmaLotCreate = () => {
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-    setPhotos((prev) => [...prev, dataUrl].slice(0, 5));
+    compressImage(dataUrl).then((small) =>
+      setPhotos((prev) => [...prev, small].slice(0, 5))
+    );
     stopCamera();
   };
 
@@ -154,7 +183,9 @@ const TmaLotCreate = () => {
     if (!files) return;
     const room = 5 - photos.length;
     const list = Array.from(files).slice(0, room);
-    const encoded = await Promise.all(list.map(fileToDataUrl));
+    const encoded = await Promise.all(
+      list.map(async (f) => compressImage(await fileToDataUrl(f)))
+    );
     setPhotos((prev) => [...prev, ...encoded].slice(0, 5));
   };
 
@@ -169,32 +200,45 @@ const TmaLotCreate = () => {
     if (!endsAt) return setError("Укажите срок окончания");
 
     setSaving(true);
+    const payload = JSON.stringify({
+      init_data: initData,
+      action: isEdit ? "update" : "create",
+      lot_id: id ? Number(id) : undefined,
+      title: title.trim(),
+      description: description.trim(),
+      desired_price: Number(price),
+      quantity: Number(quantity) || 1,
+      ends_at: new Date(endsAt).toISOString(),
+      payment_deadline_minutes: Number(paymentMin) || 60,
+      photos,
+    });
+    const sizeKb = Math.round(payload.length / 1024);
+    console.log(`[lot-save] отправка ${sizeKb} КБ, фото: ${photos.length}`);
     try {
       const resp = await fetch(LOTS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          init_data: initData,
-          action: isEdit ? "update" : "create",
-          lot_id: id ? Number(id) : undefined,
-          title: title.trim(),
-          description: description.trim(),
-          desired_price: Number(price),
-          quantity: Number(quantity) || 1,
-          ends_at: new Date(endsAt).toISOString(),
-          payment_deadline_minutes: Number(paymentMin) || 60,
-          photos,
-        }),
+        body: payload,
       });
-      const data = await resp.json();
+      const raw = await resp.text();
+      console.log(`[lot-save] статус ${resp.status}, ответ: ${raw.slice(0, 300)}`);
+      let data: { error?: string } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        setError(`Сервер вернул неожиданный ответ (${resp.status}). Размер запроса: ${sizeKb} КБ.`);
+        setSaving(false);
+        return;
+      }
       if (!resp.ok) {
-        setError(data.error || "Не удалось сохранить лот");
+        setError(data.error || `Не удалось сохранить лот (код ${resp.status})`);
         setSaving(false);
         return;
       }
       navigate("/tma/cabinet");
-    } catch {
-      setError("Ошибка соединения. Попробуйте позже.");
+    } catch (e) {
+      console.log(`[lot-save] сетевая ошибка: ${String(e)} · размер ${sizeKb} КБ`);
+      setError(`Ошибка соединения (${sizeKb} КБ). Попробуйте позже.`);
       setSaving(false);
     }
   };
