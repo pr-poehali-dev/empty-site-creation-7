@@ -1,4 +1,5 @@
 {
+  "message-server": "https://functions.poehali.dev/5196ad48-3bd4-4763-bb20-ca8c9b91b508",
   "scheduler": "https://functions.poehali.dev/0a8bb7a5-8f5d-444b-a83c-0970298d4d53",
   "auction-admin": "https://functions.poehali.dev/a368ec40-2cc1-47a2-9734-d5ae8821e6d0",
   "auction-finalize": "https://functions.poehali.dev/3f94a72a-ba55-4115-8c49-5d52407baf86",

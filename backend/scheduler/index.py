@@ -2,6 +2,7 @@ import json
 import os
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import datetime, timezone
 import psycopg2
 
@@ -26,6 +27,11 @@ def get_user_by_token(cur, token):
 
 def call_function(url):
     """Вызывает функцию по её URL. Возвращает (ok, info)."""
+    # если функция ждёт запуск по расписанию (action=run) — подставляем внутренний ключ
+    if 'action=run' in url and 'key=' not in url:
+        secret = os.environ.get('SCHEDULER_SECRET', '').strip()
+        if secret:
+            url = url + ('&' if '?' in url else '?') + 'key=' + urllib.parse.quote(secret)
     req = urllib.request.Request(
         url, data=b'{}',
         headers={'Content-Type': 'application/json'},

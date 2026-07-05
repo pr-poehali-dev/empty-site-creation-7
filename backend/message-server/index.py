@@ -1,0 +1,356 @@
+import json
+import os
+import time
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone, timedelta
+import psycopg2
+
+
+def get_db():
+    return psycopg2.connect(os.environ['DATABASE_URL'])
+
+
+def now_utc():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def get_user_by_token(cur, token):
+    cur.execute(
+        """SELECT u.id, u.role FROM users u
+           JOIN user_sessions s ON s.user_id = u.id
+           WHERE s.token = %s AND s.expires_at > NOW()""",
+        (token,)
+    )
+    return cur.fetchone()
+
+
+def load_settings(cur):
+    cur.execute("SELECT key, value FROM message_settings")
+    raw = {r[0]: r[1] for r in cur.fetchall()}
+    return {
+        'rate_per_second': int(raw.get('rate_per_second', '25') or 25),
+        'max_attempts': int(raw.get('max_attempts', '3') or 3),
+        'retry_pause_seconds': int(raw.get('retry_pause_seconds', '10') or 10),
+        'per_user_per_minute': int(raw.get('per_user_per_minute', '20') or 20),
+        'enabled': (raw.get('enabled', 'true') or 'true').lower() == 'true',
+    }
+
+
+def tg_api(bot_token, method, payload):
+    url = f'https://api.telegram.org/bot{bot_token}/{method}'
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            res = json.loads(resp.read().decode())
+        return bool(res.get('ok')), res.get('description') or 'ok'
+    except urllib.error.HTTPError as e:
+        try:
+            return False, json.loads(e.read().decode()).get('description', f'HTTP {e.code}')
+        except Exception:
+            return False, f'HTTP {e.code}'
+    except Exception as e:
+        return False, str(e)
+
+
+def send_telegram(bot_token, job):
+    """Отправляет одно сообщение в Telegram. job — кортеж полей."""
+    payload = {
+        'chat_id': job['address'],
+        'text': job['text'],
+        'parse_mode': job['parse_mode'] or 'HTML',
+    }
+    if job['button_text'] and job['button_url']:
+        payload['reply_markup'] = {
+            'inline_keyboard': [[{'text': job['button_text'], 'url': job['button_url']}]]
+        }
+    return tg_api(bot_token, 'sendMessage', payload)
+
+
+def report_result(report_url, payload):
+    """Активный отчёт функции о результате доставки."""
+    try:
+        req = urllib.request.Request(
+            report_url, data=json.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json'}, method='POST'
+        )
+        urllib.request.urlopen(req, timeout=10).read()
+        return True
+    except Exception:
+        return False
+
+
+def run_worker(cur, conn):
+    """Рассылает созревшие сообщения с учётом настроек скорости, повторов и лимитов."""
+    settings = load_settings(cur)
+    if not settings['enabled']:
+        return {'skipped': 'disabled'}
+
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not bot_token:
+        return {'error': 'no_bot_token'}
+
+    now = now_utc()
+    rate = max(1, settings['rate_per_second'])
+    delay = 1.0 / rate
+    per_user_limit = settings['per_user_per_minute']
+
+    cur.execute(
+        """SELECT id, channel, address, text, button_text, button_url, parse_mode,
+                  attempts, max_attempts, dedup_key, report_url
+           FROM message_queue
+           WHERE status = 'pending' AND send_after <= %s
+           ORDER BY send_after ASC, id ASC
+           LIMIT 200""",
+        (now,)
+    )
+    rows = cur.fetchall()
+    sent, failed, deferred = 0, 0, 0
+
+    for r in rows:
+        job = {
+            'id': r[0], 'channel': r[1], 'address': r[2], 'text': r[3],
+            'button_text': r[4], 'button_url': r[5], 'parse_mode': r[6],
+            'attempts': r[7], 'max_attempts': r[8], 'dedup_key': r[9], 'report_url': r[10],
+        }
+
+        # лимит на одного получателя в минуту
+        if per_user_limit > 0:
+            cur.execute(
+                """SELECT COUNT(*) FROM message_queue
+                   WHERE address = %s AND status = 'sent' AND sent_at > %s""",
+                (job['address'], now - timedelta(minutes=1))
+            )
+            if cur.fetchone()[0] >= per_user_limit:
+                cur.execute(
+                    "UPDATE message_queue SET send_after = %s WHERE id = %s",
+                    (now + timedelta(minutes=1), job['id'])
+                )
+                deferred += 1
+                continue
+
+        ok, info = send_telegram(bot_token, job)
+        attempts = job['attempts'] + 1
+        max_att = job['max_attempts'] or settings['max_attempts']
+
+        if ok:
+            cur.execute(
+                "UPDATE message_queue SET status = 'sent', attempts = %s, sent_at = %s, last_error = NULL WHERE id = %s",
+                (attempts, now_utc(), job['id'])
+            )
+            sent += 1
+            final_status = 'sent'
+        elif attempts >= max_att:
+            cur.execute(
+                "UPDATE message_queue SET status = 'error', attempts = %s, last_error = %s WHERE id = %s",
+                (attempts, info, job['id'])
+            )
+            failed += 1
+            final_status = 'error'
+        else:
+            cur.execute(
+                "UPDATE message_queue SET attempts = %s, last_error = %s, send_after = %s WHERE id = %s",
+                (attempts, info, now_utc() + timedelta(seconds=settings['retry_pause_seconds']), job['id'])
+            )
+            final_status = None  # ещё будем пробовать
+
+        # отчёт функции (только когда исход окончательный)
+        if final_status and job['report_url']:
+            delivered = report_result(job['report_url'], {
+                'message_id': job['id'],
+                'dedup_key': job['dedup_key'],
+                'status': final_status,
+                'address': job['address'],
+                'attempts': attempts,
+                'error': None if ok else info,
+            })
+            if delivered:
+                cur.execute("UPDATE message_queue SET reported = true WHERE id = %s", (job['id'],))
+
+        conn.commit()
+        time.sleep(delay)
+
+    return {'sent': sent, 'failed': failed, 'deferred': deferred, 'processed': len(rows)}
+
+
+def json_resp(status, data):
+    return {
+        'statusCode': status,
+        'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+        'body': json.dumps(data),
+    }
+
+
+def handler(event: dict, context) -> dict:
+    """Сервер сообщений: единый узел отправки уведомлений. enqueue — принять задание, run — разослать (по ключу, зовёт Толкатель), settings/stats/list/retry/cancel — управление для владельца."""
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
+                'Access-Control-Max-Age': '86400',
+            },
+            'body': '',
+        }
+
+    method = event.get('httpMethod', 'GET')
+    params = event.get('queryStringParameters') or {}
+    body = json.loads(event.get('body') or '{}') if event.get('body') else {}
+    action = params.get('action') or body.get('action') or ''
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # --- Приём задания (внутренний вызов от функций) ---
+        if action == 'enqueue':
+            address = str(body.get('address') or '').strip()
+            text = body.get('text') or ''
+            if not address or not text:
+                return json_resp(400, {'error': 'address и text обязательны'})
+            send_after = body.get('send_after')  # ISO или число минут задержки
+            if isinstance(send_after, (int, float)):
+                sa = now_utc() + timedelta(minutes=float(send_after))
+            elif send_after:
+                sa = datetime.fromisoformat(str(send_after).replace('Z', '')).replace(tzinfo=None)
+            else:
+                sa = now_utc()
+            dedup = body.get('dedup_key')
+            # защита от дублей
+            if dedup:
+                cur.execute("SELECT id FROM message_queue WHERE dedup_key = %s", (dedup,))
+                if cur.fetchone():
+                    return json_resp(200, {'success': True, 'duplicate': True})
+            cur.execute(
+                """INSERT INTO message_queue
+                     (channel, address, text, button_text, button_url, parse_mode,
+                      send_after, dedup_key, report_url, max_attempts, source)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (
+                    body.get('channel') or 'telegram', address, text,
+                    body.get('button_text'), body.get('button_url'),
+                    body.get('parse_mode') or 'HTML', sa, dedup,
+                    body.get('report_url'), body.get('max_attempts'),
+                    body.get('source'),
+                )
+            )
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            return json_resp(200, {'success': True, 'message_id': new_id})
+
+        # --- Воркер: рассылка (зовёт Толкатель по ключу) ---
+        if action == 'run':
+            secret = os.environ.get('SCHEDULER_SECRET', '').strip()
+            given = (params.get('key') or body.get('key') or '').strip()
+            if secret and given != secret:
+                return json_resp(403, {'error': 'forbidden'})
+            result = run_worker(cur, conn)
+            conn.commit()
+            return json_resp(200, result)
+
+        # --- Спросить статус своего задания (пассивный отчёт) ---
+        if action == 'status':
+            mid = body.get('message_id') or params.get('message_id')
+            dedup = body.get('dedup_key') or params.get('dedup_key')
+            if mid:
+                cur.execute("SELECT id, status, attempts, last_error, sent_at FROM message_queue WHERE id = %s", (int(mid),))
+            elif dedup:
+                cur.execute("SELECT id, status, attempts, last_error, sent_at FROM message_queue WHERE dedup_key = %s", (dedup,))
+            else:
+                return json_resp(400, {'error': 'message_id или dedup_key обязательны'})
+            row = cur.fetchone()
+            if not row:
+                return json_resp(404, {'error': 'not_found'})
+            return json_resp(200, {
+                'message_id': row[0], 'status': row[1], 'attempts': row[2],
+                'error': row[3], 'sent_at': row[4].isoformat() if row[4] else None,
+            })
+
+        # --- Всё остальное только для владельца ---
+        req_headers = event.get('headers', {})
+        auth = req_headers.get('X-Authorization', '') or req_headers.get('Authorization', '')
+        token = auth.replace('Bearer ', '').strip()
+        user = get_user_by_token(cur, token)
+        if not user:
+            return json_resp(401, {'error': 'Не авторизован'})
+        if user[1] != 'owner':
+            return json_resp(403, {'error': 'Только владелец'})
+
+        if action == 'settings' and method == 'GET':
+            return json_resp(200, load_settings(cur))
+
+        if action == 'settings' and method in ('PUT', 'POST'):
+            allowed = {'rate_per_second', 'max_attempts', 'retry_pause_seconds', 'per_user_per_minute', 'enabled'}
+            for key, value in (body.get('settings') or {}).items():
+                if key not in allowed:
+                    continue
+                val = str(value).lower() if isinstance(value, bool) else str(value)
+                cur.execute(
+                    """INSERT INTO message_settings (key, value, updated_at)
+                       VALUES (%s, %s, now())
+                       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
+                    (key, val)
+                )
+            conn.commit()
+            return json_resp(200, load_settings(cur))
+
+        if action == 'stats':
+            cur.execute(
+                """SELECT
+                     COUNT(*) FILTER (WHERE status = 'pending' AND send_after <= now()) AS ready,
+                     COUNT(*) FILTER (WHERE status = 'pending' AND send_after > now()) AS deferred,
+                     COUNT(*) FILTER (WHERE status = 'error') AS errors,
+                     COUNT(*) FILTER (WHERE status = 'sent') AS sent
+                   FROM message_queue"""
+            )
+            s = cur.fetchone()
+            return json_resp(200, {'ready': s[0], 'deferred': s[1], 'errors': s[2], 'sent': s[3]})
+
+        if action == 'list':
+            status_filter = params.get('status') or body.get('status') or 'all'
+            where = "" if status_filter == 'all' else f"WHERE status = '{status_filter.replace(chr(39), '')}'"
+            cur.execute(
+                f"""SELECT id, channel, address, text, status, attempts, last_error,
+                          send_after, sent_at, source
+                    FROM message_queue {where}
+                    ORDER BY id DESC LIMIT 50"""
+            )
+            items = [{
+                'id': r[0], 'channel': r[1], 'address': r[2],
+                'text': (r[3] or '')[:120], 'status': r[4], 'attempts': r[5],
+                'error': r[6],
+                'send_after': r[7].isoformat() if r[7] else None,
+                'sent_at': r[8].isoformat() if r[8] else None,
+                'source': r[9],
+            } for r in cur.fetchall()]
+            return json_resp(200, {'items': items})
+
+        if action == 'retry':
+            mid = body.get('id')
+            if mid:
+                cur.execute(
+                    "UPDATE message_queue SET status = 'pending', attempts = 0, send_after = now(), last_error = NULL WHERE id = %s",
+                    (int(mid),)
+                )
+            else:
+                cur.execute(
+                    "UPDATE message_queue SET status = 'pending', attempts = 0, send_after = now(), last_error = NULL WHERE status = 'error'"
+                )
+            conn.commit()
+            return json_resp(200, {'success': True})
+
+        if action == 'cancel':
+            mid = body.get('id')
+            if not mid:
+                return json_resp(400, {'error': 'id обязателен'})
+            cur.execute("UPDATE message_queue SET status = 'cancelled' WHERE id = %s AND status = 'pending'", (int(mid),))
+            conn.commit()
+            return json_resp(200, {'success': True})
+
+        return json_resp(400, {'error': 'Неизвестное действие'})
+    finally:
+        cur.close()
+        conn.close()
