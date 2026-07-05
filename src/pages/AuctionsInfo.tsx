@@ -278,9 +278,11 @@ const Stage3Content = () => (
       <h3 className="text-base font-semibold text-foreground mb-2">7. Публикация лота в каналы</h3>
       <p className="text-muted-foreground">
         У каждого лота есть кнопка <span className="text-foreground font-medium">«Опубликовать»</span>. Сотрудник выбирает нужные каналы,
-        и бот размещает пост с фото, названием, ценой и кнопкой <span className="text-foreground font-medium">«Участвовать»</span>. Один лот
-        можно опубликовать сразу в несколько каналов — ставки и остаток при этом общие. Когда лот
-        отменяют или он завершается, посты в каналах обновляются автоматически.
+        и бот размещает пост: <span className="text-foreground font-medium">обложка (первое фото)</span>, крупная надпись
+        <span className="text-foreground font-medium"> 🔥 !АУКЦИОН! 🔥</span>, название, цена, остаток и кнопка
+        <span className="text-foreground font-medium">«Участвовать»</span>. Один лот можно опубликовать сразу в несколько каналов —
+        ставки и остаток при этом общие. Когда лот отменяют или он завершается, посты в каналах
+        обновляются автоматически (кнопка убирается, появляется пометка о статусе).
       </p>
     </div>
 
@@ -347,21 +349,110 @@ const Stage4Content = () => (
       </p>
     </div>
 
-    <div>
-      <h3 className="text-base font-semibold text-foreground mb-2">Что будет дальше (следующий этап)</h3>
+    <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Итог этапа</h3>
       <p className="text-muted-foreground">
-        Когда аукцион заканчивается, система сама отберёт лучшие ставки под количество товара и
-        предложит победителям выкуп. Если кто-то не оплатит вовремя — право перейдёт следующему. Это
-        уже отдельный, следующий этап.
+        Покупатель заходит из канала на экран лота, забирает товар по начальной цене или предлагает
+        свою, меняет ставку и видит список своих участий. Видимая часть для покупателя готова.
+        Дальше — подведение итогов, победители и выкуп (следующий этап).
+      </p>
+    </div>
+  </div>
+);
+
+const Stage5Content = () => (
+  <div className="space-y-6 text-sm leading-relaxed">
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Что появляется на этом этапе</h3>
+      <p className="text-muted-foreground">
+        Это финал сделки. Когда время аукциона вышло, система <span className="text-foreground font-medium">сама</span> подводит
+        итоги: выбирает победителей, пишет им в личку, ждёт оплату и, если кто-то не выкупил вовремя,
+        передаёт право следующему. Раньше был сбой: у сотрудника лот показывался как «Идёт», а у
+        покупателя тот же лот — «Завершён». Теперь у лота <span className="text-foreground font-medium">один честный статус</span> для
+        всех экранов.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">1. Автоматическое завершение</h3>
+      <p className="text-muted-foreground">
+        Как только срок лота истёк, он больше не показывает «Идёт» никому. Система закрывает торги и
+        сразу подводит итоги — без ручных действий. Посты в каналах обновляются на «Аукцион завершён»,
+        кнопка «Участвовать» убирается.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">2. Отбор победителей</h3>
+      <p className="text-muted-foreground">
+        Ставки сортируются от высокой к низкой. Побеждают столько человек, сколько было единиц товара
+        (например, 3 единицы — 3 победителя), каждый по <span className="text-foreground font-medium">своей</span> цене. Остальные
+        встают в очередь — на случай, если кто-то из победителей не выкупит.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">3. Победитель получает сообщение и выкупает</h3>
+      <p className="text-muted-foreground">
+        Каждому победителю бот пишет в личку: что он выиграл, за какую цену и до какого времени нужно
+        выкупить. На экране лота появляется кнопка <span className="text-foreground font-medium">«Я оплатил»</span> и
+        <span className="text-foreground font-medium"> «Отказаться»</span>. Срок на оплату берётся из настроек лота.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">4. Переход права при неоплате</h3>
+      <p className="text-muted-foreground">
+        Если победитель не успел оплатить или отказался — его место автоматически переходит
+        следующему участнику из очереди, и тому приходит уведомление. Когда очередь заканчивается,
+        лот завершается окончательно.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">5. Три списка в кабинете</h3>
+      <p className="text-muted-foreground mb-2">В кабинете сотрудника лоты разложены по вкладкам:</p>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li><span className="text-foreground font-medium">Активные</span> — идут прямо сейчас (и отменённые).</li>
+        <li><span className="text-foreground font-medium">Завершённые</span> — итоги подведены, идёт или прошёл выкуп.</li>
+        <li><span className="text-foreground font-medium">Несыгранные</span> — время вышло, а ставок не было. Товар можно выставить заново.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">6. Предупреждение сотруднику заранее</h3>
+      <p className="text-muted-foreground">
+        Если по лоту ставок меньше, чем товара, — примерно за полчаса до конца сотруднику приходит
+        сообщение в личку со ссылкой на лот: сколько ставок и сколько единиц.
+        <span className="text-foreground font-medium"> Оператору — без сумм ставок</span>, администратору — со ставками.
+        Так есть время среагировать.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">7. Досрочное завершение (для администратора)</h3>
+      <p className="text-muted-foreground">
+        Администратор может завершить лот заранее — кнопкой «Завершить досрочно» у активного лота.
+        Тогда текущие ставки сразу «сыграют», победители получат уведомления. Если сотрудник не
+        среагировал — лот всё равно завершится по сроку с теми ставками, что есть.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">8. Итоги в кабинете</h3>
+      <p className="text-muted-foreground">
+        У завершённого лота сотрудник видит победителей, их места в очереди и статус выкупа
+        (ждёт оплаты / оплачено / просрочено / отказ). Цены победителей видны администратору.
       </p>
     </div>
 
     <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
       <h3 className="text-base font-semibold text-foreground mb-2">Итог этапа</h3>
       <p className="text-muted-foreground">
-        Покупатель заходит из канала на экран лота, забирает товар по начальной цене или предлагает
-        свою, меняет ставку и видит список своих участий. Видимая часть для покупателя готова —
-        остаётся подведение итогов и оплата.
+        Круг замкнулся: лот сам завершается, победители определяются и оповещаются, выкуп
+        отслеживается, а при неоплате право уходит дальше по очереди. Пока «оплата» — это
+        подтверждение кнопкой; приём реальных денег будет отдельным этапом. Как посадка после
+        орбиты — самый ответственный момент теперь проходит на автопилоте.
       </p>
     </div>
   </div>
@@ -464,7 +555,8 @@ const STAGES: Stage[] = [
   { key: "stage1", label: "Этап 1", done: true, content: <Stage1Content /> },
   { key: "stage2", label: "Этап 2", done: true, content: <Stage2Content /> },
   { key: "stage3", label: "Этап 3", done: true, content: <Stage3Content /> },
-  { key: "stage4", label: "Этап 4", done: false, content: <Stage4Content /> },
+  { key: "stage4", label: "Этап 4", done: true, content: <Stage4Content /> },
+  { key: "stage5", label: "Этап 5", done: true, content: <Stage5Content /> },
   { key: "cleanup", label: "Удаление косяков", done: false, content: <StageCleanupContent /> },
 ];
 

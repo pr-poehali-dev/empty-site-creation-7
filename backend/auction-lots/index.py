@@ -87,6 +87,74 @@ def mark_posts(cur, bot_token, lot_id, note):
     )
 
 
+def finalize_lot_inline(cur, bot_token, lot_id):
+    """Досрочное подведение итогов лота: отбор победителей, уведомления, смена статуса."""
+    from datetime import timedelta
+    cur.execute(
+        "SELECT title, quantity, payment_deadline_minutes FROM auction_lots WHERE id = %s",
+        (lot_id,)
+    )
+    lr = cur.fetchone()
+    title, quantity, deadline_min = lr[0], lr[1], (lr[2] or 60)
+
+    cur.execute(
+        """SELECT telegram_id, username, display_name, price
+           FROM auction_bids WHERE lot_id = %s
+           ORDER BY price DESC, created_at ASC""",
+        (lot_id,)
+    )
+    bids = cur.fetchall()
+
+    if not bids:
+        cur.execute(
+            "UPDATE auction_lots SET status = 'unsold', finalized_at = now() WHERE id = %s",
+            (lot_id,)
+        )
+        mark_posts(cur, bot_token, lot_id, 'Аукцион завершён — лот не сыгран')
+        return 'unsold'
+
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    deadline = now_naive + timedelta(minutes=deadline_min)
+    winners_count = min(quantity, len(bids))
+    bot_uname = os.environ.get('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+    if not bot_uname:
+        _, me = tg_api(bot_token, 'getMe', {})
+        bot_uname = me.get('username') if isinstance(me, dict) else None
+    lot_url = f"https://t.me/{bot_uname}?startapp=lot_{lot_id}" if bot_uname else "https://t.me"
+
+    for idx, (tg_id, uname, dname, price) in enumerate(bids):
+        position = idx + 1
+        is_winner = position <= winners_count
+        cur.execute(
+            """INSERT INTO auction_winners
+                 (lot_id, telegram_id, username, display_name, price, position, win_type, status, pay_deadline)
+               VALUES (%s, %s, %s, %s, %s, %s, 'auction', %s, %s)
+               ON CONFLICT (lot_id, telegram_id) DO UPDATE SET
+                 price = EXCLUDED.price, position = EXCLUDED.position,
+                 status = EXCLUDED.status, pay_deadline = EXCLUDED.pay_deadline""",
+            (lot_id, tg_id, uname, dname, price, position,
+             'awaiting_payment' if is_winner else 'reserve',
+             deadline if is_winner else None)
+        )
+        if is_winner:
+            text = (
+                f"🏆 <b>Вы выиграли лот!</b>\n\n<b>{esc(title)}</b>\n"
+                f"Ваша цена: <b>{int(price)} ₽</b>\n"
+                f"Выкупите до: <b>{deadline.strftime('%d.%m.%Y %H:%M')}</b>"
+            )
+            tg_api(bot_token, 'sendMessage', {
+                'chat_id': tg_id, 'text': text, 'parse_mode': 'HTML',
+                'reply_markup': {'inline_keyboard': [[{'text': 'Открыть лот', 'url': lot_url}]]},
+            })
+
+    cur.execute(
+        "UPDATE auction_lots SET status = 'payment', finalized_at = now() WHERE id = %s",
+        (lot_id,)
+    )
+    mark_posts(cur, bot_token, lot_id, 'Аукцион завершён — подводим итоги')
+    return 'payment'
+
+
 def get_db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
@@ -258,7 +326,16 @@ def handler(event: dict, context) -> dict:
         params = event.get('queryStringParameters') or {}
         lot_id_raw = params.get('lot_id') or body.get('lot_id')
 
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        def effective_status(status, ends_at):
+            """Единый статус для всех экранов: время вышло, но крон не подвёл итоги → 'ended'."""
+            if status == 'active' and ends_at is not None and ends_at <= now_naive:
+                return 'ended'
+            return status
+
         def serialize(r):
+            eff = effective_status(r[5], r[6])
             return {
                 'id': r[0],
                 'title': r[1],
@@ -266,7 +343,8 @@ def handler(event: dict, context) -> dict:
                 'desired_price': float(r[2]) if r[2] is not None else 0,
                 'quantity': r[3],
                 'quantity_left': r[4],
-                'status': r[5],
+                'status': eff,
+                'raw_status': r[5],
                 'ends_at': r[6].isoformat() if r[6] else None,
                 'photo_urls': r[7] or [],
                 'created_at': r[8].isoformat() if r[8] else None,
@@ -289,16 +367,56 @@ def handler(event: dict, context) -> dict:
             if r[11] != manager_id and auction_role != 'admin':
                 cur.close(); conn.close()
                 return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Нет прав на этот лот'})}
+            lot = serialize(r)
+            lot['auction_role'] = auction_role
+            lot['can_finalize'] = auction_role == 'admin' and lot['status'] in ('active', 'ended')
+
+            # ставки: количество всегда; топ-цены — только админу
+            cur.execute("SELECT COUNT(*) FROM auction_bids WHERE lot_id = %s", (r[0],))
+            lot['bids_count'] = cur.fetchone()[0]
+            if auction_role == 'admin':
+                cur.execute(
+                    "SELECT price FROM auction_bids WHERE lot_id = %s ORDER BY price DESC, created_at ASC LIMIT %s",
+                    (r[0], r[3])
+                )
+                lot['top_bids'] = [float(x[0]) for x in cur.fetchall()]
+
+            # победители (итоги), если лот подведён
+            cur.execute(
+                """SELECT display_name, username, price, position, status, pay_deadline
+                   FROM auction_winners WHERE lot_id = %s ORDER BY position ASC""",
+                (r[0],)
+            )
+            winners = []
+            for w in cur.fetchall():
+                item = {
+                    'display_name': w[0], 'username': w[1],
+                    'position': w[3], 'status': w[4],
+                    'pay_deadline': w[5].isoformat() if w[5] else None,
+                }
+                if auction_role == 'admin':
+                    item['price'] = float(w[2])
+                winners.append(item)
+            lot['winners'] = winners
+
             cur.close(); conn.close()
-            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': serialize(r)})}
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': lot})}
+
+        group = params.get('group', 'active')
+        if group == 'finished':
+            status_cond = "l.status IN ('payment', 'finished')"
+        elif group == 'unsold':
+            status_cond = "l.status = 'unsold'"
+        else:  # active: активные (в т.ч. с истёкшим временем, ещё не подведённые) и отменённые
+            status_cond = "l.status IN ('active', 'cancelled')"
 
         cur.execute(
-            """SELECT l.id, l.title, l.desired_price, l.quantity, l.quantity_left, l.status, l.ends_at,
+            f"""SELECT l.id, l.title, l.desired_price, l.quantity, l.quantity_left, l.status, l.ends_at,
                       l.photo_urls, l.created_at, l.description, l.payment_deadline_minutes, l.created_by,
                       (SELECT COUNT(*) FROM auction_lot_channels p
                        WHERE p.lot_id = l.id AND p.status = 'published')
                FROM auction_lots l
-               WHERE l.created_by = %s
+               WHERE l.created_by = %s AND {status_cond}
                ORDER BY
                  (l.status = 'cancelled') ASC,
                  l.cancelled_at DESC NULLS LAST,
@@ -383,6 +501,22 @@ def handler(event: dict, context) -> dict:
                 'published': published, 'failed': failed,
             })}
 
+        if action == 'finalize_now':
+            if auction_role != 'admin':
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Только администратор может завершить досрочно'})}
+            row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
+            if err:
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
+            if row[2] != 'active':
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Завершить можно только активный лот'})}
+            outcome = finalize_lot_inline(cur, bot_token, row[0])
+            conn.commit()
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True, 'outcome': outcome})}
+
         if action == 'cancel':
             row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
             if err:
@@ -405,10 +539,15 @@ def handler(event: dict, context) -> dict:
             if err:
                 cur.close(); conn.close()
                 return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
-            if row[2] not in ('cancelled', 'finished'):
+            if row[2] not in ('cancelled', 'finished', 'unsold'):
                 cur.close(); conn.close()
                 return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Сначала отмените лот'})}
-            cur.execute("DELETE FROM auction_lots WHERE id = %s", (row[0],))
+            lot_pk = row[0]
+            cur.execute("DELETE FROM auction_payments WHERE lot_id = %s", (lot_pk,))
+            cur.execute("DELETE FROM auction_winners WHERE lot_id = %s", (lot_pk,))
+            cur.execute("DELETE FROM auction_bids WHERE lot_id = %s", (lot_pk,))
+            cur.execute("DELETE FROM auction_lot_channels WHERE lot_id = %s", (lot_pk,))
+            cur.execute("DELETE FROM auction_lots WHERE id = %s", (lot_pk,))
             conn.commit()
             delete_photos(row[3] or [])
             cur.close(); conn.close()

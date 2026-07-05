@@ -70,13 +70,34 @@ def fetch_lot(cur, lot_id, telegram_id):
         (lot_id, telegram_id)
     )
     b = cur.fetchone()
+    status = r[6]
+    is_open = lot_is_open(status, r[7])
+    ended = (not is_open) and status == 'active'
+
+    win = None
+    cur.execute(
+        """SELECT status, price, position, pay_deadline
+           FROM auction_winners WHERE lot_id = %s AND telegram_id = %s""",
+        (lot_id, telegram_id)
+    )
+    wr = cur.fetchone()
+    if wr:
+        win = {
+            'status': wr[0],
+            'price': float(wr[1]),
+            'position': wr[2],
+            'pay_deadline': wr[3].isoformat() if wr[3] else None,
+        }
+
     return {
         'id': r[0], 'title': r[1], 'description': r[2],
         'desired_price': float(r[3]), 'quantity': r[4], 'quantity_left': r[5],
-        'status': r[6], 'ends_at': r[7].isoformat() if r[7] else None,
+        'status': status, 'ends_at': r[7].isoformat() if r[7] else None,
         'photo_urls': r[8] or [],
-        'open': lot_is_open(r[6], r[7]),
+        'open': is_open,
+        'ended': ended,
         'my_bid': float(b[0]) if b else None,
+        'win': win,
     }
 
 
@@ -164,6 +185,35 @@ def handler(event: dict, context) -> dict:
         if not lot_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не указан лот'})}
+
+        if action in ('pay', 'forfeit'):
+            cur.execute(
+                """SELECT id, status, pay_deadline FROM auction_winners
+                   WHERE lot_id = %s AND telegram_id = %s""",
+                (lot_id, telegram_id)
+            )
+            wr = cur.fetchone()
+            if not wr or wr[1] != 'awaiting_payment':
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Нет активного выигрыша по этому лоту'})}
+            win_id = wr[0]
+            if action == 'pay':
+                cur.execute("UPDATE auction_winners SET status = 'paid' WHERE id = %s", (win_id,))
+                cur.execute(
+                    """INSERT INTO auction_payments (lot_id, winner_id, telegram_id, status, paid_at)
+                       VALUES (%s, %s, %s, 'confirmed', now())""",
+                    (lot_id, win_id, telegram_id)
+                )
+            else:
+                # отказ = как истёкшая оплата: крон поднимет следующего из резерва
+                cur.execute(
+                    "UPDATE auction_winners SET status = 'awaiting_payment', pay_deadline = now() - interval '1 minute' WHERE id = %s",
+                    (win_id,)
+                )
+            conn.commit()
+            lot = fetch_lot(cur, lot_id, telegram_id)
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': lot})}
 
         cur.execute(
             "SELECT desired_price, status, ends_at FROM auction_lots WHERE id = %s",

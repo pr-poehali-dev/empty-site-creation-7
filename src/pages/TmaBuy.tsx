@@ -4,6 +4,13 @@ import Icon from "@/components/ui/icon";
 
 const BUYER_URL = "https://functions.poehali.dev/cef9517b-3f37-4b8b-be1c-5d94827ca738";
 
+interface Win {
+  status: string;
+  price: number;
+  position: number;
+  pay_deadline: string | null;
+}
+
 interface Lot {
   id: number;
   title: string;
@@ -15,7 +22,9 @@ interface Lot {
   ends_at: string | null;
   photo_urls: string[];
   open: boolean;
+  ended: boolean;
   my_bid: number | null;
+  win: Win | null;
 }
 
 interface TgWebApp {
@@ -104,7 +113,7 @@ const TmaBuy = () => {
     return () => clearInterval(t);
   }, [lot?.open, load]);
 
-  const submit = async (action: "buy_now" | "place_bid") => {
+  const submit = async (action: "buy_now" | "place_bid" | "pay" | "forfeit") => {
     if (!lot) return;
     let price: number | undefined;
     if (action === "place_bid") {
@@ -117,6 +126,9 @@ const TmaBuy = () => {
         window.alert("Цена не может быть выше начальной");
         return;
       }
+    }
+    if (action === "forfeit" && !window.confirm("Отказаться от выкупа? Право перейдёт следующему участнику.")) {
+      return;
     }
     setBusy(true);
     try {
@@ -133,7 +145,13 @@ const TmaBuy = () => {
       }
       setLot(data.lot);
       setPriceInput("");
-      window.alert(action === "buy_now" ? "Вы забрали по начальной цене!" : "Ставка принята!");
+      const msg: Record<string, string> = {
+        buy_now: "Вы забрали по начальной цене!",
+        place_bid: "Ставка принята!",
+        pay: "Оплата отмечена. Спасибо!",
+        forfeit: "Вы отказались от выкупа.",
+      };
+      window.alert(msg[action]);
     } catch {
       window.alert("Ошибка соединения.");
     } finally {
@@ -232,7 +250,63 @@ const TmaBuy = () => {
           )}
         </div>
 
-        {lot.open ? (
+        {lot.win?.status === "awaiting_payment" && (
+          <div className="rounded-2xl border border-primary bg-primary/10 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <Icon name="Trophy" size={20} className="text-primary" />
+              <span className="font-semibold">Вы выиграли!</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Ваша цена: <span className="text-foreground font-medium">{lot.win.price.toLocaleString("ru-RU")} ₽</span>
+              {lot.win.pay_deadline && (
+                <> · выкупите до <span className="text-foreground font-medium">{formatEnds(lot.win.pay_deadline)}</span></>
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={busy}
+                onClick={() => submit("pay")}
+                className="flex-1 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                Я оплатил
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => submit("forfeit")}
+                className="rounded-xl border border-border bg-card px-4 py-3 text-sm disabled:opacity-50"
+              >
+                Отказаться
+              </button>
+            </div>
+          </div>
+        )}
+
+        {lot.win?.status === "paid" && (
+          <div className="rounded-2xl border border-green-500/40 bg-green-500/10 p-4 text-center text-sm">
+            <Icon name="CircleCheck" size={22} className="text-green-500 mx-auto mb-1" />
+            Оплата отмечена. Спасибо за покупку!
+          </div>
+        )}
+
+        {(lot.win?.status === "expired" || lot.win?.status === "forfeited") && (
+          <div className="rounded-2xl border border-border bg-card p-4 text-center text-muted-foreground text-sm">
+            Срок выкупа прошёл — право перешло другому участнику.
+          </div>
+        )}
+
+        {!lot.open && !lot.win && (lot.status === "payment" || lot.status === "finished") && (
+          <div className="rounded-2xl border border-border bg-card p-4 text-center text-muted-foreground text-sm">
+            Аукцион завершён. К сожалению, ваша ставка не прошла в отбор.
+          </div>
+        )}
+
+        {!lot.open && !lot.win && (lot.ended || lot.status === "unsold") && (
+          <div className="rounded-2xl border border-border bg-card p-4 text-center text-muted-foreground text-sm">
+            Аукцион завершён — ставки закрыты.
+          </div>
+        )}
+
+        {lot.open && (
           <>
             <button
               disabled={busy}
@@ -263,10 +337,6 @@ const TmaBuy = () => {
               </div>
             </div>
           </>
-        ) : (
-          <div className="rounded-2xl border border-border bg-card p-4 text-center text-muted-foreground text-sm">
-            Аукцион завершён — ставки закрыты.
-          </div>
         )}
       </div>
     </div>

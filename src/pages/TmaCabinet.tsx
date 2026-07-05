@@ -4,6 +4,15 @@ import Icon from "@/components/ui/icon";
 
 const LOTS_URL = "https://functions.poehali.dev/ccf1033f-bcff-4801-a6dc-8597eec21344";
 
+interface Winner {
+  display_name: string | null;
+  username: string | null;
+  position: number;
+  status: string;
+  pay_deadline: string | null;
+  price?: number;
+}
+
 interface Lot {
   id: number;
   title: string;
@@ -14,7 +23,28 @@ interface Lot {
   ends_at: string | null;
   photo_urls: string[];
   published_count?: number;
+  can_finalize?: boolean;
+  bids_count?: number;
+  top_bids?: number[];
+  winners?: Winner[];
+  auction_role?: string;
 }
+
+type TabKey = "active" | "finished" | "unsold";
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "active", label: "Активные" },
+  { key: "finished", label: "Завершённые" },
+  { key: "unsold", label: "Несыгранные" },
+];
+
+const WINNER_STATUS_LABEL: Record<string, string> = {
+  awaiting_payment: "Ждёт оплаты",
+  paid: "Оплачено",
+  expired: "Просрочено",
+  forfeited: "Отказ",
+  reserve: "Резерв",
+};
 
 interface Channel {
   id: number;
@@ -36,9 +66,11 @@ const getTg = (): TgWebApp | undefined =>
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Идёт",
+  ended: "Завершён",
   closed: "Закрыт",
   payment: "На оплате",
   finished: "Завершён",
+  unsold: "Не сыгран",
   cancelled: "Отменён",
 };
 
@@ -58,8 +90,46 @@ const TmaCabinet = () => {
   const [publishing, setPublishing] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
+  const [tab, setTab] = useState<TabKey>("active");
 
   const initData = () => getTg()?.initData || "";
+
+  const openDetails = async (lot: Lot) => {
+    setSelected(lot);
+    try {
+      const resp = await fetch(
+        `${LOTS_URL}?lot_id=${lot.id}&init_data=${encodeURIComponent(initData())}`
+      );
+      const data = await resp.json();
+      if (resp.ok && data.lot) setSelected(data.lot);
+    } catch {
+      /* оставляем базовые данные */
+    }
+  };
+
+  const finalizeNow = async (lot: Lot) => {
+    if (!window.confirm("Завершить лот сейчас? Текущие ставки сыграют, победители получат уведомление.")) return;
+    setBusy(true);
+    try {
+      const resp = await fetch(LOTS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ init_data: initData(), action: "finalize_now", lot_id: lot.id }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        window.alert(data.error || "Не удалось завершить");
+        setBusy(false);
+        return;
+      }
+      setSelected(null);
+      await load();
+    } catch {
+      window.alert("Ошибка соединения.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openPublish = async (lot: Lot) => {
     setSelected(null);
@@ -136,7 +206,7 @@ const TmaCabinet = () => {
     }
   };
 
-  const load = async () => {
+  const load = async (group: TabKey = tab) => {
     const tg = getTg();
     if (!tg) {
       setError("Откройте приложение из бота.");
@@ -151,10 +221,12 @@ const TmaCabinet = () => {
       setLoading(false);
       return;
     }
+    setLoading(true);
     try {
-      const resp = await fetch(`${LOTS_URL}?init_data=${encodeURIComponent(initData)}`, {
-        method: "GET",
-      });
+      const resp = await fetch(
+        `${LOTS_URL}?group=${group}&init_data=${encodeURIComponent(initData)}`,
+        { method: "GET" }
+      );
       const data = await resp.json();
       if (!resp.ok) {
         setError(data.error || "Нет доступа.");
@@ -216,6 +288,25 @@ const TmaCabinet = () => {
         </button>
       </div>
 
+      <div className="mb-4 flex gap-1 rounded-2xl bg-card p-1 max-w-md w-full mx-auto">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => {
+              if (t.key === tab) return;
+              setTab(t.key);
+              setLots([]);
+              load(t.key);
+            }}
+            className={`flex-1 rounded-xl px-2 py-2 text-sm font-medium transition-colors ${
+              tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Icon name="Loader2" size={28} className="animate-spin opacity-70" />
@@ -242,7 +333,7 @@ const TmaCabinet = () => {
           {lots.map((lot) => (
             <button
               key={lot.id}
-              onClick={() => setSelected(lot)}
+              onClick={() => openDetails(lot)}
               className="flex gap-3 rounded-2xl border border-border bg-card p-3 text-left w-full"
             >
               <div className="h-16 w-16 flex-shrink-0 rounded-xl overflow-hidden bg-white/[0.04] flex items-center justify-center">
@@ -327,7 +418,58 @@ const TmaCabinet = () => {
                     Отменить лот
                   </button>
                 )}
-                {(selected.status === "cancelled" || selected.status === "finished") && (
+                {selected.can_finalize && (
+                  <button
+                    disabled={busy}
+                    onClick={() => finalizeNow(selected)}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 font-semibold text-primary-foreground disabled:opacity-60"
+                  >
+                    <Icon name="Gavel" size={18} />
+                    Завершить досрочно
+                  </button>
+                )}
+
+                {(selected.bids_count !== undefined || selected.status === "ended") && (
+                  <div className="rounded-2xl border border-border bg-background p-3 text-sm">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Ставок</span>
+                      <span className="text-foreground font-medium">{selected.bids_count ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground mt-1">
+                      <span>Товара</span>
+                      <span className="text-foreground font-medium">{selected.quantity} шт.</span>
+                    </div>
+                    {selected.top_bids && selected.top_bids.length > 0 && (
+                      <div className="mt-2 border-t border-border pt-2 text-muted-foreground">
+                        Топ-ставки:{" "}
+                        <span className="text-foreground">
+                          {selected.top_bids.map((p) => `${p.toLocaleString("ru-RU")} ₽`).join(", ")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selected.winners && selected.winners.length > 0 && (
+                  <div className="rounded-2xl border border-border bg-background p-3 flex flex-col gap-2">
+                    <div className="text-sm font-medium">Победители</div>
+                    {selected.winners.map((w) => (
+                      <div key={w.position} className="flex items-center justify-between text-sm">
+                        <span className="truncate">
+                          {w.position}. {w.display_name || (w.username ? `@${w.username}` : "участник")}
+                          {w.price !== undefined && (
+                            <span className="text-muted-foreground"> · {w.price.toLocaleString("ru-RU")} ₽</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                          {WINNER_STATUS_LABEL[w.status] || w.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(selected.status === "cancelled" || selected.status === "finished" || selected.status === "unsold") && (
                   <button
                     disabled={busy}
                     onClick={() => action("delete", selected)}
