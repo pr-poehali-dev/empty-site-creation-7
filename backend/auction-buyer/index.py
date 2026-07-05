@@ -70,17 +70,25 @@ def lot_app_url(bot_token, lot_id):
     return 'https://t.me'
 
 
+MESSAGE_SERVER_URL = 'https://functions.poehali.dev/5196ad48-3bd4-4763-bb20-ca8c9b91b508'
+
+
 def notify_bid(bot_token, telegram_id, lot_id, title, text):
-    """Личное сообщение покупателю о ставке с кнопкой перехода в лот."""
+    """Ставит задание в Сервер сообщений: уведомление покупателю о ставке с кнопкой перехода в лот."""
     try:
         url = lot_app_url(bot_token, lot_id)
-        ok, res = tg_api(bot_token, 'sendMessage', {
-            'chat_id': telegram_id,
-            'text': text,
-            'parse_mode': 'HTML',
-            'reply_markup': {'inline_keyboard': [[{'text': 'Перейти в лот', 'url': url}]]},
-        })
-        print(f'[notify_bid] chat_id={telegram_id} lot={lot_id} ok={ok} res={res}')
+        payload = {
+            'address': str(telegram_id), 'text': text, 'parse_mode': 'HTML',
+            'button_text': 'Перейти в лот', 'button_url': url,
+            'source': 'auction-buyer',
+        }
+        req = urllib.request.Request(
+            MESSAGE_SERVER_URL + '?action=enqueue',
+            data=json.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            res = json.loads(resp.read().decode())
+        print(f'[notify_bid] chat_id={telegram_id} lot={lot_id} queued={res.get("success")}')
     except Exception as e:
         print(f'[notify_bid] EXCEPTION chat_id={telegram_id} lot={lot_id} err={e}')
 
