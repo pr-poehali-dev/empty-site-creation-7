@@ -529,6 +529,42 @@ const StageCleanupContent = () => (
       </p>
     </div>
 
+    <div className="rounded-lg border border-sky-500/20 bg-sky-500/[0.06] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Шаг 3. Включить автоподведение итогов (расписание)</h3>
+      <p className="text-muted-foreground">
+        Чтобы аукционы завершались <span className="text-foreground font-medium">сами</span> — без ручных действий: определялись
+        победители, уходили уведомления в личку, а при неоплате право переходило следующему — нужно
+        поставить функцию подведения итогов на автозапуск по расписанию.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Как настроить</h3>
+      <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
+        <li>Открой <span className="text-foreground font-medium">Ядро → Функции</span>.</li>
+        <li>Выбери функцию <span className="text-foreground font-medium">auction-finalize</span>.</li>
+        <li>Зайди в <span className="text-foreground font-medium">Настройки</span> (раздел «Триггеры» / «Расписание»).</li>
+        <li>
+          Добавь триггер по расписанию (cron). Укажи <span className="text-foreground font-medium">* * * * *</span> —
+          это «каждую минуту». Если минимальный интервал больше — поставь самый частый доступный
+          (например, каждые 5 минут).
+        </li>
+        <li>Сохрани.</li>
+      </ol>
+      <p className="text-muted-foreground mt-2">
+        Проверить можно так: создай тестовый лот с окончанием через пару минут, сделай ставку и
+        подожди. Лот должен сам перейти в «Завершён», а победителю придёт сообщение от бота.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">Если раздела расписания нет</h3>
+      <p className="text-muted-foreground">
+        Ничего страшного: итоги всё равно подведутся при ближайшем заходе в кабинет или на лот.
+        Просто без крона это происходит не мгновенно, а в момент, когда кто-то открывает аукцион.
+      </p>
+    </div>
+
     <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
       <h3 className="text-base font-semibold text-foreground mb-2">Итог</h3>
       <p className="text-muted-foreground">
