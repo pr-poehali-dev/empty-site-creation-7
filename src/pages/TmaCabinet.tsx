@@ -324,7 +324,11 @@ const TmaCabinet = () => {
       {!loading && !error && lots.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <Icon name="Package" size={36} className="text-muted-foreground" />
-          <p className="text-muted-foreground max-w-xs">Пока нет лотов. Создайте первый.</p>
+          <p className="text-muted-foreground max-w-xs">
+            {tab === "active" && "Здесь пока нет активных лотов. Создайте первый."}
+            {tab === "finished" && "Здесь пока нет завершённых лотов."}
+            {tab === "unsold" && "Здесь пока нет несыгранных лотов."}
+          </p>
         </div>
       )}
 

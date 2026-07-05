@@ -394,9 +394,12 @@ const Stage5Content = () => (
     <div>
       <h3 className="text-base font-semibold text-foreground mb-2">3. Победитель получает сообщение и выкупает</h3>
       <p className="text-muted-foreground">
-        Каждому победителю бот пишет в личку: что он выиграл, за какую цену и до какого времени нужно
-        выкупить. На экране лота появляется кнопка <span className="text-foreground font-medium">«Я оплатил»</span> и
-        <span className="text-foreground font-medium"> «Отказаться»</span>. Срок на оплату берётся из настроек лота.
+        Каждому победителю бот пишет в личку: что он выиграл и за какую цену. На экране лота
+        появляется кнопка <span className="text-foreground font-medium">«Я оплатил»</span> и
+        <span className="text-foreground font-medium"> «Отказаться»</span>, а рядом — живой
+        <span className="text-foreground font-medium"> таймер обратного отсчёта</span> («на оплату осталось 14:59»).
+        Срок на оплату берётся из настроек лота, часовые пояса не путаются — показывается просто
+        сколько минут осталось.
       </p>
     </div>
 

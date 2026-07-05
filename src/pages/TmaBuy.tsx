@@ -46,6 +46,24 @@ const formatEnds = (iso: string | null) => {
   });
 };
 
+/** Парсит время из бэкенда (naive-UTC ISO без Z) как UTC, возвращает мс epoch. */
+const parseUtcMs = (iso: string): number => {
+  const hasTz = /[zZ]|[+-]\d{2}:\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : `${iso}Z`).getTime();
+};
+
+/** Остаток до дедлайна в формате «14:59» или «1 ч 05 мин». null → время вышло. */
+const formatRemaining = (deadlineIso: string, nowMs: number): string | null => {
+  const diff = parseUtcMs(deadlineIso) - nowMs;
+  if (diff <= 0) return null;
+  const totalSec = Math.floor(diff / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h} ч ${String(m).padStart(2, "0")} мин`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
 const TmaBuy = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -55,6 +73,7 @@ const TmaBuy = () => {
   const [busy, setBusy] = useState(false);
   const [priceInput, setPriceInput] = useState("");
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [nowMs, setNowMs] = useState(Date.now());
 
   const initData = () => getTg()?.initData || "";
 
@@ -112,6 +131,14 @@ const TmaBuy = () => {
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [lot?.open, load]);
+
+  const awaitingPayment = lot?.win?.status === "awaiting_payment" && !!lot?.win?.pay_deadline;
+
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [awaitingPayment]);
 
   const submit = async (action: "buy_now" | "place_bid" | "pay" | "forfeit") => {
     if (!lot) return;
@@ -258,10 +285,22 @@ const TmaBuy = () => {
             </div>
             <p className="text-sm text-muted-foreground">
               Ваша цена: <span className="text-foreground font-medium">{lot.win.price.toLocaleString("ru-RU")} ₽</span>
-              {lot.win.pay_deadline && (
-                <> · выкупите до <span className="text-foreground font-medium">{formatEnds(lot.win.pay_deadline)}</span></>
-              )}
             </p>
+            {lot.win.pay_deadline && (() => {
+              const left = formatRemaining(lot.win.pay_deadline, nowMs);
+              return (
+                <div className="flex items-center justify-center gap-2 rounded-xl bg-background/60 py-2">
+                  <Icon name="Timer" size={16} className={left ? "text-primary" : "text-red-400"} />
+                  {left ? (
+                    <span className="text-sm">
+                      На оплату осталось <span className="font-semibold text-foreground tabular-nums">{left}</span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-red-400">Время оплаты истекло</span>
+                  )}
+                </div>
+              );
+            })()}
             <div className="flex gap-2">
               <button
                 disabled={busy}
