@@ -284,7 +284,7 @@ def parse_ends_at(raw):
 
 
 def handler(event: dict, context) -> dict:
-    """Создание и получение аукционных лотов сотрудником через Telegram мини-приложение"""
+    """Создание, получение и управление аукционными лотами сотрудником через Telegram мини-приложение."""
     if event.get('httpMethod') == 'OPTIONS':
         return {
             'statusCode': 200,
