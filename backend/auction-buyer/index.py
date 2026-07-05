@@ -51,13 +51,17 @@ def lot_app_url(bot_token, lot_id):
 
 def notify_bid(bot_token, telegram_id, lot_id, title, text):
     """Личное сообщение покупателю о ставке с кнопкой перехода в лот."""
-    url = lot_app_url(bot_token, lot_id)
-    tg_api(bot_token, 'sendMessage', {
-        'chat_id': telegram_id,
-        'text': text,
-        'parse_mode': 'HTML',
-        'reply_markup': {'inline_keyboard': [[{'text': 'Перейти в лот', 'url': url}]]},
-    })
+    try:
+        url = lot_app_url(bot_token, lot_id)
+        ok, res = tg_api(bot_token, 'sendMessage', {
+            'chat_id': telegram_id,
+            'text': text,
+            'parse_mode': 'HTML',
+            'reply_markup': {'inline_keyboard': [[{'text': 'Перейти в лот', 'url': url}]]},
+        })
+        print(f'[notify_bid] chat_id={telegram_id} lot={lot_id} ok={ok} res={res}')
+    except Exception as e:
+        print(f'[notify_bid] EXCEPTION chat_id={telegram_id} lot={lot_id} err={e}')
 
 
 def verify_init_data(init_data: str, bot_token: str, max_age: int = 86400):
@@ -319,6 +323,7 @@ def handler(event: dict, context) -> dict:
 
         existed = upsert_bid(cur, lot_id, telegram_id, username, display_name, price)
         conn.commit()
+        print(f'[bid] saved lot={lot_id} tg={telegram_id} price={price} existed={existed}')
         lot = fetch_lot(cur, lot_id, telegram_id)
         cur.close(); conn.close()
 
