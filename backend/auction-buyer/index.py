@@ -3,6 +3,8 @@ import os
 import hmac
 import hashlib
 import time
+import urllib.request
+import urllib.error
 from urllib.parse import parse_qsl
 from datetime import datetime, timezone
 import psycopg2
@@ -10,6 +12,52 @@ import psycopg2
 
 def get_db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
+
+
+def esc(text):
+    if text is None:
+        return ''
+    return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def tg_api(bot_token, method, payload):
+    """Вызов Telegram Bot API. Возвращает (ok, result_or_error)."""
+    url = f'https://api.telegram.org/bot{bot_token}/{method}'
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            res = json.loads(resp.read().decode())
+        return bool(res.get('ok')), res.get('result') or res.get('description')
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode())
+            return False, err.get('description', f'HTTP {e.code}')
+        except Exception:
+            return False, f'HTTP {e.code}'
+    except Exception as e:
+        return False, str(e)
+
+
+def lot_app_url(bot_token, lot_id):
+    uname = os.environ.get('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+    if not uname:
+        ok, me = tg_api(bot_token, 'getMe', {})
+        uname = me.get('username') if ok and isinstance(me, dict) else None
+    if uname:
+        return f'https://t.me/{uname}?startapp=lot_{lot_id}'
+    return 'https://t.me'
+
+
+def notify_bid(bot_token, telegram_id, lot_id, title, text):
+    """Личное сообщение покупателю о ставке с кнопкой перехода в лот."""
+    url = lot_app_url(bot_token, lot_id)
+    tg_api(bot_token, 'sendMessage', {
+        'chat_id': telegram_id,
+        'text': text,
+        'parse_mode': 'HTML',
+        'reply_markup': {'inline_keyboard': [[{'text': 'Перейти в лот', 'url': url}]]},
+    })
 
 
 def verify_init_data(init_data: str, bot_token: str, max_age: int = 86400):
@@ -102,6 +150,12 @@ def fetch_lot(cur, lot_id, telegram_id):
 
 
 def upsert_bid(cur, lot_id, telegram_id, username, display_name, price):
+    """Создаёт или обновляет ставку. Возвращает True, если ставка уже была (изменение)."""
+    cur.execute(
+        "SELECT 1 FROM auction_bids WHERE lot_id = %s AND telegram_id = %s",
+        (lot_id, telegram_id)
+    )
+    existed = cur.fetchone() is not None
     cur.execute(
         """INSERT INTO auction_bids (lot_id, telegram_id, username, display_name, price)
            VALUES (%s, %s, %s, %s, %s)
@@ -112,6 +166,7 @@ def upsert_bid(cur, lot_id, telegram_id, username, display_name, price):
                          updated_at = NOW()""",
         (lot_id, telegram_id, username, display_name, price)
     )
+    return existed
 
 
 def handler(event: dict, context) -> dict:
@@ -216,18 +271,33 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': lot})}
 
         cur.execute(
-            "SELECT desired_price, status, ends_at FROM auction_lots WHERE id = %s",
+            "SELECT desired_price, status, ends_at, title FROM auction_lots WHERE id = %s",
             (lot_id,)
         )
         lr = cur.fetchone()
         if not lr:
             cur.close(); conn.close()
             return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Лот не найден'})}
-        desired_price, status, ends_at = float(lr[0]), lr[1], lr[2]
+        desired_price, status, ends_at, title = float(lr[0]), lr[1], lr[2], lr[3]
 
         if not lot_is_open(status, ends_at):
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Аукцион завершён'})}
+
+        if action == 'cancel_bid':
+            cur.execute(
+                "DELETE FROM auction_bids WHERE lot_id = %s AND telegram_id = %s",
+                (lot_id, telegram_id)
+            )
+            removed = cur.rowcount
+            conn.commit()
+            cur.close(); conn.close()
+            if removed:
+                notify_bid(
+                    bot_token, telegram_id, lot_id, title,
+                    f"❌ Вы сняли ставку в лоте <b>№{lot_id}</b> «{esc(title)}»."
+                )
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'cancelled': bool(removed)})}
 
         if action == 'buy_now':
             price = desired_price
@@ -247,10 +317,18 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Неизвестное действие'})}
 
-        upsert_bid(cur, lot_id, telegram_id, username, display_name, price)
+        existed = upsert_bid(cur, lot_id, telegram_id, username, display_name, price)
         conn.commit()
         lot = fetch_lot(cur, lot_id, telegram_id)
         cur.close(); conn.close()
+
+        price_str = f"{int(price)} ₽"
+        if existed:
+            text = f"✏️ Вы изменили ставку в лоте <b>№{lot_id}</b> «{esc(title)}» на <b>{price_str}</b>."
+        else:
+            text = f"✅ Вы сделали ставку в лоте <b>№{lot_id}</b> «{esc(title)}» — <b>{price_str}</b>."
+        notify_bid(bot_token, telegram_id, lot_id, title, text)
+
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'lot': lot})}
 
     cur.close(); conn.close()

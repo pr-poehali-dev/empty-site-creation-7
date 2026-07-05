@@ -140,8 +140,11 @@ const TmaBuy = () => {
     return () => clearInterval(t);
   }, [awaitingPayment]);
 
-  const submit = async (action: "buy_now" | "place_bid" | "pay" | "forfeit") => {
+  const submit = async (action: "buy_now" | "place_bid" | "pay" | "forfeit" | "cancel_bid") => {
     if (!lot) return;
+    if (action === "cancel_bid" && !window.confirm("Снять вашу ставку с этого лота?")) {
+      return;
+    }
     let price: number | undefined;
     if (action === "place_bid") {
       price = Number(priceInput);
@@ -168,6 +171,11 @@ const TmaBuy = () => {
       if (!resp.ok) {
         window.alert(data.error || "Не удалось выполнить.");
         setBusy(false);
+        return;
+      }
+      if (action === "cancel_bid") {
+        window.alert("Ставка снята.");
+        navigate("/tma/my");
         return;
       }
       setLot(data.lot);
@@ -382,6 +390,16 @@ const TmaBuy = () => {
                 </button>
               </div>
             </div>
+
+            {lot.my_bid !== null && (
+              <button
+                disabled={busy}
+                onClick={() => submit("cancel_bid")}
+                className="w-full rounded-2xl border border-destructive/40 px-5 py-3 font-medium text-destructive disabled:opacity-50"
+              >
+                Снять ставку
+              </button>
+            )}
           </>
         )}
       </div>

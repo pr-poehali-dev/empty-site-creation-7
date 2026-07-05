@@ -18,6 +18,13 @@
       "path": "/",
       "body": {"action": "place_bid", "lot_id": 1, "price": 100},
       "expectedStatus": 403
+    },
+    {
+      "name": "cancel_bid без подписи запрещён",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "cancel_bid", "lot_id": 1},
+      "expectedStatus": 403
     }
   ]
 }
