@@ -173,6 +173,17 @@ def report_result(report_url, payload):
 
 
 WORKER_MAX_SECONDS = 55  # сколько крутить очередь за один запуск (таймаут функции = 60с)
+WORKER_LOCK_KEY = 918273645  # ключ advisory-lock: гарантирует один воркер за раз
+
+
+def try_acquire_worker_lock(cur):
+    """Пытается взять глобальный замок воркера (не блокирующе). True — взяли, можно молотить."""
+    cur.execute("SELECT pg_try_advisory_lock(%s)", (WORKER_LOCK_KEY,))
+    return bool(cur.fetchone()[0])
+
+
+def release_worker_lock(cur):
+    cur.execute("SELECT pg_advisory_unlock(%s)", (WORKER_LOCK_KEY,))
 
 
 def run_worker(cur, conn):
@@ -186,6 +197,10 @@ def run_worker(cur, conn):
     if not bot_token:
         return {'error': 'no_bot_token'}
 
+    # только один воркер за раз: если уже кто-то молотит — выходим, он всё разгребёт
+    if not try_acquire_worker_lock(cur):
+        return {'skipped': 'busy'}
+
     rate = max(1, settings['rate_per_second'])
     delay = 1.0 / rate
     per_user_limit = settings['per_user_per_minute']
@@ -193,32 +208,35 @@ def run_worker(cur, conn):
     worker_start = time.time()
     sent, failed, deferred, processed = 0, 0, 0, 0
 
-    # Внешний цикл: тянем пачки, пока есть что слать и не вышло время
-    while time.time() - worker_start < WORKER_MAX_SECONDS:
-        now = now_utc()
-        cur.execute(
-            """SELECT id, channel, address, text, button_text, button_url, parse_mode,
-                      attempts, max_attempts, dedup_key, report_url
-               FROM message_queue
-               WHERE status = 'pending' AND send_after <= %s
-               ORDER BY send_after ASC, id ASC
-               LIMIT 200""",
-            (now,)
-        )
-        rows = cur.fetchall()
-        if not rows:
-            break  # очередь пуста — не ждём зря
-        processed += len(rows)
+    try:
+        # Внешний цикл: тянем пачки, пока есть что слать и не вышло время
+        while time.time() - worker_start < WORKER_MAX_SECONDS:
+            now = now_utc()
+            cur.execute(
+                """SELECT id, channel, address, text, button_text, button_url, parse_mode,
+                          attempts, max_attempts, dedup_key, report_url
+                   FROM message_queue
+                   WHERE status = 'pending' AND send_after <= %s
+                   ORDER BY send_after ASC, id ASC
+                   LIMIT 200""",
+                (now,)
+            )
+            rows = cur.fetchall()
+            if not rows:
+                break  # очередь пуста — не ждём зря
+            processed += len(rows)
 
-        batch_done = _process_batch(
-            cur, conn, rows, bot_token, settings,
-            delay, per_user_limit, worker_start
-        )
-        sent += batch_done['sent']
-        failed += batch_done['failed']
-        deferred += batch_done['deferred']
-        if batch_done['time_up']:
-            break
+            batch_done = _process_batch(
+                cur, conn, rows, bot_token, settings,
+                delay, per_user_limit, worker_start
+            )
+            sent += batch_done['sent']
+            failed += batch_done['failed']
+            deferred += batch_done['deferred']
+            if batch_done['time_up']:
+                break
+    finally:
+        release_worker_lock(cur)
 
     return {'sent': sent, 'failed': failed, 'deferred': deferred, 'processed': processed}
 
@@ -363,7 +381,19 @@ def handler(event: dict, context) -> dict:
             )
             new_id = cur.fetchone()[0]
             conn.commit()
-            return json_resp(200, {'success': True, 'message_id': new_id})
+            # Сразу разгоняем очередь в этом же запросе — не ждём крон.
+            # Если другой воркер уже крутится (замок занят) — мгновенно выйдем (busy),
+            # тот воркер и разошлёт это сообщение. Отложенные (send_after в будущем)
+            # подберёт крон. Ошибку воркера гасим — задание уже в очереди, не потеряется.
+            worker_result = {'skipped': 'deferred'}
+            if sa <= now_utc():
+                try:
+                    worker_result = run_worker(cur, conn)
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    worker_result = {'error': str(e)}
+            return json_resp(200, {'success': True, 'message_id': new_id, 'worker': worker_result})
 
         # --- Воркер: рассылка (зовёт Толкатель по ключу) ---
         if action == 'run':
