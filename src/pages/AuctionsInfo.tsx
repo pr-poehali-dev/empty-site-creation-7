@@ -418,7 +418,7 @@ const Stage5Content = () => (
       <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
         <li><span className="text-foreground font-medium">Активные</span> — идут прямо сейчас (и отменённые).</li>
         <li><span className="text-foreground font-medium">Завершённые</span> — итоги подведены, идёт или прошёл выкуп.</li>
-        <li><span className="text-foreground font-medium">Несыгранные</span> — время вышло, а ставок не было. Товар можно выставить заново.</li>
+        <li><span className="text-foreground font-medium">Несыгранные</span> — время вышло, а ставок не было <span className="text-foreground font-medium">совсем</span>. Товар можно выставить заново. Если ставки были, но их меньше, чем товара, — лот всё равно разыгрывается и попадает в «Завершённые».</li>
       </ul>
     </div>
 
@@ -444,8 +444,20 @@ const Stage5Content = () => (
     <div>
       <h3 className="text-base font-semibold text-foreground mb-2">8. Итоги в кабинете</h3>
       <p className="text-muted-foreground">
-        У завершённого лота сотрудник видит победителей, их места в очереди и статус выкупа
-        (ждёт оплаты / оплачено / просрочено / отказ). Цены победителей видны администратору.
+        У завершённого лота сотрудник видит победителей, их места в очереди, живой таймер оплаты и
+        статус выкупа (ждёт оплаты / оплачено / просрочено / отказ). Цены победителей видны
+        администратору.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-2">9. Надёжная доставка уведомлений</h3>
+      <p className="text-muted-foreground">
+        Каждая отправка победителю проверяется. Если сообщение по какой-то причине не дошло, у этого
+        победителя в кабинете загорается пометка <span className="text-foreground font-medium">«уведомление не доставлено»</span> и
+        кнопка <span className="text-foreground font-medium">«Уведомить»</span> — отправить повторно вручную. А за 5 минут до конца
+        срока оплаты система сама шлёт победителю напоминание. Не среагировал — право уходит дальше по
+        очереди.
       </p>
     </div>
 

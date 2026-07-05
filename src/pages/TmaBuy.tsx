@@ -286,37 +286,44 @@ const TmaBuy = () => {
             <p className="text-sm text-muted-foreground">
               Ваша цена: <span className="text-foreground font-medium">{lot.win.price.toLocaleString("ru-RU")} ₽</span>
             </p>
-            {lot.win.pay_deadline && (() => {
-              const left = formatRemaining(lot.win.pay_deadline, nowMs);
+            {(() => {
+              const left = lot.win.pay_deadline
+                ? formatRemaining(lot.win.pay_deadline, nowMs)
+                : null;
+              const timeLeft = !!left;
               return (
-                <div className="flex items-center justify-center gap-2 rounded-xl bg-background/60 py-2">
-                  <Icon name="Timer" size={16} className={left ? "text-primary" : "text-red-400"} />
-                  {left ? (
-                    <span className="text-sm">
-                      На оплату осталось <span className="font-semibold text-foreground tabular-nums">{left}</span>
-                    </span>
-                  ) : (
-                    <span className="text-sm text-red-400">Время оплаты истекло</span>
+                <>
+                  <div className="flex items-center justify-center gap-2 rounded-xl bg-background/60 py-2">
+                    <Icon name="Timer" size={16} className={timeLeft ? "text-primary" : "text-red-400"} />
+                    {timeLeft ? (
+                      <span className="text-sm">
+                        На оплату осталось <span className="font-semibold text-foreground tabular-nums">{left}</span>
+                      </span>
+                    ) : (
+                      <span className="text-sm text-red-400">Время оплаты истекло</span>
+                    )}
+                  </div>
+                  {timeLeft && (
+                    <div className="flex gap-2">
+                      <button
+                        disabled={busy}
+                        onClick={() => submit("pay")}
+                        className="flex-1 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-50"
+                      >
+                        Я оплатил
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => submit("forfeit")}
+                        className="rounded-xl border border-border bg-card px-4 py-3 text-sm disabled:opacity-50"
+                      >
+                        Отказаться
+                      </button>
+                    </div>
                   )}
-                </div>
+                </>
               );
             })()}
-            <div className="flex gap-2">
-              <button
-                disabled={busy}
-                onClick={() => submit("pay")}
-                className="flex-1 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-50"
-              >
-                Я оплатил
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => submit("forfeit")}
-                className="rounded-xl border border-border bg-card px-4 py-3 text-sm disabled:opacity-50"
-              >
-                Отказаться
-              </button>
-            </div>
           </div>
         )}
 

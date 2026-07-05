@@ -125,27 +125,29 @@ def finalize_lot_inline(cur, bot_token, lot_id):
     for idx, (tg_id, uname, dname, price) in enumerate(bids):
         position = idx + 1
         is_winner = position <= winners_count
-        cur.execute(
-            """INSERT INTO auction_winners
-                 (lot_id, telegram_id, username, display_name, price, position, win_type, status, pay_deadline)
-               VALUES (%s, %s, %s, %s, %s, %s, 'auction', %s, %s)
-               ON CONFLICT (lot_id, telegram_id) DO UPDATE SET
-                 price = EXCLUDED.price, position = EXCLUDED.position,
-                 status = EXCLUDED.status, pay_deadline = EXCLUDED.pay_deadline""",
-            (lot_id, tg_id, uname, dname, price, position,
-             'awaiting_payment' if is_winner else 'reserve',
-             deadline if is_winner else None)
-        )
+        delivered = False
         if is_winner:
             text = (
                 f"🏆 <b>Вы выиграли лот!</b>\n\n<b>{esc(title)}</b>\n"
                 f"Ваша цена: <b>{int(price)} ₽</b>\n"
                 f"Выкупите до: <b>{deadline.strftime('%d.%m.%Y %H:%M')}</b>"
             )
-            tg_api(bot_token, 'sendMessage', {
+            delivered, _ = tg_api(bot_token, 'sendMessage', {
                 'chat_id': tg_id, 'text': text, 'parse_mode': 'HTML',
                 'reply_markup': {'inline_keyboard': [[{'text': 'Открыть лот', 'url': lot_url}]]},
             })
+        cur.execute(
+            """INSERT INTO auction_winners
+                 (lot_id, telegram_id, username, display_name, price, position, win_type, status, pay_deadline, notified)
+               VALUES (%s, %s, %s, %s, %s, %s, 'auction', %s, %s, %s)
+               ON CONFLICT (lot_id, telegram_id) DO UPDATE SET
+                 price = EXCLUDED.price, position = EXCLUDED.position,
+                 status = EXCLUDED.status, pay_deadline = EXCLUDED.pay_deadline,
+                 notified = auction_winners.notified OR EXCLUDED.notified""",
+            (lot_id, tg_id, uname, dname, price, position,
+             'awaiting_payment' if is_winner else 'reserve',
+             deadline if is_winner else None, delivered)
+        )
 
     cur.execute(
         "UPDATE auction_lots SET status = 'payment', finalized_at = now() WHERE id = %s",
@@ -383,7 +385,7 @@ def handler(event: dict, context) -> dict:
 
             # победители (итоги), если лот подведён
             cur.execute(
-                """SELECT display_name, username, price, position, status, pay_deadline
+                """SELECT display_name, username, price, position, status, pay_deadline, notified, telegram_id
                    FROM auction_winners WHERE lot_id = %s ORDER BY position ASC""",
                 (r[0],)
             )
@@ -393,6 +395,8 @@ def handler(event: dict, context) -> dict:
                     'display_name': w[0], 'username': w[1],
                     'position': w[3], 'status': w[4],
                     'pay_deadline': w[5].isoformat() if w[5] else None,
+                    'notified': w[6],
+                    'telegram_id': w[7],
                 }
                 if auction_role == 'admin':
                     item['price'] = float(w[2])
@@ -516,6 +520,48 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             cur.close(); conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True, 'outcome': outcome})}
+
+        if action == 'notify_winner_again':
+            row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)
+            if err:
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': err})}
+            win_tg = body.get('telegram_id')
+            cur.execute(
+                """SELECT w.telegram_id, w.price, w.status, w.pay_deadline, l.title
+                   FROM auction_winners w JOIN auction_lots l ON l.id = w.lot_id
+                   WHERE w.lot_id = %s AND w.telegram_id = %s""",
+                (row[0], win_tg)
+            )
+            wr = cur.fetchone()
+            if not wr:
+                cur.close(); conn.close()
+                return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Победитель не найден'})}
+            if wr[2] != 'awaiting_payment':
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Этот победитель уже не ожидает оплату'})}
+            bot_uname = os.environ.get('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+            if not bot_uname:
+                _, me = tg_api(bot_token, 'getMe', {})
+                bot_uname = me.get('username') if isinstance(me, dict) else None
+            lot_url = f"https://t.me/{bot_uname}?startapp=lot_{row[0]}" if bot_uname else "https://t.me"
+            dl = wr[3].strftime('%d.%m.%Y %H:%M') if wr[3] else ''
+            text = (
+                f"🏆 <b>Вы выиграли лот!</b>\n\n<b>{esc(wr[4])}</b>\n"
+                f"Ваша цена: <b>{int(wr[1])} ₽</b>\n"
+                f"Выкупите до: <b>{dl}</b>"
+            )
+            delivered, res = tg_api(bot_token, 'sendMessage', {
+                'chat_id': wr[0], 'text': text, 'parse_mode': 'HTML',
+                'reply_markup': {'inline_keyboard': [[{'text': 'Открыть лот', 'url': lot_url}]]},
+            })
+            if delivered:
+                cur.execute("UPDATE auction_winners SET notified = true WHERE lot_id = %s AND telegram_id = %s", (row[0], win_tg))
+                conn.commit()
+            cur.close(); conn.close()
+            if delivered:
+                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': False, 'error': str(res)})}
 
         if action == 'cancel':
             row, err = can_manage(cur, body.get('lot_id'), manager_id, auction_role)

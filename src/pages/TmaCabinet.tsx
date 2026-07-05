@@ -11,6 +11,8 @@ interface Winner {
   status: string;
   pay_deadline: string | null;
   price?: number;
+  notified: boolean;
+  telegram_id: number;
 }
 
 interface Lot {
@@ -80,6 +82,22 @@ const formatDate = (iso: string | null) => {
   return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
 
+const parseUtcMs = (iso: string): number => {
+  const hasTz = /[zZ]|[+-]\d{2}:\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : `${iso}Z`).getTime();
+};
+
+const formatRemaining = (deadlineIso: string, nowMs: number): string | null => {
+  const diff = parseUtcMs(deadlineIso) - nowMs;
+  if (diff <= 0) return null;
+  const totalSec = Math.floor(diff / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h} ч ${String(m).padStart(2, "0")} мин`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
 const TmaCabinet = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -91,8 +109,44 @@ const TmaCabinet = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
   const [tab, setTab] = useState<TabKey>("active");
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  const hasAwaiting = !!selected?.winners?.some((w) => w.status === "awaiting_payment");
+
+  useEffect(() => {
+    if (!hasAwaiting) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [hasAwaiting]);
 
   const initData = () => getTg()?.initData || "";
+
+  const notifyAgain = async (lot: Lot, w: Winner) => {
+    setBusy(true);
+    try {
+      const resp = await fetch(LOTS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          init_data: initData(),
+          action: "notify_winner_again",
+          lot_id: lot.id,
+          telegram_id: w.telegram_id,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.ok) {
+        window.alert("Уведомление отправлено.");
+        await openDetails(lot);
+      } else {
+        window.alert(data.error || "Не удалось отправить. Победитель ещё не открывал бота.");
+      }
+    } catch {
+      window.alert("Ошибка соединения.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openDetails = async (lot: Lot) => {
     setSelected(lot);
@@ -455,21 +509,58 @@ const TmaCabinet = () => {
                 )}
 
                 {selected.winners && selected.winners.length > 0 && (
-                  <div className="rounded-2xl border border-border bg-background p-3 flex flex-col gap-2">
+                  <div className="rounded-2xl border border-border bg-background p-3 flex flex-col gap-3">
                     <div className="text-sm font-medium">Победители</div>
-                    {selected.winners.map((w) => (
-                      <div key={w.position} className="flex items-center justify-between text-sm">
-                        <span className="truncate">
-                          {w.position}. {w.display_name || (w.username ? `@${w.username}` : "участник")}
-                          {w.price !== undefined && (
-                            <span className="text-muted-foreground"> · {w.price.toLocaleString("ru-RU")} ₽</span>
+                    {selected.winners.map((w) => {
+                      const left =
+                        w.status === "awaiting_payment" && w.pay_deadline
+                          ? formatRemaining(w.pay_deadline, nowMs)
+                          : null;
+                      return (
+                        <div key={w.position} className="flex flex-col gap-1 border-b border-border/60 pb-2 last:border-0 last:pb-0">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="truncate">
+                              {w.position}. {w.display_name || (w.username ? `@${w.username}` : "участник")}
+                              {w.price !== undefined && (
+                                <span className="text-muted-foreground"> · {w.price.toLocaleString("ru-RU")} ₽</span>
+                              )}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                              {WINNER_STATUS_LABEL[w.status] || w.status}
+                            </span>
+                          </div>
+
+                          {w.status === "awaiting_payment" && (
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <Icon name="Timer" size={13} className={left ? "text-primary" : "text-red-400"} />
+                              {left ? (
+                                <span className="text-muted-foreground">
+                                  осталось <span className="text-foreground tabular-nums">{left}</span>
+                                </span>
+                              ) : (
+                                <span className="text-red-400">время истекло</span>
+                              )}
+                            </div>
                           )}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">
-                          {WINNER_STATUS_LABEL[w.status] || w.status}
-                        </span>
-                      </div>
-                    ))}
+
+                          {w.status === "awaiting_payment" && !w.notified && (
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="flex items-center gap-1 text-amber-400">
+                                <Icon name="TriangleAlert" size={13} />
+                                уведомление не доставлено
+                              </span>
+                              <button
+                                disabled={busy}
+                                onClick={() => notifyAgain(selected, w)}
+                                className="rounded-lg border border-border bg-card px-2.5 py-1 font-medium disabled:opacity-50"
+                              >
+                                Уведомить
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

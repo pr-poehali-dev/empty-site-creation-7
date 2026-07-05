@@ -67,10 +67,11 @@ def notify_winner(bot_token, cur, lot_id, title, telegram_id, price, deadline):
         f"Ваша цена: <b>{int(price)} ₽</b>\n"
         f"Выкупите до: <b>{dl}</b>"
     )
-    tg_api(bot_token, 'sendMessage', {
+    ok, _ = tg_api(bot_token, 'sendMessage', {
         'chat_id': telegram_id, 'text': text, 'parse_mode': 'HTML',
         'reply_markup': {'inline_keyboard': [[{'text': 'Открыть лот', 'url': url}]]},
     })
+    return ok
 
 
 def notify_staff_low_bids(bot_token, cur, lot):
@@ -164,17 +165,19 @@ def finalize_lot(bot_token, cur, lot):
         else:
             status = 'reserve'
             pay_deadline = None
+        delivered = False
+        if position <= winners_count:
+            delivered = notify_winner(bot_token, cur, lot_id, lot['title'], tg_id, price, deadline)
         cur.execute(
             """INSERT INTO auction_winners
-                 (lot_id, telegram_id, username, display_name, price, position, win_type, status, pay_deadline)
-               VALUES (%s, %s, %s, %s, %s, %s, 'auction', %s, %s)
+                 (lot_id, telegram_id, username, display_name, price, position, win_type, status, pay_deadline, notified)
+               VALUES (%s, %s, %s, %s, %s, %s, 'auction', %s, %s, %s)
                ON CONFLICT (lot_id, telegram_id) DO UPDATE SET
                  price = EXCLUDED.price, position = EXCLUDED.position,
-                 status = EXCLUDED.status, pay_deadline = EXCLUDED.pay_deadline""",
-            (lot_id, tg_id, uname, dname, price, position, status, pay_deadline)
+                 status = EXCLUDED.status, pay_deadline = EXCLUDED.pay_deadline,
+                 notified = auction_winners.notified OR EXCLUDED.notified""",
+            (lot_id, tg_id, uname, dname, price, position, status, pay_deadline, delivered)
         )
-        if position <= winners_count:
-            notify_winner(bot_token, cur, lot_id, lot['title'], tg_id, price, deadline)
 
     cur.execute(
         "UPDATE auction_lots SET status = 'payment', finalized_at = now() WHERE id = %s",
@@ -207,11 +210,11 @@ def process_expired_payments(bot_token, cur):
         nxt = cur.fetchone()
         if nxt:
             new_deadline = now_utc() + timedelta(minutes=deadline_min or 60)
+            delivered = notify_winner(bot_token, cur, lot_id, title, nxt[1], nxt[2], new_deadline)
             cur.execute(
-                "UPDATE auction_winners SET status = 'awaiting_payment', pay_deadline = %s WHERE id = %s",
-                (new_deadline, nxt[0])
+                "UPDATE auction_winners SET status = 'awaiting_payment', pay_deadline = %s, notified = %s, reminded = false WHERE id = %s",
+                (new_deadline, delivered, nxt[0])
             )
-            notify_winner(bot_token, cur, lot_id, title, nxt[1], nxt[2], new_deadline)
         else:
             # резерва нет — если больше нет ожидающих оплату, лот завершён
             cur.execute(
@@ -245,12 +248,45 @@ def warn_low_bids(bot_token, cur):
         cur.execute("UPDATE auction_lots SET low_bids_warned = true WHERE id = %s", (lot['id'],))
 
 
+REMIND_BEFORE_MINUTES = 5  # за сколько минут до конца оплаты напомнить победителю
+
+
+def remind_soon_expire(bot_token, cur):
+    """Напоминает победителю за ~5 минут до истечения срока оплаты (один раз)."""
+    remind_until = now_utc() + timedelta(minutes=REMIND_BEFORE_MINUTES)
+    cur.execute(
+        """SELECT w.id, w.lot_id, w.telegram_id, w.price, l.title
+           FROM auction_winners w
+           JOIN auction_lots l ON l.id = w.lot_id
+           WHERE w.status = 'awaiting_payment'
+             AND w.reminded = false
+             AND w.pay_deadline IS NOT NULL
+             AND w.pay_deadline > now()
+             AND w.pay_deadline <= %s""",
+        (remind_until,)
+    )
+    for win_id, lot_id, tg_id, price, title in cur.fetchall():
+        url = lot_app_url(bot_token, lot_id)
+        text = (
+            f"⏳ <b>Осталось около 5 минут на оплату!</b>\n\n"
+            f"<b>{esc(title)}</b>\n"
+            f"Ваша цена: <b>{int(price)} ₽</b>\n"
+            f"Если не выкупить — право перейдёт следующему участнику."
+        )
+        tg_api(bot_token, 'sendMessage', {
+            'chat_id': tg_id, 'text': text, 'parse_mode': 'HTML',
+            'reply_markup': {'inline_keyboard': [[{'text': 'Открыть лот', 'url': url}]]},
+        })
+        cur.execute("UPDATE auction_winners SET reminded = true WHERE id = %s", (win_id,))
+
+
 def run_finalize(cur, bot_token, force_lot_id=None):
-    """Основной проход: предупреждения, завершение по времени, переход по неоплате."""
+    """Основной проход: предупреждения, завершение по времени, напоминания, переход по неоплате."""
     result = {'warned': 0, 'finalized': [], 'expired_processed': True}
 
     if force_lot_id is None:
         warn_low_bids(bot_token, cur)
+        remind_soon_expire(bot_token, cur)
 
     # лоты к завершению
     if force_lot_id is not None:
