@@ -42,6 +42,7 @@ import OwnerSettings from "./pages/OwnerSettings";
 import OwnerAuctionSettings from "./pages/OwnerAuctionSettings";
 import OwnerAuctions from "./pages/OwnerAuctions";
 import OwnerBackup from "./pages/OwnerBackup";
+import OwnerScheduler from "./pages/OwnerScheduler";
 import TTN from "./pages/TTN";
 import TTNSettings from "./pages/TTNSettings";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -101,6 +102,7 @@ const App = () => (
           <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute><OwnerSettings /></ProtectedRoute>} />
           <Route path="/admin/backup" element={<ProtectedRoute><OwnerBackup /></ProtectedRoute>} />
+          <Route path="/admin/scheduler" element={<ProtectedRoute><OwnerScheduler /></ProtectedRoute>} />
           <Route path="/admin/ttn" element={<ProtectedRoute><TTN /></ProtectedRoute>} />
           <Route path="/admin/ttn/settings" element={<ProtectedRoute><TTNSettings /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
