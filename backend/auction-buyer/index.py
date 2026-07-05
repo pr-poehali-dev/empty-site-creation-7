@@ -3,11 +3,25 @@ import os
 import hmac
 import hashlib
 import time
+import socket
 import urllib.request
 import urllib.error
 from urllib.parse import parse_qsl
 from datetime import datetime, timezone
 import psycopg2
+
+
+# --- Форсируем IPv4 для исходящих соединений ---
+# В окружении облачной функции попытка соединения по IPv6 к api.telegram.org
+# зависает до таймаута (нет рабочего IPv6-маршрута). Оставляем только IPv4.
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+socket.getaddrinfo = _ipv4_only_getaddrinfo
 
 
 def get_db():
@@ -29,7 +43,7 @@ def tg_api(bot_token, method, payload, retries=3):
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
         t0 = time.time()
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 res = json.loads(resp.read().decode())
             print(f'[tg_api] {method} attempt={attempt} took={time.time()-t0:.2f}s ok={res.get("ok")}')
             return bool(res.get('ok')), res.get('result') or res.get('description')
