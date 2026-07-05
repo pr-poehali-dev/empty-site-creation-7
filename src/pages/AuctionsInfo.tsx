@@ -592,6 +592,105 @@ const StageCleanupContent = () => (
   </div>
 );
 
+const StagePlansContent = () => (
+  <div className="space-y-6 text-sm leading-relaxed">
+    <div className="rounded-lg border border-sky-500/20 bg-sky-500/[0.06] p-4">
+      <h3 className="text-base font-semibold text-foreground mb-2">Что это за вкладка</h3>
+      <p className="text-muted-foreground">
+        Здесь собраны согласованные, но ещё не сделанные доработки — чтобы не забыть договорённости.
+        Как только пункт реализуем, переносим его в соответствующий этап.
+      </p>
+    </div>
+
+    <div>
+      <h3 className="text-base font-semibold text-foreground mb-3">Пункт 1. Выкуп по начальной цене</h3>
+      <p className="text-muted-foreground">
+        Сейчас кнопка «Забрать по начальной цене» просто ставит ставку, равную стартовой цене — и всё.
+        Ни оплаты, ни уменьшения остатка, ни уведомлений. Ниже — как это должно работать.
+      </p>
+    </div>
+
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">Что видит покупатель</h4>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li>Нажимает <span className="text-foreground font-medium">«Забрать по начальной цене»</span>.</li>
+        <li>
+          Появляется <span className="text-foreground font-medium">заглушка оплаты</span> — окошко
+          «Вы оплатили?» с кнопками «Да» / «Нет». Реальной оплаты пока нет — это временная имитация,
+          чтобы двигаться дальше.
+        </li>
+        <li><span className="text-foreground font-medium">«Нет»</span> — окно закрывается, ничего не меняется. Прежняя ставка (если была) остаётся на месте.</li>
+        <li><span className="text-foreground font-medium">«Да»</span> — выкуп совершается.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">Что происходит при «Да»</h4>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li>Если у покупателя была обычная ставка на этот лот — она <span className="text-foreground font-medium">удаляется</span> (только сейчас, по факту оплаты).</li>
+        <li>От остатка лота отнимается <span className="text-foreground font-medium">1 штука</span>.</li>
+        <li>Создаётся запись выкупа: покупатель, цена = начальная, время, тип «выкуп по начальной цене», статус «оплачено».</li>
+        <li>
+          <span className="text-foreground font-medium">Покупателю в личку</span> — текст из настроек
+          «Сообщение покупателю при выкупе товара» (например: «Вы выкупили лот №N «Название». Вы можете
+          забрать товар самовывозом. ул. Карвата 88В.»).
+        </li>
+        <li>
+          <span className="text-foreground font-medium">Сотруднику, оформившему лот, в личку</span> —
+          «Покупатель [ссылка на личку] выкупил лот №N «Название» по начальной цене. Свяжитесь с ним,
+          чтобы обговорить передачу товара.»
+        </li>
+        <li>
+          Если остаток стал <span className="text-foreground font-medium">0</span> — лот завершается.
+          Всем, кто торговался обычными ставками и ничего не выиграл, уходит сообщение «Лот завершён,
+          товары разобрали по начальной цене».
+        </li>
+      </ul>
+      <p className="text-muted-foreground mt-2">
+        <span className="text-foreground font-medium">Важно:</span> каждое сообщение (покупателю,
+        сотруднику, проигравшим) сопровождается кнопкой <span className="text-foreground font-medium">«Перейти в лот»</span>.
+      </p>
+    </div>
+
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">Что видит сотрудник в мини-приложении</h4>
+      <p className="text-muted-foreground">
+        В карточке лота — отметка «выкуплен по начальной цене»: кто выкупил, дата и время, сумма выкупа
+        и <span className="text-foreground font-medium">ссылка на личку покупателя</span> (по ID Telegram — работает даже
+        без @username). Если единиц несколько — несколько таких записей.
+      </p>
+    </div>
+
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">Настройка (кабинет владельца → «Аукционы»)</h4>
+      <p className="text-muted-foreground">
+        Новое поле <span className="text-foreground font-medium">«Сообщение покупателю при выкупе товара»</span> —
+        текст, который уходит покупателю. Хранится в настройках, меняется без правок кода.
+      </p>
+    </div>
+
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">План работ</h4>
+      <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <li><span className="text-foreground font-medium">База:</span> хранение записей мгновенного выкупа (кто, лот, цена, время, тип «buy_now», статус «оплачено») и поле настройки текста сообщения.</li>
+        <li><span className="text-foreground font-medium">Бот-логика покупателя:</span> «Забрать по цене» → окно «Вы оплатили?» → при «Да» удалить ставку, списать остаток, создать запись выкупа, отправить сообщения покупателю и сотруднику; при остатке 0 — завершить лот и оповестить проигравших.</li>
+        <li><span className="text-foreground font-medium">Настройки:</span> сохранение и чтение текста «Сообщение покупателю при выкупе».</li>
+        <li><span className="text-foreground font-medium">Экран покупателя:</span> окошко «Вы оплатили? Да / Нет».</li>
+        <li><span className="text-foreground font-medium">Кабинет сотрудника:</span> показ отметок о выкупе (кто / когда / сумма / ссылка на личку).</li>
+        <li><span className="text-foreground font-medium">Настройки владельца:</span> поле ввода текста сообщения на странице «Аукционы».</li>
+      </ul>
+    </div>
+
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-4">
+      <p className="text-muted-foreground">
+        <span className="text-foreground font-medium">Условие:</span> все уведомления по выкупу
+        отправляем через общий сервер сообщений (очередь), а не прямой отправкой — чтобы вся доставка
+        жила в одном месте.
+      </p>
+    </div>
+  </div>
+);
+
 const StageStub = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
     <div className="w-12 h-12 rounded-xl bg-white/[0.06] flex items-center justify-center mb-3">
@@ -609,6 +708,7 @@ const STAGES: Stage[] = [
   { key: "stage4", label: "Этап 4", done: true, content: <Stage4Content /> },
   { key: "stage5", label: "Этап 5", done: true, content: <Stage5Content /> },
   { key: "cleanup", label: "Удаление косяков", done: false, content: <StageCleanupContent /> },
+  { key: "plans", label: "Планы", done: false, content: <StagePlansContent /> },
 ];
 
 const AuctionsInfo = () => {
