@@ -6,7 +6,12 @@
 Единый узел отправки уведомлений. Функции НЕ отправляют в Telegram сами —
 они кладут задание в этот сервер, а он рассылает с учётом настроек скорости,
 повторов, лимитов и отложенного времени. Рассылку запускает Толкатель
-(scheduler) раз в минуту режимом ?action=run.
+(scheduler) раз в минуту режимом ?action=run. За ОДИН запуск воркер крутит
+очередь НЕПРЕРЫВНО ~55 сек (WORKER_MAX_SECONDS), выгребая её потоком
+rate_per_second сообщений/сек, пока очередь не опустеет или не выйдет время.
+Проходы крона стыкуются без простоя — реальная пропускная способность
+= rate_per_second * 60 сообщений в минуту (не одна пачка раз в минуту!).
+ВАЖНО: таймаут функции message-server должен быть = 1 минута.
 
 URL сервера (из func2url.json): message-server
 Все запросы — POST, тело в JSON.
@@ -167,8 +172,12 @@ def report_result(report_url, payload):
         return False
 
 
+WORKER_MAX_SECONDS = 55  # сколько крутить очередь за один запуск (таймаут функции = 60с)
+
+
 def run_worker(cur, conn):
-    """Рассылает созревшие сообщения с учётом настроек скорости, повторов и лимитов."""
+    """Рассылает созревшие сообщения потоком ~rate/сек, непрерывно до опустошения очереди
+    или лимита времени (WORKER_MAX_SECONDS). Крон будит раз в минуту — проходы стыкуются без простоя."""
     settings = load_settings(cur)
     if not settings['enabled']:
         return {'skipped': 'disabled'}
@@ -177,24 +186,53 @@ def run_worker(cur, conn):
     if not bot_token:
         return {'error': 'no_bot_token'}
 
-    now = now_utc()
     rate = max(1, settings['rate_per_second'])
     delay = 1.0 / rate
     per_user_limit = settings['per_user_per_minute']
 
-    cur.execute(
-        """SELECT id, channel, address, text, button_text, button_url, parse_mode,
-                  attempts, max_attempts, dedup_key, report_url
-           FROM message_queue
-           WHERE status = 'pending' AND send_after <= %s
-           ORDER BY send_after ASC, id ASC
-           LIMIT 200""",
-        (now,)
-    )
-    rows = cur.fetchall()
+    worker_start = time.time()
+    sent, failed, deferred, processed = 0, 0, 0, 0
+
+    # Внешний цикл: тянем пачки, пока есть что слать и не вышло время
+    while time.time() - worker_start < WORKER_MAX_SECONDS:
+        now = now_utc()
+        cur.execute(
+            """SELECT id, channel, address, text, button_text, button_url, parse_mode,
+                      attempts, max_attempts, dedup_key, report_url
+               FROM message_queue
+               WHERE status = 'pending' AND send_after <= %s
+               ORDER BY send_after ASC, id ASC
+               LIMIT 200""",
+            (now,)
+        )
+        rows = cur.fetchall()
+        if not rows:
+            break  # очередь пуста — не ждём зря
+        processed += len(rows)
+
+        batch_done = _process_batch(
+            cur, conn, rows, bot_token, settings,
+            delay, per_user_limit, worker_start
+        )
+        sent += batch_done['sent']
+        failed += batch_done['failed']
+        deferred += batch_done['deferred']
+        if batch_done['time_up']:
+            break
+
+    return {'sent': sent, 'failed': failed, 'deferred': deferred, 'processed': processed}
+
+
+def _process_batch(cur, conn, rows, bot_token, settings, delay, per_user_limit, worker_start):
+    """Отправляет одну пачку сообщений с паузой delay между отправками. Возвращает счётчики."""
     sent, failed, deferred = 0, 0, 0
+    time_up = False
 
     for r in rows:
+        if time.time() - worker_start >= WORKER_MAX_SECONDS:
+            time_up = True
+            break
+        now = now_utc()
         job = {
             'id': r[0], 'channel': r[1], 'address': r[2], 'text': r[3],
             'button_text': r[4], 'button_url': r[5], 'parse_mode': r[6],
@@ -257,7 +295,7 @@ def run_worker(cur, conn):
         conn.commit()
         time.sleep(delay)
 
-    return {'sent': sent, 'failed': failed, 'deferred': deferred, 'processed': len(rows)}
+    return {'sent': sent, 'failed': failed, 'deferred': deferred, 'time_up': time_up}
 
 
 def json_resp(status, data):
