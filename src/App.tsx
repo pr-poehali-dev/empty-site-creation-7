@@ -39,6 +39,7 @@ import Brands from "./pages/Brands";
 import ProductGroups from "./pages/ProductGroups";
 import Labels from "./pages/Labels";
 import OwnerSettings from "./pages/OwnerSettings";
+import OwnerAuctionSettings from "./pages/OwnerAuctionSettings";
 import OwnerBackup from "./pages/OwnerBackup";
 import TTN from "./pages/TTN";
 import TTNSettings from "./pages/TTNSettings";
@@ -87,6 +88,7 @@ const App = () => (
           <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
           <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />
           <Route path="/admin/auctions" element={<ProtectedRoute><AuctionsInfo /></ProtectedRoute>} />
+          <Route path="/admin/auctions/settings" element={<ProtectedRoute><OwnerAuctionSettings /></ProtectedRoute>} />
           <Route path="/admin/wholesalers" element={<ProtectedRoute><Wholesalers /></ProtectedRoute>} />
           <Route path="/admin/pricing" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
           <Route path="/admin/pricing/:id" element={<ProtectedRoute><PricingRulesEdit /></ProtectedRoute>} />
