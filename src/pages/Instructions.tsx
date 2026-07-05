@@ -599,14 +599,14 @@ const Instructions = () => {
               <p className="text-sm text-muted-foreground">Карта всей системы для Юры: страницы, бэкенд, база, особенности — чтобы не изучать файлы заново</p>
             </button>
             <button
-              onClick={() => navigate("/admin/auctions")}
+              onClick={() => navigate("/admin/auctions/info")}
               className="sm:col-span-2 rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
                   <Icon name="Gavel" size={20} className="text-amber-400" />
                 </div>
-                <span className="text-lg font-semibold">Аукционы</span>
+                <span className="text-lg font-semibold">Создание аукциона</span>
               </div>
               <p className="text-sm text-muted-foreground">Ход разработки аукционов по этапам: что сделано и зачем</p>
             </button>

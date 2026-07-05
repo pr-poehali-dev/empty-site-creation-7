@@ -636,17 +636,8 @@ const AuctionsInfo = () => {
             >
               <Icon name="ArrowLeft" size={18} />
             </Button>
-            <h1 className="text-lg sm:text-xl font-semibold">Аукционы</h1>
+            <h1 className="text-lg sm:text-xl font-semibold">Создание аукциона</h1>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-2"
-            onClick={() => navigate("/admin/auctions/settings")}
-          >
-            <Icon name="Settings" size={16} />
-            <span className="hidden sm:inline">Настройки</span>
-          </Button>
         </div>
       </header>
 

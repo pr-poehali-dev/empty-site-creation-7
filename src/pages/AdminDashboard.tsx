@@ -612,6 +612,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Группы</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.auctions" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/auctions")}
+            >
+              <Icon name="Gavel" size={20} />
+              <span className="font-medium">Аукционы</span>
+            </Button>
+          </DebugBadge>
         </div>
 
         <div className="flex items-center justify-between mb-5 sm:mb-6">
