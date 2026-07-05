@@ -37,6 +37,30 @@ def tg_api(bot_token, method, payload):
         return False, str(e)
 
 
+MESSAGE_SERVER_URL = 'https://functions.poehali.dev/5196ad48-3bd4-4763-bb20-ca8c9b91b508'
+
+
+def enqueue_message(address, text, button_text=None, button_url=None,
+                    dedup_key=None, source='auction-lots'):
+    """Ставит задание в Сервер сообщений (единый узел отправки). Возвращает True, если принято."""
+    payload = {'address': str(address), 'text': text, 'parse_mode': 'HTML', 'source': source}
+    if button_text and button_url:
+        payload['button_text'] = button_text
+        payload['button_url'] = button_url
+    if dedup_key:
+        payload['dedup_key'] = dedup_key
+    try:
+        req = urllib.request.Request(
+            MESSAGE_SERVER_URL + '?action=enqueue',
+            data=json.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            res = json.loads(resp.read().decode())
+        return bool(res.get('success'))
+    except Exception:
+        return False
+
+
 def esc(text):
     if text is None:
         return ''
@@ -132,10 +156,10 @@ def finalize_lot_inline(cur, bot_token, lot_id):
                 f"Ваша цена: <b>{int(price)} ₽</b>\n"
                 f"Выкупите до: <b>{deadline.strftime('%d.%m.%Y %H:%M')}</b>"
             )
-            delivered, _ = tg_api(bot_token, 'sendMessage', {
-                'chat_id': tg_id, 'text': text, 'parse_mode': 'HTML',
-                'reply_markup': {'inline_keyboard': [[{'text': 'Открыть лот', 'url': lot_url}]]},
-            })
+            delivered = enqueue_message(
+                tg_id, text, button_text='Открыть лот', button_url=lot_url,
+                dedup_key=f'winner_lot_{lot_id}_{tg_id}'
+            )
         cur.execute(
             """INSERT INTO auction_winners
                  (lot_id, telegram_id, username, display_name, price, position, win_type, status, pay_deadline, notified)
