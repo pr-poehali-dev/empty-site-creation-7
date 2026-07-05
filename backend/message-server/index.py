@@ -173,17 +173,29 @@ def report_result(report_url, payload):
 
 
 WORKER_MAX_SECONDS = 55  # сколько крутить очередь за один запуск (таймаут функции = 60с)
-WORKER_LOCK_KEY = 918273645  # ключ advisory-lock: гарантирует один воркер за раз
+WORKER_LOCK_TTL = 70     # сек: протухший замок (если воркер упал) освобождается сам
 
 
-def try_acquire_worker_lock(cur):
-    """Пытается взять глобальный замок воркера (не блокирующе). True — взяли, можно молотить."""
-    cur.execute("SELECT pg_try_advisory_lock(%s)", (WORKER_LOCK_KEY,))
-    return bool(cur.fetchone()[0])
+def try_acquire_worker_lock(cur, conn):
+    """Берёт глобальный замок воркера через таблицу (advisory-lock забанен платформой).
+    Замок берётся, только если предыдущий протух (старше WORKER_LOCK_TTL) — атомарно.
+    True — взяли, можно молотить; False — уже кто-то крутит."""
+    cur.execute(
+        f"""UPDATE message_worker_lock
+           SET locked_at = now()
+           WHERE id = 1 AND locked_at < now() - interval '{int(WORKER_LOCK_TTL)} seconds'"""
+    )
+    got = cur.rowcount > 0
+    conn.commit()
+    return got
 
 
-def release_worker_lock(cur):
-    cur.execute("SELECT pg_advisory_unlock(%s)", (WORKER_LOCK_KEY,))
+def release_worker_lock(cur, conn):
+    # сдвигаем метку в прошлое — замок сразу свободен для следующего воркера
+    cur.execute(
+        "UPDATE message_worker_lock SET locked_at = now() - interval '1 hour' WHERE id = 1"
+    )
+    conn.commit()
 
 
 def run_worker(cur, conn):
@@ -198,7 +210,7 @@ def run_worker(cur, conn):
         return {'error': 'no_bot_token'}
 
     # только один воркер за раз: если уже кто-то молотит — выходим, он всё разгребёт
-    if not try_acquire_worker_lock(cur):
+    if not try_acquire_worker_lock(cur, conn):
         return {'skipped': 'busy'}
 
     rate = max(1, settings['rate_per_second'])
@@ -236,7 +248,7 @@ def run_worker(cur, conn):
             if batch_done['time_up']:
                 break
     finally:
-        release_worker_lock(cur)
+        release_worker_lock(cur, conn)
 
     return {'sent': sent, 'failed': failed, 'deferred': deferred, 'processed': processed}
 
