@@ -100,7 +100,7 @@ URL сервера (из func2url.json): message-server
 СТАТУСЫ ЗАДАНИЯ: pending (ждёт) -> sent (отправлено) | error (не доставлено)
                  | cancelled (отменено владельцем)
 СЛУЖЕБНЫЕ РЕЖИМЫ (не для функций): ?action=run (Толкатель, по ключу),
-   settings/stats/list/retry/cancel — только владелец (по токену).
+   settings/stats/list/cancel — только владелец (по токену).
 ==============================================================================
 """
 import json
@@ -581,20 +581,6 @@ def handler(event: dict, context) -> dict:
                 'status_text': human_status(r[4], r[10], r[6], r[5], r[7], now),
             } for r in cur.fetchall()]
             return json_resp(200, {'items': items})
-
-        if action == 'retry':
-            mid = body.get('id')
-            if mid:
-                cur.execute(
-                    "UPDATE message_queue SET status = 'pending', attempts = 0, send_after = now(), last_error = NULL WHERE id = %s",
-                    (int(mid),)
-                )
-            else:
-                cur.execute(
-                    "UPDATE message_queue SET status = 'pending', attempts = 0, send_after = now(), last_error = NULL WHERE status = 'error'"
-                )
-            conn.commit()
-            return json_resp(200, {'success': True})
 
         if action == 'cancel':
             mid = body.get('id')

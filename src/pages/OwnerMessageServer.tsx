@@ -132,19 +132,6 @@ const OwnerMessageServer = () => {
     }
   };
 
-  const retryErrors = async () => {
-    setBusy(true);
-    try {
-      await api("retry", { method: "POST", body: JSON.stringify({}) });
-      toast({ title: "Сбойные поставлены в очередь заново" });
-      refreshMonitor();
-    } catch (e) {
-      toast({ title: (e as Error).message, variant: "destructive" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const cancelItem = async (id: number) => {
     setBusy(true);
     try {
@@ -258,18 +245,6 @@ const OwnerMessageServer = () => {
                   <Icon name="RefreshCw" size={14} />
                   Обновить
                 </Button>
-                {(stats?.errors ?? 0) > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={retryErrors}
-                    className="gap-1.5 h-8"
-                  >
-                    <Icon name="RotateCcw" size={14} />
-                    Переотправить сбойные
-                  </Button>
-                )}
               </div>
             </div>
 
