@@ -4,18 +4,28 @@
 ==============================================================================
 
 Единый узел отправки уведомлений. Функции НЕ отправляют в Telegram сами —
-они кладут задание в этот сервер, а он рассылает с учётом настроек скорости,
-повторов, лимитов и отложенного времени.
+они кладут задание в этот сервер, а он рассылает с учётом порядка, повторов,
+лимитов и отложенного времени.
+
+ПОРЯДОК (главное): у каждого сообщения свой номер (id, выдаёт база сама при
+записи — синхронизация функций не нужна). Воркер шлёт строго по возрастанию
+номера, по одному. Одному получателю — строго по очереди (позднее не обгонит
+раннее). Разным получателям — можно параллельно: если у одного временный затык,
+его хвост откладывается, а сообщения другим уходят.
 
 СКОРОСТЬ: enqueue НЕ рассылает сам (иначе отправитель ждёт и сайт тормозит) —
-он лишь кладёт задание и даёт неблокирующий "пинок" на ?action=run, который
-запускает рассылку в ОТДЕЛЬНОМ вызове функции. Так отправитель отвечает мгновенно,
-а сообщения уходят почти сразу. За ОДИН запуск воркер крутит очередь НЕПРЕРЫВНО
-~55 сек (WORKER_MAX_SECONDS) потоком rate_per_second сообщений/сек, пока очередь
-не опустеет или не выйдет время. Толкатель (scheduler) раз в минуту зовёт тот же
-?action=run — как страховка (отложенные send_after и повторы после сбоя).
-Один воркер за раз гарантирует замок в таблице message_worker_lock (TTL 70с).
-ВАЖНО: таймаут функции message-server должен быть = 1 минута.
+кладёт задание и даёт неблокирующий "пинок" на ?action=run. Рассылка идёт в
+ОТДЕЛЬНОМ вызове. Толкатель (scheduler) раз в минуту зовёт тот же ?action=run —
+ТОЛЬКО страховка (отложенные и повторы после сбоя).
+
+ОДИН АКТИВНЫЙ ВОРКЕР ("новый гасит старого"): при старте воркер ставит свой id
+владельцем в message_worker_lock.owner. Старый воркер после каждого сообщения
+сверяет owner — если сменился, тихо уступает эстафету. Гонок и дублей нет.
+
+ОШИБКИ Telegram (разбор по коду ответа, поле tg_code + текст в last_error):
+  - навсегда (403 заблокирован/выгнан/удалён, 400 chat not found) -> сразу error;
+  - временно (429 -> ждём retry_after; 5xx/сеть) -> повтор, до 3 попыток -> error.
+ВАЖНО: таймаут функции message-server = 1 минута (предохранитель HARD_TIME_LIMIT).
 
 URL сервера (из func2url.json): message-server
 Все запросы — POST, тело в JSON.
@@ -133,24 +143,82 @@ def load_settings(cur):
 
 
 def tg_api(bot_token, method, payload):
+    """Возвращает (ok, code, reason, retry_after).
+    code — HTTP-код ответа Telegram (200 при успехе, 0 при обрыве сети).
+    reason — текст причины как есть. retry_after — сек ожидания при 429 (иначе 0)."""
     url = f'https://api.telegram.org/bot{bot_token}/{method}'
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             res = json.loads(resp.read().decode())
-        return bool(res.get('ok')), res.get('description') or 'ok'
+        if res.get('ok'):
+            return True, 200, 'ok', 0
+        return False, 200, res.get('description') or 'unknown', 0
     except urllib.error.HTTPError as e:
         try:
-            return False, json.loads(e.read().decode()).get('description', f'HTTP {e.code}')
+            body = json.loads(e.read().decode())
+            reason = body.get('description', f'HTTP {e.code}')
+            retry_after = int((body.get('parameters') or {}).get('retry_after') or 0)
         except Exception:
-            return False, f'HTTP {e.code}'
+            reason, retry_after = f'HTTP {e.code}', 0
+        return False, e.code, reason, retry_after
     except Exception as e:
-        return False, str(e)
+        return False, 0, str(e), 0  # обрыв сети / таймаут — код 0 (временная)
+
+
+# --- Классификация ответа Telegram: навсегда недоставляемо или временная ошибка ---
+def classify_tg(code, reason):
+    """Возвращает 'permanent' (повторять бессмысленно) или 'temporary' (повторить)."""
+    low = (reason or '').lower()
+    # Навсегда: бот заблокирован/выгнан, аккаунт удалён, чат/пользователь не найден
+    permanent_markers = (
+        'bot was blocked', 'user is deactivated', 'bot was kicked',
+        'chat not found', 'user not found', 'peer_id_invalid',
+        'bot can\'t initiate', "bot can't initiate", 'have no rights',
+        'not enough rights', 'bot is not a member',
+    )
+    if any(m in low for m in permanent_markers):
+        return 'permanent'
+    # 403 (доступ запрещён) — почти всегда навсегда
+    if code == 403:
+        return 'permanent'
+    # 400 с "chat not found" уже отловлено выше; прочие 400 — обычно битый payload, тоже навсегда
+    if code == 400:
+        return 'permanent'
+    # 429 (перегрузка), 5xx (сбой Telegram), 0 (сеть) — временные, повторяем
+    return 'temporary'
+
+
+def human_status(status, tg_code, reason, attempts, send_after, now):
+    """Понятная расшифровка для монитора очереди по коду ответа Telegram."""
+    if status == 'sent':
+        return 'Отправлено'
+    if status == 'cancelled':
+        return 'Отменено'
+    if status == 'error':
+        low = (reason or '').lower()
+        if 'bot was blocked' in low:
+            return 'Не доставлено: пользователь заблокировал бота'
+        if 'user is deactivated' in low:
+            return 'Не доставлено: аккаунт удалён'
+        if 'bot was kicked' in low or 'bot is not a member' in low:
+            return 'Не доставлено: бот удалён из чата'
+        if 'chat not found' in low or 'user not found' in low:
+            return 'Не доставлено: чат не найден (пользователь не писал боту)'
+        if tg_code and tg_code >= 500:
+            return 'Не доставлено: сбой Telegram (исчерпаны попытки)'
+        return 'Не доставлено: ' + (reason or 'ошибка')
+    # pending
+    if send_after and send_after > now:
+        return f'Отложено до {send_after.strftime("%H:%M")}'
+    if attempts and attempts > 0:
+        return f'Повтор (попытка {attempts + 1}): ' + (reason or 'временная ошибка')
+    return 'Ждёт отправки'
 
 
 def send_telegram(bot_token, job):
-    """Отправляет одно сообщение в Telegram. job — кортеж полей."""
+    """Отправляет одно сообщение. Возвращает (ok, code, reason, retry_after)."""
     payload = {
         'chat_id': job['address'],
         'text': job['text'],
@@ -176,9 +244,6 @@ def report_result(report_url, payload):
         return False
 
 
-WORKER_MAX_SECONDS = 55  # сколько крутить очередь за один запуск (таймаут функции = 60с)
-WORKER_LOCK_TTL = 70     # сек: протухший замок (если воркер упал) освобождается сам
-
 SELF_URL = 'https://functions.poehali.dev/5196ad48-3bd4-4763-bb20-ca8c9b91b508'
 
 
@@ -198,31 +263,35 @@ def poke_worker():
         pass  # ответа не ждём — воркер уже запущен отдельным вызовом
 
 
-def try_acquire_worker_lock(cur, conn):
-    """Берёт глобальный замок воркера через таблицу (advisory-lock забанен платформой).
-    Замок берётся, только если предыдущий протух (старше WORKER_LOCK_TTL) — атомарно.
-    True — взяли, можно молотить; False — уже кто-то крутит."""
+def claim_worker(cur, conn, worker_id):
+    """Новый воркер объявляет себя главным: ставит свой worker_id в замок.
+    Старый воркер после каждого сообщения сверяет owner — если там уже НЕ он,
+    значит пришёл новый и старый тихо уступает эстафету (без гонок и дублей)."""
     cur.execute(
-        f"""UPDATE message_worker_lock
-           SET locked_at = now()
-           WHERE id = 1 AND locked_at < now() - interval '{int(WORKER_LOCK_TTL)} seconds'"""
-    )
-    got = cur.rowcount > 0
-    conn.commit()
-    return got
-
-
-def release_worker_lock(cur, conn):
-    # сдвигаем метку в прошлое — замок сразу свободен для следующего воркера
-    cur.execute(
-        "UPDATE message_worker_lock SET locked_at = now() - interval '1 hour' WHERE id = 1"
+        "UPDATE message_worker_lock SET owner = %s, locked_at = now() WHERE id = 1",
+        (worker_id,)
     )
     conn.commit()
+
+
+def i_am_still_owner(cur, conn, worker_id):
+    """True — я всё ещё главный воркер; False — меня сменил новый, надо уступить."""
+    conn.commit()  # свежий снимок (в autocommit-подобном режиме read committed)
+    cur.execute("SELECT owner FROM message_worker_lock WHERE id = 1")
+    row = cur.fetchone()
+    return bool(row) and row[0] == worker_id
+
+
+HARD_TIME_LIMIT = 50  # предохранитель от таймаута функции (сек); НЕ основной механизм
 
 
 def run_worker(cur, conn):
-    """Рассылает созревшие сообщения потоком ~rate/сек, непрерывно до опустошения очереди
-    или лимита времени (WORKER_MAX_SECONDS). Крон будит раз в минуту — проходы стыкуются без простоя."""
+    """Один активный воркер шлёт сообщения строго по порядку номера (id), по одному.
+    Порядок для одного получателя гарантирован сортировкой по id.
+    Разные получатели друг друга не ждут: если у одного временный затык — его
+    сообщение откладывается на паузу, а очередь других едет дальше.
+    'Новый гасит старого': при старте воркер ставит свой id владельцем; старый,
+    увидев смену владельца, сам уступает. Очередь пуста — воркер засыпает."""
     settings = load_settings(cur)
     if not settings['enabled']:
         return {'skipped': 'disabled'}
@@ -231,67 +300,48 @@ def run_worker(cur, conn):
     if not bot_token:
         return {'error': 'no_bot_token'}
 
-    # только один воркер за раз: если уже кто-то молотит — выходим, он всё разгребёт
-    if not try_acquire_worker_lock(cur, conn):
-        return {'skipped': 'busy'}
+    # объявляем себя главным — предыдущий воркер после этого уступит
+    worker_id = f'{int(time.time()*1000)}-{os.getpid()}'
+    claim_worker(cur, conn, worker_id)
 
     rate = max(1, settings['rate_per_second'])
     delay = 1.0 / rate
     per_user_limit = settings['per_user_per_minute']
-
-    worker_start = time.time()
-    sent, failed, deferred, processed = 0, 0, 0, 0
-
-    try:
-        # Внешний цикл: тянем пачки, пока есть что слать и не вышло время
-        while time.time() - worker_start < WORKER_MAX_SECONDS:
-            now = now_utc()
-            cur.execute(
-                """SELECT id, channel, address, text, button_text, button_url, parse_mode,
-                          attempts, max_attempts, dedup_key, report_url
-                   FROM message_queue
-                   WHERE status = 'pending' AND send_after <= %s
-                   ORDER BY send_after ASC, id ASC
-                   LIMIT 200""",
-                (now,)
-            )
-            rows = cur.fetchall()
-            if not rows:
-                break  # очередь пуста — не ждём зря
-            processed += len(rows)
-
-            batch_done = _process_batch(
-                cur, conn, rows, bot_token, settings,
-                delay, per_user_limit, worker_start
-            )
-            sent += batch_done['sent']
-            failed += batch_done['failed']
-            deferred += batch_done['deferred']
-            if batch_done['time_up']:
-                break
-    finally:
-        release_worker_lock(cur, conn)
-
-    return {'sent': sent, 'failed': failed, 'deferred': deferred, 'processed': processed}
-
-
-def _process_batch(cur, conn, rows, bot_token, settings, delay, per_user_limit, worker_start):
-    """Отправляет одну пачку сообщений с паузой delay между отправками. Возвращает счётчики."""
+    started = time.time()
     sent, failed, deferred = 0, 0, 0
-    time_up = False
 
-    for r in rows:
-        if time.time() - worker_start >= WORKER_MAX_SECONDS:
-            time_up = True
-            break
+    while True:
+        # предохранитель по времени (таймаут функции): просто выходим, крон/пинок продолжат
+        if time.time() - started >= HARD_TIME_LIMIT:
+            return {'sent': sent, 'failed': failed, 'deferred': deferred, 'stopped': 'time'}
+
+        # если пришёл новый воркер — уступаем эстафету
+        if not i_am_still_owner(cur, conn, worker_id):
+            return {'sent': sent, 'failed': failed, 'deferred': deferred, 'stopped': 'superseded'}
+
         now = now_utc()
+        # берём САМОЕ РАННЕЕ созревшее сообщение (строгий порядок по номеру id)
+        cur.execute(
+            """SELECT id, channel, address, text, button_text, button_url, parse_mode,
+                      attempts, max_attempts, dedup_key, report_url
+               FROM message_queue
+               WHERE status = 'pending' AND send_after <= %s
+               ORDER BY send_after ASC, id ASC
+               LIMIT 1""",
+            (now,)
+        )
+        r = cur.fetchone()
+        if not r:
+            # очередь пуста — засыпаем, разбудят пинок или крон
+            return {'sent': sent, 'failed': failed, 'deferred': deferred, 'stopped': 'empty'}
+
         job = {
             'id': r[0], 'channel': r[1], 'address': r[2], 'text': r[3],
             'button_text': r[4], 'button_url': r[5], 'parse_mode': r[6],
             'attempts': r[7], 'max_attempts': r[8], 'dedup_key': r[9], 'report_url': r[10],
         }
 
-        # лимит на одного получателя в минуту
+        # лимит на одного получателя в минуту — откладываем, очередь других едет дальше
         if per_user_limit > 0:
             cur.execute(
                 """SELECT COUNT(*) FROM message_queue
@@ -303,35 +353,55 @@ def _process_batch(cur, conn, rows, bot_token, settings, delay, per_user_limit, 
                     "UPDATE message_queue SET send_after = %s WHERE id = %s",
                     (now + timedelta(minutes=1), job['id'])
                 )
+                conn.commit()
                 deferred += 1
                 continue
 
-        ok, info = send_telegram(bot_token, job)
+        ok, code, reason, retry_after = send_telegram(bot_token, job)
         attempts = job['attempts'] + 1
         max_att = job['max_attempts'] or settings['max_attempts']
 
         if ok:
             cur.execute(
-                "UPDATE message_queue SET status = 'sent', attempts = %s, sent_at = %s, last_error = NULL WHERE id = %s",
-                (attempts, now_utc(), job['id'])
+                "UPDATE message_queue SET status = 'sent', attempts = %s, sent_at = %s, tg_code = %s, last_error = NULL WHERE id = %s",
+                (attempts, now_utc(), code, job['id'])
             )
+            conn.commit()
             sent += 1
-            final_status = 'sent'
-        elif attempts >= max_att:
-            cur.execute(
-                "UPDATE message_queue SET status = 'error', attempts = %s, last_error = %s WHERE id = %s",
-                (attempts, info, job['id'])
-            )
-            failed += 1
-            final_status = 'error'
+            final_status, err = 'sent', None
         else:
-            cur.execute(
-                "UPDATE message_queue SET attempts = %s, last_error = %s, send_after = %s WHERE id = %s",
-                (attempts, info, now_utc() + timedelta(seconds=settings['retry_pause_seconds']), job['id'])
-            )
-            final_status = None  # ещё будем пробовать
+            kind = classify_tg(code, reason)
+            if kind == 'permanent' or attempts >= max_att:
+                # навсегда недоставляемо ИЛИ исчерпаны 3 попытки → error, дальше не пробуем
+                cur.execute(
+                    "UPDATE message_queue SET status = 'error', attempts = %s, tg_code = %s, last_error = %s WHERE id = %s",
+                    (attempts, code, reason, job['id'])
+                )
+                conn.commit()
+                failed += 1
+                final_status, err = 'error', reason
+            else:
+                # временная ошибка: откладываем на паузу (429 — на retry_after),
+                # а очередь ДРУГИХ получателей едет дальше — не застреваем на упавшем.
+                # ВАЖНО: сдвигаем ВЕСЬ хвост этого получателя, иначе его следующие
+                # сообщения (send_after=сейчас) обгонят упавшее и порядок нарушится.
+                pause = retry_after if retry_after > 0 else settings['retry_pause_seconds']
+                new_after = now_utc() + timedelta(seconds=pause)
+                cur.execute(
+                    "UPDATE message_queue SET attempts = %s, tg_code = %s, last_error = %s, send_after = %s WHERE id = %s",
+                    (attempts, code, reason, new_after, job['id'])
+                )
+                # хвост того же получателя двигаем не раньше упавшего (сохраняя их порядок по id)
+                cur.execute(
+                    """UPDATE message_queue SET send_after = %s
+                       WHERE status = 'pending' AND address = %s AND id > %s AND send_after < %s""",
+                    (new_after, job['address'], job['id'], new_after)
+                )
+                conn.commit()
+                deferred += 1
+                final_status, err = None, reason  # ещё будем пробовать
 
-        # отчёт функции (только когда исход окончательный)
+        # отчёт функции — только на окончательном исходе
         if final_status and job['report_url']:
             delivered = report_result(job['report_url'], {
                 'message_id': job['id'],
@@ -339,15 +409,13 @@ def _process_batch(cur, conn, rows, bot_token, settings, delay, per_user_limit, 
                 'status': final_status,
                 'address': job['address'],
                 'attempts': attempts,
-                'error': None if ok else info,
+                'error': err,
             })
             if delivered:
                 cur.execute("UPDATE message_queue SET reported = true WHERE id = %s", (job['id'],))
+                conn.commit()
 
-        conn.commit()
         time.sleep(delay)
-
-    return {'sent': sent, 'failed': failed, 'deferred': deferred, 'time_up': time_up}
 
 
 def json_resp(status, data):
@@ -438,9 +506,9 @@ def handler(event: dict, context) -> dict:
             mid = body.get('message_id') or params.get('message_id')
             dedup = body.get('dedup_key') or params.get('dedup_key')
             if mid:
-                cur.execute("SELECT id, status, attempts, last_error, sent_at FROM message_queue WHERE id = %s", (int(mid),))
+                cur.execute("SELECT id, status, attempts, last_error, sent_at, tg_code FROM message_queue WHERE id = %s", (int(mid),))
             elif dedup:
-                cur.execute("SELECT id, status, attempts, last_error, sent_at FROM message_queue WHERE dedup_key = %s", (dedup,))
+                cur.execute("SELECT id, status, attempts, last_error, sent_at, tg_code FROM message_queue WHERE dedup_key = %s", (dedup,))
             else:
                 return json_resp(400, {'error': 'message_id или dedup_key обязательны'})
             row = cur.fetchone()
@@ -449,6 +517,7 @@ def handler(event: dict, context) -> dict:
             return json_resp(200, {
                 'message_id': row[0], 'status': row[1], 'attempts': row[2],
                 'error': row[3], 'sent_at': row[4].isoformat() if row[4] else None,
+                'tg_code': row[5],
             })
 
         # --- Всё остальное только для владельца ---
@@ -496,10 +565,11 @@ def handler(event: dict, context) -> dict:
             where = "" if status_filter == 'all' else f"WHERE status = '{status_filter.replace(chr(39), '')}'"
             cur.execute(
                 f"""SELECT id, channel, address, text, status, attempts, last_error,
-                          send_after, sent_at, source
+                          send_after, sent_at, source, tg_code
                     FROM message_queue {where}
                     ORDER BY id DESC LIMIT 50"""
             )
+            now = now_utc()
             items = [{
                 'id': r[0], 'channel': r[1], 'address': r[2],
                 'text': (r[3] or '')[:120], 'status': r[4], 'attempts': r[5],
@@ -507,6 +577,8 @@ def handler(event: dict, context) -> dict:
                 'send_after': r[7].isoformat() if r[7] else None,
                 'sent_at': r[8].isoformat() if r[8] else None,
                 'source': r[9],
+                'tg_code': r[10],
+                'status_text': human_status(r[4], r[10], r[6], r[5], r[7], now),
             } for r in cur.fetchall()]
             return json_resp(200, {'items': items})
 
