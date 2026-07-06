@@ -33,6 +33,8 @@ interface QueueItem {
   error: string | null;
   sent_at: string | null;
   source: string | null;
+  status_text?: string | null;
+  tg_code?: number | null;
 }
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
@@ -336,8 +338,15 @@ const OwnerMessageServer = () => {
                           <span className={`text-xs font-medium ${st.cls}`}>{st.text}</span>
                         </div>
                         <p className="mt-1 line-clamp-2 text-muted-foreground/90">{it.text}</p>
-                        {it.status === "error" && it.error && (
-                          <p className="mt-1 text-xs text-rose-400/80 break-all">{it.error}</p>
+                        {it.status_text && (
+                          <p className={`mt-1 text-xs font-medium ${st.cls}`}>
+                            {it.status_text}
+                          </p>
+                        )}
+                        {(it.status === "error" || it.attempts > 0) && it.error && (
+                          <p className="mt-0.5 text-[11px] text-muted-foreground/60 break-all">
+                            Ответ Telegram{it.tg_code ? ` (${it.tg_code})` : ""}: {it.error}
+                          </p>
                         )}
                         {it.status === "pending" && (
                           <Button
