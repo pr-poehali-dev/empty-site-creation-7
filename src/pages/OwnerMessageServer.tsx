@@ -303,7 +303,7 @@ const OwnerMessageServer = () => {
               {items.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">Пусто.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1 -mr-1">
                   {items.map((it) => {
                     const st = STATUS_LABEL[it.status] || { text: it.status, cls: "" };
                     return (

@@ -25,6 +25,9 @@
 ОШИБКИ Telegram (разбор по коду ответа, поле tg_code + текст в last_error):
   - навсегда (403 заблокирован/выгнан/удалён, 400 chat not found) -> сразу error;
   - временно (429 -> ждём retry_after; 5xx/сеть) -> повтор, до 3 попыток -> error.
+
+АВТОЧИСТКА: при каждом запуске воркер раз в сутки удаляет завершённые сообщения
+(sent/error/cancelled) старше 14 дней, чтобы очередь не пухла. pending не трогает.
 ВАЖНО: таймаут функции message-server = 1 минута (предохранитель HARD_TIME_LIMIT).
 
 URL сервера (из func2url.json): message-server
@@ -284,6 +287,38 @@ def i_am_still_owner(cur, conn, worker_id):
 
 HARD_TIME_LIMIT = 50  # предохранитель от таймаута функции (сек); НЕ основной механизм
 
+CLEANUP_KEEP_DAYS = 14      # сколько хранить завершённые сообщения (sent/error/cancelled)
+CLEANUP_EVERY_HOURS = 24    # как часто запускать чистку (не чаще раза в сутки)
+
+
+def maybe_cleanup(cur, conn):
+    """Раз в сутки удаляет старые завершённые сообщения (sent/error/cancelled),
+    чтобы очередь не пухла бесконечно. Незавершённые (pending) не трогаем.
+    Метка последнего прогона — в message_settings, чтобы не чистить каждый вызов."""
+    cur.execute("SELECT value FROM message_settings WHERE key = 'last_cleanup_at'")
+    row = cur.fetchone()
+    if row and row[0]:
+        try:
+            last = datetime.fromisoformat(row[0])
+            if now_utc() - last < timedelta(hours=CLEANUP_EVERY_HOURS):
+                return 0  # ещё рано
+        except Exception:
+            pass
+    cur.execute(
+        f"""DELETE FROM message_queue
+            WHERE status IN ('sent', 'error', 'cancelled')
+              AND created_at < now() - interval '{int(CLEANUP_KEEP_DAYS)} days'"""
+    )
+    removed = cur.rowcount
+    cur.execute(
+        """INSERT INTO message_settings (key, value, updated_at)
+           VALUES ('last_cleanup_at', %s, now())
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
+        (now_utc().isoformat(),)
+    )
+    conn.commit()
+    return removed
+
 
 def run_worker(cur, conn):
     """Один активный воркер шлёт сообщения строго по порядку номера (id), по одному.
@@ -292,6 +327,9 @@ def run_worker(cur, conn):
     сообщение откладывается на паузу, а очередь других едет дальше.
     'Новый гасит старого': при старте воркер ставит свой id владельцем; старый,
     увидев смену владельца, сам уступает. Очередь пуста — воркер засыпает."""
+    # чистка старых завершённых сообщений (раз в сутки, не зависит от паузы рассылки)
+    maybe_cleanup(cur, conn)
+
     settings = load_settings(cur)
     if not settings['enabled']:
         return {'skipped': 'disabled'}
