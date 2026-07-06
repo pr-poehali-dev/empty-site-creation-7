@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -57,12 +57,18 @@ const OwnerMessageServer = () => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+
   useEffect(() => {
     if (user.role !== "owner") {
       navigate("/admin");
       return;
     }
     loadAll();
+    // автообновление монитора раз в 5 сек (без перезагрузки настроек)
+    const timer = setInterval(() => refreshMonitor(), 5000);
+    return () => clearInterval(timer);
   }, []);
 
   const api = async (action: string, opts: RequestInit = {}) => {
@@ -97,7 +103,7 @@ const OwnerMessageServer = () => {
   };
 
   const refreshMonitor = async (nextFilter?: string) => {
-    const f = nextFilter ?? filter;
+    const f = nextFilter ?? filterRef.current;
     try {
       const [st, list] = await Promise.all([api("stats"), api(`list&status=${f}`)]);
       setStats(st);
