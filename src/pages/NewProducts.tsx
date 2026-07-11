@@ -49,6 +49,10 @@ const NewProducts = () => {
   const [activeItems, setActiveItems] = useState<TempProduct[]>([]);
   const [historyItems, setHistoryItems] = useState<TempProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTotal, setActiveTotal] = useState(0);
+  const [activePage, setActivePage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const ACTIVE_PER_PAGE = 50;
 
   const [addDialog, setAddDialog] = useState<TempProduct | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -79,12 +83,16 @@ const NewProducts = () => {
     setLoading(true);
     try {
       const [activeResp, histResp] = await Promise.all([
-        fetch(`${TEMP_PRODUCTS_URL}?status=pending`, { headers: authHeaders }),
+        fetch(`${TEMP_PRODUCTS_URL}?status=pending&page=1&per_page=${ACTIVE_PER_PAGE}`, { headers: authHeaders }),
         fetch(`${TEMP_PRODUCTS_URL}?status=added&per_page=100`, { headers: authHeaders }),
       ]);
       const activeData = await activeResp.json();
       const histData = await histResp.json();
-      if (activeResp.ok) setActiveItems(activeData.items || []);
+      if (activeResp.ok) {
+        setActiveItems(activeData.items || []);
+        setActiveTotal(activeData.total || 0);
+        setActivePage(1);
+      }
       if (histResp.ok) setHistoryItems(histData.items || []);
     } catch {
       toast({ title: "Ошибка загрузки", variant: "destructive" });
@@ -92,6 +100,24 @@ const NewProducts = () => {
       setLoading(false);
     }
   }, [token]);
+
+  const loadMoreActive = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const nextPage = activePage + 1;
+      const resp = await fetch(`${TEMP_PRODUCTS_URL}?status=pending&page=${nextPage}&per_page=${ACTIVE_PER_PAGE}`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) {
+        setActiveItems((prev) => [...prev, ...(data.items || [])]);
+        setActiveTotal(data.total || 0);
+        setActivePage(nextPage);
+      }
+    } catch {
+      toast({ title: "Ошибка загрузки", variant: "destructive" });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [token, activePage]);
 
   const loadCategories = useCallback(async () => {
     try {
@@ -277,7 +303,7 @@ const NewProducts = () => {
         <Tabs defaultValue="active">
           <TabsList className="w-full mb-4 bg-white/[0.04] border border-white/[0.08] rounded-xl p-1">
             <TabsTrigger value="active" className="flex-1 rounded-lg text-sm data-[state=active]:bg-white/[0.1]">
-              Активные ({activeItems.length})
+              Активные ({activeTotal || activeItems.length})
             </TabsTrigger>
             <TabsTrigger value="history" className="flex-1 rounded-lg text-sm data-[state=active]:bg-white/[0.1]">
               История ({historyItems.length})
@@ -379,6 +405,26 @@ const NewProducts = () => {
                   </div>
                 ))}
               </div>
+              {activeItems.length < activeTotal && (
+                <div className="flex flex-col items-center gap-2 mt-4">
+                  <Button
+                    variant="outline"
+                    className="rounded-lg border-white/[0.08]"
+                    disabled={loadingMore}
+                    onClick={loadMoreActive}
+                  >
+                    {loadingMore ? (
+                      <Icon name="Loader2" size={16} className="animate-spin mr-1.5" />
+                    ) : (
+                      <Icon name="ChevronDown" size={16} className="mr-1.5" />
+                    )}
+                    Показать ещё
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Показано {activeItems.length} из {activeTotal}
+                  </p>
+                </div>
+              )}
               </DebugBadge>
             )}
           </TabsContent>
