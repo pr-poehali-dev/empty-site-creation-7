@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -32,6 +33,9 @@ const Wholesalers = () => {
   const [loading, setLoading] = useState(true);
   const [toDelete, setToDelete] = useState<Wholesaler | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -75,6 +79,48 @@ const Wholesalers = () => {
     }
   };
 
+  const startEdit = (w: Wholesaler) => {
+    setEditingId(w.id);
+    setEditName(w.name);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+  };
+
+  const saveEdit = async (w: Wholesaler) => {
+    const name = editName.trim();
+    if (!name) {
+      toast({ title: "Введите название", variant: "destructive" });
+      return;
+    }
+    if (name === w.name) {
+      cancelEdit();
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const resp = await fetch(`${WHOLESALERS_URL}?id=${w.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        setItems((prev) => prev.map((x) => (x.id === w.id ? { ...x, name } : x)));
+        toast({ title: "Название изменено", description: name });
+        cancelEdit();
+      } else {
+        toast({ title: "Не удалось сохранить", description: data.error || "Попробуйте ещё раз", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка сети", variant: "destructive" });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-white/[0.08] bg-card sticky top-0 z-20">
@@ -105,25 +151,69 @@ const Wholesalers = () => {
                     key={w.id}
                     className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 flex items-center justify-between gap-2"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm truncate">{w.name}</p>
-                      {used && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {w.orders_count > 0 && <span>{w.orders_count} заявок</span>}
-                          {w.orders_count > 0 && w.returns_count > 0 && <span> · </span>}
-                          {w.returns_count > 0 && <span>{w.returns_count} возвратов</span>}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => !used && setToDelete(w)}
-                      disabled={used}
-                      title={used ? "Оптовик участвует в заявках или возвратах" : "Удалить оптовика"}
-                      className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:hover:text-muted-foreground disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Icon name="Trash2" size={16} />
-                    </button>
+                    {editingId === w.id ? (
+                      <>
+                        <Input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          autoFocus
+                          disabled={savingEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveEdit(w);
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          className="h-9 flex-1 min-w-0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveEdit(w)}
+                          disabled={savingEdit}
+                          title="Сохранить"
+                          className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-green-400 hover:bg-green-500/10 disabled:opacity-40 transition-colors"
+                        >
+                          <Icon name={savingEdit ? "Loader2" : "Check"} size={16} className={savingEdit ? "animate-spin" : ""} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={savingEdit}
+                          title="Отмена"
+                          className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.06] disabled:opacity-40 transition-colors"
+                        >
+                          <Icon name="X" size={16} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm truncate">{w.name}</p>
+                          {used && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {w.orders_count > 0 && <span>{w.orders_count} заявок</span>}
+                              {w.orders_count > 0 && w.returns_count > 0 && <span> · </span>}
+                              {w.returns_count > 0 && <span>{w.returns_count} возвратов</span>}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(w)}
+                          title="Изменить название"
+                          className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <Icon name="Pencil" size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => !used && setToDelete(w)}
+                          disabled={used}
+                          title={used ? "Оптовик участвует в заявках или возвратах" : "Удалить оптовика"}
+                          className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:hover:text-muted-foreground disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Icon name="Trash2" size={16} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               })}

@@ -1256,14 +1256,6 @@ def handler(event: dict, context) -> dict:
                     cname = (body.get('customer_name') or '').strip()
                     fields.append("customer_name = %s")
                     vals.append(cname)
-                    if cname:
-                        cur.execute("INSERT INTO wholesalers (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id", (cname,))
-                        wid = cur.fetchone()[0]
-                        fields.append("wholesaler_id = %s")
-                        vals.append(wid)
-                    else:
-                        fields.append("wholesaler_id = %s")
-                        vals.append(None)
                 if 'comment' in body:
                     fields.append("comment = %s")
                     vals.append(body.get('comment'))

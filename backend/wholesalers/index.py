@@ -19,7 +19,7 @@ def handler(event, context):
     headers = {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     }
     if event.get('httpMethod') == 'OPTIONS':
@@ -91,6 +91,42 @@ def handler(event, context):
         cur.close()
         conn.close()
         return {'statusCode': 201, 'headers': headers, 'body': json.dumps({'id': row[0], 'name': row[1]})}
+
+    if method == 'PUT':
+        try:
+            wid = int(qs.get('id') or '')
+        except (ValueError, TypeError):
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не указан id'})}
+
+        body = json.loads(event.get('body') or '{}')
+        new_name = (body.get('name') or '').strip()
+        if not new_name:
+            cur.close()
+            conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Имя обязательно'})}
+
+        cur.execute("SELECT name FROM wholesalers WHERE id = %s", (wid,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Оптовик не найден'})}
+
+        cur.execute("SELECT id FROM wholesalers WHERE name = %s AND id <> %s", (new_name, wid))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return {'statusCode': 409, 'headers': headers, 'body': json.dumps({'error': 'Оптовик с таким названием уже есть'})}
+
+        cur.execute("UPDATE wholesalers SET name = %s WHERE id = %s", (new_name, wid))
+        cur.execute("UPDATE wholesale_orders  SET customer_name = %s WHERE wholesaler_id = %s", (new_name, wid))
+        cur.execute("UPDATE wholesale_returns SET customer_name = %s WHERE wholesaler_id = %s", (new_name, wid))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'id': wid, 'name': new_name})}
 
     if method == 'DELETE':
         try:
