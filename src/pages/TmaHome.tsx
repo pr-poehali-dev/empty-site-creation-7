@@ -4,7 +4,7 @@ import Icon from "@/components/ui/icon";
 
 const AUCTION_ME_URL = "https://functions.poehali.dev/ba801f3a-94dd-46a8-9d24-a830a5ff56aa";
 
-type Role = "admin" | "operator" | "buyer" | "denied";
+type Role = "admin" | "operator" | "buyer" | "seller" | "denied";
 
 interface MeResponse {
   role: Role;
@@ -108,6 +108,14 @@ const TmaHome = () => {
       <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground px-6 gap-3 text-center">
         <Icon name="ShieldAlert" size={40} className="text-muted-foreground" />
         <p className="text-muted-foreground max-w-xs">{error || "Доступ не выдан."}</p>
+      </div>
+    );
+  }
+
+  if (me.role === "seller") {
+    return (
+      <div className="min-h-screen bg-background text-foreground px-5 py-8">
+        <h1 className="text-2xl font-bold">Привет, {me.name}!</h1>
       </div>
     );
   }

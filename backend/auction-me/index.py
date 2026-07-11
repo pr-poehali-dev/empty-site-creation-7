@@ -65,19 +65,22 @@ def resolve_role(cur, telegram_id):
         return 'admin', None
 
     cur.execute(
-        """SELECT auction_role, status, first_name, last_name
-           FROM managers
-           WHERE telegram_chat_id = %s
+        """SELECT m.auction_role, m.status, m.first_name, m.last_name, r.name
+           FROM managers m
+           LEFT JOIN roles r ON r.id = m.role_id
+           WHERE m.telegram_chat_id = %s
            LIMIT 1""",
         (telegram_id,)
     )
     row = cur.fetchone()
     if not row:
         return 'buyer', None
-    auction_role, status, first_name, last_name = row
+    auction_role, status, first_name, last_name, role_name = row
     name = ' '.join([p for p in [first_name, last_name] if p]) or None
     if status != 'authorized':
         return 'buyer', name
+    if role_name == 'Продавец':
+        return 'seller', name
     if auction_role in ('operator', 'admin'):
         return auction_role, name
     return 'buyer', name

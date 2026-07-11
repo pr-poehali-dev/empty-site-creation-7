@@ -237,6 +237,18 @@ def handler(event: dict, context) -> dict:
     conn = get_db()
     cur = conn.cursor()
 
+    cur.execute(
+        """SELECT r.name FROM managers m
+           LEFT JOIN roles r ON r.id = m.role_id
+           WHERE m.telegram_chat_id = %s AND m.status = 'authorized'
+           LIMIT 1""",
+        (telegram_id,)
+    )
+    _mrow = cur.fetchone()
+    if _mrow and _mrow[0] == 'Продавец':
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Раздел недоступен'})}
+
     if method == 'GET':
         action = params.get('action', 'get_lot')
         if action == 'my_bids':
