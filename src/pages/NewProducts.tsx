@@ -23,7 +23,18 @@ interface UsedOrder {
   id: number;
   customer_name: string;
   created_at: string | null;
+  status: string;
+  price: number;
+  price_is_manual: boolean;
 }
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  new: "Новая",
+  draft: "Черновик",
+  confirmed: "Подтверждена",
+  shipped: "Отгружена",
+  archived: "Архив",
+};
 
 interface OrderItem {
   id: number;
@@ -109,6 +120,7 @@ const NewProducts = () => {
 
   // Заявки, где используется товар (для ссылок) + модалка просмотра заявки
   const [usedOrders, setUsedOrders] = useState<UsedOrder[]>([]);
+  const [priceChangeIds, setPriceChangeIds] = useState<number[]>([]);
   const [orderView, setOrderView] = useState<OrderView | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
   const [highlightName, setHighlightName] = useState("");
@@ -277,6 +289,7 @@ const NewProducts = () => {
     setReplaceResults([]);
     setReplaceSelected(null);
     setUsedOrders([]);
+    setPriceChangeIds([]);
     fetch(`${TEMP_PRODUCTS_URL}?action=orders&id=${item.id}`, { headers: authHeaders })
       .then(r => r.json())
       .then(d => setUsedOrders(d.orders || []))
@@ -350,7 +363,11 @@ const NewProducts = () => {
     }, 300);
   };
 
-  const confirmDelete = async (keepPrice: boolean) => {
+  const togglePriceChange = (orderId: number) => {
+    setPriceChangeIds((prev) => prev.includes(orderId) ? prev.filter((x) => x !== orderId) : [...prev, orderId]);
+  };
+
+  const confirmDelete = async () => {
     if (!deleteItem || !replaceSelected) return;
     setDeleting(true);
     try {
@@ -360,7 +377,7 @@ const NewProducts = () => {
         body: JSON.stringify({
           replace_product_id: replaceSelected.id,
           replace_temp_product_id: replaceSelected.temp_id,
-          keep_price: keepPrice,
+          price_change_order_ids: priceChangeIds,
           replace_price: replaceSelected.price,
           replace_name: replaceSelected.name,
         }),
@@ -370,6 +387,8 @@ const NewProducts = () => {
         removeActiveLocal(deleteItem.id);
         setDeleteItem(null);
         setReplaceSelected(null);
+        setUsedOrders([]);
+        setPriceChangeIds([]);
       }
     } catch {
       toast({ title: "Ошибка", variant: "destructive" });
@@ -642,8 +661,8 @@ const NewProducts = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteItem} onOpenChange={(o) => { if (!o) { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); } }}>
-        <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
+      <Dialog open={!!deleteItem} onOpenChange={(o) => { if (!o) { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); setPriceChangeIds([]); } }}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Удалить товар</DialogTitle>
           </DialogHeader>
@@ -655,23 +674,6 @@ const NewProducts = () => {
                   Используется в {deleteItem.usage_count} заявках — выберите замену
                 </p>
               </div>
-              {usedOrders.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">Заявки с этим товаром:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {usedOrders.map((o) => (
-                      <button
-                        key={o.id}
-                        className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-xs transition-colors flex items-center gap-1"
-                        onClick={() => openOrderView(o.id, `${deleteItem.brand} ${deleteItem.article}`)}
-                      >
-                        <Icon name="FileText" size={12} className="text-muted-foreground" />
-                        №{o.id}{o.customer_name ? ` · ${o.customer_name}` : ""}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Товар для замены</p>
                 <Input
@@ -697,33 +699,84 @@ const NewProducts = () => {
                 </div>
               )}
               {replaceSelected && (
-                <div className="p-3 rounded-xl bg-white/[0.04]">
-                  <p className="text-sm mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
-                  <p className="text-xs text-muted-foreground">
-                    Текущая цена: {deleteItem.price.toLocaleString()} Br · Цена замены: {replaceSelected.price.toLocaleString()} Br
-                  </p>
-                  <button
-                    className="text-xs text-muted-foreground underline mt-2"
-                    onClick={() => setReplaceSelected(null)}
-                  >
-                    Выбрать другой товар
-                  </button>
-                </div>
+                <>
+                  <div className="p-3 rounded-xl bg-white/[0.04]">
+                    <p className="text-sm mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
+                    <button className="text-xs text-muted-foreground underline" onClick={() => setReplaceSelected(null)}>
+                      Выбрать другой товар
+                    </button>
+                  </div>
+
+                  {usedOrders.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1.5">Заявки с этим товаром ({usedOrders.length}):</p>
+                      <div className="space-y-1.5">
+                        {usedOrders.map((o) => {
+                          const isNew = o.status === "new";
+                          const checked = priceChangeIds.includes(o.id);
+                          return (
+                            <div key={o.id} className="rounded-xl border border-white/[0.08] bg-card p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <button
+                                  className="min-w-0 flex-1 text-left"
+                                  onClick={() => openOrderView(o.id, `${deleteItem.brand} ${deleteItem.article}`)}
+                                >
+                                  <p className="text-sm font-medium flex items-center gap-1">
+                                    <Icon name="FileText" size={12} className="text-muted-foreground flex-shrink-0" />
+                                    №{o.id}
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${isNew ? "bg-emerald-500/20 text-emerald-300" : "bg-white/[0.08] text-muted-foreground"}`}>
+                                      {ORDER_STATUS_LABELS[o.status] || o.status}
+                                    </span>
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                    {o.customer_name || "—"} · {formatDate(o.created_at)}
+                                  </p>
+                                  <p className="text-xs mt-0.5">
+                                    В заявке: <span className="font-medium">{o.price.toLocaleString()} Br</span>
+                                    <span className="text-muted-foreground ml-1">({o.price_is_manual ? "вручную" : "из товара"})</span>
+                                  </p>
+                                </button>
+                                {isNew && (
+                                  <button
+                                    onClick={() => togglePriceChange(o.id)}
+                                    className={`flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${checked ? "bg-primary text-primary-foreground border-transparent" : "border-white/[0.12] text-muted-foreground hover:bg-white/[0.06]"}`}
+                                  >
+                                    {checked ? <Icon name="Check" size={13} className="inline mr-1" /> : null}
+                                    Заменить цену
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 rounded-xl bg-secondary space-y-1">
+                    <p className="text-xs"><span className="text-muted-foreground">Цена нового товара:</span> {deleteItem.price.toLocaleString()} Br</p>
+                    <p className="text-xs"><span className="text-muted-foreground">Цена замены:</span> {replaceSelected.price.toLocaleString()} Br</p>
+                    {priceChangeIds.length > 0 && (
+                      <p className="text-xs text-amber-400 pt-0.5">Цена замены будет установлена в {priceChangeIds.length} заявках</p>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
           <DialogFooter className="gap-2 sm:gap-2">
             {replaceSelected ? (
               <>
-                <Button className="rounded-xl" disabled={deleting} onClick={() => confirmDelete(true)}>
-                  Оставить цену
+                <Button variant="ghost" className="rounded-xl" disabled={deleting} onClick={() => { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); setPriceChangeIds([]); }}>
+                  Отмена
                 </Button>
-                <Button variant="outline" className="rounded-xl border-white/[0.08]" disabled={deleting} onClick={() => confirmDelete(false)}>
-                  Взять из товара
+                <Button className="rounded-xl" disabled={deleting} onClick={confirmDelete}>
+                  {deleting ? <Icon name="Loader2" size={16} className="animate-spin mr-1.5" /> : null}
+                  Заменить и удалить
                 </Button>
               </>
             ) : (
-              <Button variant="ghost" className="rounded-xl" onClick={() => { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); }}>
+              <Button variant="ghost" className="rounded-xl" onClick={() => { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); setPriceChangeIds([]); }}>
                 Отменить
               </Button>
             )}

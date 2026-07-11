@@ -65,18 +65,22 @@ def handler(event: dict, context) -> dict:
         tp = cur.fetchone()
         name_match = f"{tp[0]} {tp[1]}" if tp else None
         cur.execute(
-            """SELECT DISTINCT o.id, o.customer_name, o.created_at
+            """SELECT DISTINCT ON (o.id) o.id, o.customer_name, o.created_at, o.status,
+                      oi.price, oi.price_is_manual
                FROM wholesale_order_items oi
                JOIN wholesale_orders o ON o.id = oi.order_id
                WHERE oi.temp_product_id = %s
                   OR (oi.product_id = 19 AND oi.item_name = %s)
-               ORDER BY o.created_at DESC""",
+               ORDER BY o.id, o.created_at DESC""",
             (tp_id, name_match)
         )
         orders = [{
             'id': r[0],
             'customer_name': r[1],
             'created_at': str(r[2]) if r[2] else None,
+            'status': r[3],
+            'price': float(r[4]) if r[4] is not None else 0,
+            'price_is_manual': bool(r[5]),
         } for r in cur.fetchall()]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'orders': orders})}
@@ -214,7 +218,7 @@ def handler(event: dict, context) -> dict:
 
         replace_id = body.get('replace_product_id')
         replace_temp_id = body.get('replace_temp_product_id')
-        keep_price = body.get('keep_price', True)
+        price_change_order_ids = body.get('price_change_order_ids') or []
 
         if replace_id or replace_temp_id:
             cur.execute("SELECT brand, article FROM temp_products WHERE id = %s", (item_id,))
@@ -228,13 +232,25 @@ def handler(event: dict, context) -> dict:
             where = "(temp_product_id = %s OR (product_id = 19 AND item_name = %s))"
             where_args = [item_id, old_name]
 
-            if keep_price:
-                cur.execute(f"UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, item_name = %s WHERE {where}",
-                            [new_pid, new_temp_pid, replace_name or old_name] + where_args)
-            else:
+            # Товар меняем во всех заявках (цену не трогаем)
+            cur.execute(f"UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, item_name = %s WHERE {where}",
+                        [new_pid, new_temp_pid, replace_name or old_name] + where_args)
+
+            # Цену меняем только у отмеченных заявок (и только новых) — на цену замены
+            if price_change_order_ids:
                 replace_price = float(body.get('replace_price', 0))
-                cur.execute(f"UPDATE wholesale_order_items SET product_id = %s, temp_product_id = %s, item_name = %s, price = %s, amount = quantity * %s WHERE {where}",
-                            [new_pid, new_temp_pid, replace_name or old_name, replace_price, replace_price] + where_args)
+                ids = [int(x) for x in price_change_order_ids]
+                placeholders = ','.join(['%s'] * len(ids))
+                cur.execute(
+                    f"""UPDATE wholesale_order_items oi
+                        SET price = %s, amount = quantity * %s, price_is_manual = false
+                        FROM wholesale_orders o
+                        WHERE oi.order_id = o.id
+                          AND o.status = 'new'
+                          AND oi.order_id IN ({placeholders})
+                          AND (oi.temp_product_id = %s OR (oi.product_id = %s AND oi.item_name = %s))""",
+                    [replace_price, replace_price] + ids + [new_temp_pid if new_temp_pid else -1, new_pid, replace_name or old_name]
+                )
 
         cur.execute("DELETE FROM temp_products WHERE id = %s", (item_id,))
         conn.commit()
