@@ -119,6 +119,19 @@ const NewProducts = () => {
     }
   }, [token, activePage]);
 
+  const removeActiveLocal = (id: number) => {
+    setActiveItems((prev) => prev.filter((it) => it.id !== id));
+    setActiveTotal((prev) => Math.max(0, prev - 1));
+  };
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const resp = await fetch(`${TEMP_PRODUCTS_URL}?status=added&per_page=100`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setHistoryItems(data.items || []);
+    } catch { /* ignore */ }
+  }, [token]);
+
   const loadCategories = useCallback(async () => {
     try {
       const resp = await fetch(CATEGORIES_URL, { headers: authHeaders });
@@ -167,8 +180,9 @@ const NewProducts = () => {
       const data = await resp.json();
       if (resp.ok) {
         toast({ title: "Изменения сохранены" });
+        const b = editBrand.trim(), a = editArticle.trim(), p = parseFloat(editPrice || "0") || 0;
+        setActiveItems((prev) => prev.map((it) => it.id === addDialog.id ? { ...it, brand: b, article: a, price: p } : it));
         setAddDialog(null);
-        loadData();
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -205,8 +219,9 @@ const NewProducts = () => {
       const data = await resp.json();
       if (resp.ok) {
         toast({ title: "Товар добавлен в каталог" });
+        removeActiveLocal(addDialog.id);
         setAddDialog(null);
-        loadData();
+        loadHistory();
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
@@ -222,7 +237,7 @@ const NewProducts = () => {
     if (item.usage_count === 0) {
       if (confirm(`Удалить товар ${item.article}?`)) {
         fetch(`${TEMP_PRODUCTS_URL}?id=${item.id}`, { method: "DELETE", headers: authHeaders, body: "{}" })
-          .then(r => { if (r.ok) { toast({ title: "Товар удалён" }); loadData(); } });
+          .then(r => { if (r.ok) { toast({ title: "Товар удалён" }); removeActiveLocal(item.id); } });
       }
       return;
     }
@@ -269,8 +284,9 @@ const NewProducts = () => {
       });
       if (resp.ok) {
         toast({ title: "Товар заменён и удалён" });
+        removeActiveLocal(deleteItem.id);
         setDeleteItem(null);
-        loadData();
+        setReplaceSelected(null);
       }
     } catch {
       toast({ title: "Ошибка", variant: "destructive" });
@@ -348,60 +364,6 @@ const NewProducts = () => {
                         </div>
                       </div>
                     </div>
-                    {deleteItem?.id === item.id && (
-                      <div className="mt-1 p-3 rounded-xl border border-red-500/30 bg-red-950/30">
-                        <p className="text-xs text-red-400 mb-2">
-                          Товар используется в {item.usage_count} заявках. Выберите замену:
-                        </p>
-                        <Input
-                          placeholder="Поиск товара для замены..."
-                          value={replaceSearch}
-                          onChange={(e) => searchReplace(e.target.value)}
-                          className="h-9 rounded-lg bg-secondary border-white/[0.08] text-sm mb-2"
-                        />
-                        {replaceResults.length > 0 && !replaceSelected && (
-                          <div className="border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-40 overflow-y-auto mb-2">
-                            {replaceResults.map((r) => (
-                              <button
-                                key={`${r.is_temp ? 'tp' : 'p'}-${r.id}`}
-                                className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
-                                onClick={() => setReplaceSelected({ id: r.is_temp ? null : r.id, temp_id: r.is_temp ? r.id : null, name: r.name, price: r.price_wholesale || 0 })}
-                              >
-                                <span>{r.name}</span>
-                                {r.is_temp && <span className="text-amber-400 text-xs ml-1">временный</span>}
-                                <span className="text-xs text-muted-foreground ml-2">{r.price_wholesale ? `${r.price_wholesale.toLocaleString()} Br` : ""}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {replaceSelected && (
-                          <div className="mb-2 p-2 rounded-lg bg-white/[0.04]">
-                            <p className="text-xs mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
-                            <p className="text-xs text-muted-foreground">
-                              Текущая цена: {item.price.toLocaleString()} Br · Цена замены: {replaceSelected.price.toLocaleString()} Br
-                            </p>
-                          </div>
-                        )}
-                        {replaceSelected && (
-                          <div className="flex gap-2 flex-wrap">
-                            <Button size="sm" className="rounded-lg" disabled={deleting} onClick={() => confirmDelete(true)}>
-                              Оставить цену
-                            </Button>
-                            <Button size="sm" variant="outline" className="rounded-lg border-white/[0.08]" disabled={deleting} onClick={() => confirmDelete(false)}>
-                              Взять из товара
-                            </Button>
-                            <Button size="sm" variant="ghost" className="rounded-lg" onClick={() => { setDeleteItem(null); setReplaceSelected(null); }}>
-                              Отменить
-                            </Button>
-                          </div>
-                        )}
-                        {!replaceSelected && (
-                          <Button size="sm" variant="ghost" className="rounded-lg mt-1" onClick={() => setDeleteItem(null)}>
-                            Отменить
-                          </Button>
-                        )}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -592,6 +554,78 @@ const NewProducts = () => {
                   <span className="ml-2">Добавить в каталог</span>
                 </Button>
               </DebugBadge>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteItem} onOpenChange={(o) => { if (!o) { setDeleteItem(null); setReplaceSelected(null); } }}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить товар</DialogTitle>
+          </DialogHeader>
+          {deleteItem && (
+            <div className="space-y-3">
+              <div className="p-3 rounded-xl bg-secondary">
+                <p className="font-medium text-sm">{deleteItem.brand} {deleteItem.article}</p>
+                <p className="text-xs text-amber-400 mt-1">
+                  Используется в {deleteItem.usage_count} заявках — выберите замену
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Товар для замены</p>
+                <Input
+                  placeholder="Поиск по бренду или артикулу..."
+                  value={replaceSearch}
+                  onChange={(e) => searchReplace(e.target.value)}
+                  className="rounded-xl bg-secondary border-white/[0.08]"
+                />
+              </div>
+              {replaceResults.length > 0 && !replaceSelected && (
+                <div className="border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-52 overflow-y-auto">
+                  {replaceResults.map((r) => (
+                    <button
+                      key={`${r.is_temp ? 'tp' : 'p'}-${r.id}`}
+                      className="w-full text-left px-3 py-2 hover:bg-white/[0.06] text-sm border-b border-white/[0.04] last:border-0"
+                      onClick={() => setReplaceSelected({ id: r.is_temp ? null : r.id, temp_id: r.is_temp ? r.id : null, name: r.name, price: r.price_wholesale || 0 })}
+                    >
+                      <span>{r.name}</span>
+                      {r.is_temp && <span className="text-amber-400 text-xs ml-1">временный</span>}
+                      <span className="text-xs text-muted-foreground ml-2">{r.price_wholesale ? `${r.price_wholesale.toLocaleString()} Br` : ""}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {replaceSelected && (
+                <div className="p-3 rounded-xl bg-white/[0.04]">
+                  <p className="text-sm mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
+                  <p className="text-xs text-muted-foreground">
+                    Текущая цена: {deleteItem.price.toLocaleString()} Br · Цена замены: {replaceSelected.price.toLocaleString()} Br
+                  </p>
+                  <button
+                    className="text-xs text-muted-foreground underline mt-2"
+                    onClick={() => setReplaceSelected(null)}
+                  >
+                    Выбрать другой товар
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            {replaceSelected ? (
+              <>
+                <Button className="rounded-xl" disabled={deleting} onClick={() => confirmDelete(true)}>
+                  Оставить цену
+                </Button>
+                <Button variant="outline" className="rounded-xl border-white/[0.08]" disabled={deleting} onClick={() => confirmDelete(false)}>
+                  Взять из товара
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" className="rounded-xl" onClick={() => { setDeleteItem(null); setReplaceSelected(null); }}>
+                Отменить
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>
