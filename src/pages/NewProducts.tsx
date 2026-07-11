@@ -732,8 +732,8 @@ const NewProducts = () => {
                                 {o.customer_name || "—"} · {formatDate(o.created_at)}
                               </p>
                               <p className="text-xs mt-0.5">
-                                В заявке: <span className="font-medium">{o.price.toLocaleString()} Br</span>
-                                <span className="text-muted-foreground ml-1">({o.price_is_manual ? "вручную" : "из товара"})</span>
+                                В заявке: <span className="font-medium whitespace-nowrap">{o.price.toLocaleString()} Br</span>
+                                <span className="text-muted-foreground ml-1 whitespace-nowrap">({o.price_is_manual ? "вручную" : "из товара"})</span>
                               </p>
                             </button>
                             {isNew && replaceSelected && (
