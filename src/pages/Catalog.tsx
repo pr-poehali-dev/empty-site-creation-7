@@ -75,6 +75,7 @@ const Catalog = () => {
   const token = localStorage.getItem("auth_token") || "";
   const { toast } = useToast();
   const isOwner = user.role === "owner";
+  const isSeller = user.role_name === "Продавец";
   const canEdit = isOwner || user.role_name === "Управляющий";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -872,8 +873,8 @@ const Catalog = () => {
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 flex gap-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
-                  onClick={() => { handleEdit(item); setEditMode(false); }}
+                  className={`rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4 flex gap-3 transition-colors ${isSeller ? "" : "cursor-pointer hover:bg-white/[0.02]"}`}
+                  onClick={isSeller ? undefined : () => { handleEdit(item); setEditMode(false); }}
                 >
                   {item.images.length > 0 ? (
                     <img
@@ -889,7 +890,7 @@ const Catalog = () => {
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-sm sm:text-base truncate">{item.name}</p>
+                      <p className="font-medium text-sm sm:text-base break-words min-w-0">{item.name}</p>
                       {item.is_new && (
                         <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs flex-shrink-0">Новый</Badge>
                       )}
