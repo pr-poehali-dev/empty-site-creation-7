@@ -699,68 +699,68 @@ const NewProducts = () => {
                 </div>
               )}
               {replaceSelected && (
-                <>
-                  <div className="p-3 rounded-xl bg-white/[0.04]">
-                    <p className="text-sm mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
-                    <button className="text-xs text-muted-foreground underline" onClick={() => setReplaceSelected(null)}>
-                      Выбрать другой товар
-                    </button>
-                  </div>
+                <div className="p-3 rounded-xl bg-white/[0.04]">
+                  <p className="text-sm mb-1">Замена: <span className="font-medium">{replaceSelected.name}</span></p>
+                  <button className="text-xs text-muted-foreground underline" onClick={() => setReplaceSelected(null)}>
+                    Выбрать другой товар
+                  </button>
+                </div>
+              )}
 
-                  {usedOrders.length > 0 && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1.5">Заявки с этим товаром ({usedOrders.length}):</p>
-                      <div className="space-y-1.5">
-                        {usedOrders.map((o) => {
-                          const isNew = o.status === "new";
-                          const checked = priceChangeIds.includes(o.id);
-                          return (
-                            <div key={o.id} className="rounded-xl border border-white/[0.08] bg-card p-2.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <button
-                                  className="min-w-0 flex-1 text-left"
-                                  onClick={() => openOrderView(o.id, `${deleteItem.brand} ${deleteItem.article}`)}
-                                >
-                                  <p className="text-sm font-medium flex items-center gap-1">
-                                    <Icon name="FileText" size={12} className="text-muted-foreground flex-shrink-0" />
-                                    №{o.id}
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${isNew ? "bg-emerald-500/20 text-emerald-300" : "bg-white/[0.08] text-muted-foreground"}`}>
-                                      {ORDER_STATUS_LABELS[o.status] || o.status}
-                                    </span>
-                                  </p>
-                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                    {o.customer_name || "—"} · {formatDate(o.created_at)}
-                                  </p>
-                                  <p className="text-xs mt-0.5">
-                                    В заявке: <span className="font-medium">{o.price.toLocaleString()} Br</span>
-                                    <span className="text-muted-foreground ml-1">({o.price_is_manual ? "вручную" : "из товара"})</span>
-                                  </p>
-                                </button>
-                                {isNew && (
-                                  <button
-                                    onClick={() => togglePriceChange(o.id)}
-                                    className={`flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${checked ? "bg-primary text-primary-foreground border-transparent" : "border-white/[0.12] text-muted-foreground hover:bg-white/[0.06]"}`}
-                                  >
-                                    {checked ? <Icon name="Check" size={13} className="inline mr-1" /> : null}
-                                    Заменить цену
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+              {usedOrders.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Заявки с этим товаром ({usedOrders.length}):</p>
+                  <div className="space-y-1.5">
+                    {usedOrders.map((o) => {
+                      const isNew = o.status === "new";
+                      const checked = priceChangeIds.includes(o.id);
+                      return (
+                        <div key={o.id} className="rounded-xl border border-white/[0.08] bg-card p-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => openOrderView(o.id, `${deleteItem.brand} ${deleteItem.article}`)}
+                            >
+                              <p className="text-sm font-medium flex items-center gap-1">
+                                <Icon name="FileText" size={12} className="text-muted-foreground flex-shrink-0" />
+                                №{o.id}
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${isNew ? "bg-emerald-500/20 text-emerald-300" : "bg-white/[0.08] text-muted-foreground"}`}>
+                                  {ORDER_STATUS_LABELS[o.status] || o.status}
+                                </span>
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {o.customer_name || "—"} · {formatDate(o.created_at)}
+                              </p>
+                              <p className="text-xs mt-0.5">
+                                В заявке: <span className="font-medium">{o.price.toLocaleString()} Br</span>
+                                <span className="text-muted-foreground ml-1">({o.price_is_manual ? "вручную" : "из товара"})</span>
+                              </p>
+                            </button>
+                            {isNew && replaceSelected && (
+                              <button
+                                onClick={() => togglePriceChange(o.id)}
+                                className={`flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${checked ? "bg-primary text-primary-foreground border-transparent" : "border-white/[0.12] text-muted-foreground hover:bg-white/[0.06]"}`}
+                              >
+                                {checked ? <Icon name="Check" size={13} className="inline mr-1" /> : null}
+                                Заменить цену
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {replaceSelected && (
+                <div className="p-3 rounded-xl bg-secondary space-y-1">
+                  <p className="text-xs"><span className="text-muted-foreground">Цена нового товара:</span> {deleteItem.price.toLocaleString()} Br</p>
+                  <p className="text-xs"><span className="text-muted-foreground">Цена замены:</span> {replaceSelected.price.toLocaleString()} Br</p>
+                  {priceChangeIds.length > 0 && (
+                    <p className="text-xs text-amber-400 pt-0.5">Цена замены будет установлена в {priceChangeIds.length} заявках</p>
                   )}
-
-                  <div className="p-3 rounded-xl bg-secondary space-y-1">
-                    <p className="text-xs"><span className="text-muted-foreground">Цена нового товара:</span> {deleteItem.price.toLocaleString()} Br</p>
-                    <p className="text-xs"><span className="text-muted-foreground">Цена замены:</span> {replaceSelected.price.toLocaleString()} Br</p>
-                    {priceChangeIds.length > 0 && (
-                      <p className="text-xs text-amber-400 pt-0.5">Цена замены будет установлена в {priceChangeIds.length} заявках</p>
-                    )}
-                  </div>
-                </>
+                </div>
               )}
             </div>
           )}
