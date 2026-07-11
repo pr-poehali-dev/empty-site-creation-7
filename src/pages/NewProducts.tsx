@@ -17,6 +17,31 @@ import DebugBadge from "@/components/DebugBadge";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
+const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
+
+interface UsedOrder {
+  id: number;
+  customer_name: string;
+  created_at: string | null;
+}
+
+interface OrderItem {
+  id: number;
+  name: string;
+  article: string | null;
+  quantity: number;
+  price: number;
+  amount: number;
+}
+
+interface OrderView {
+  id: number;
+  customer_name: string;
+  comment: string | null;
+  created_at: string | null;
+  created_by: string;
+  items: OrderItem[];
+}
 
 interface TempProduct {
   id: number;
@@ -78,6 +103,15 @@ const NewProducts = () => {
   const [replaceSelected, setReplaceSelected] = useState<{ id: number | null; temp_id: number | null; name: string; price: number } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const replaceDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Простое удаление (товар без заявок)
+  const [simpleDeleteItem, setSimpleDeleteItem] = useState<TempProduct | null>(null);
+
+  // Заявки, где используется товар (для ссылок) + модалка просмотра заявки
+  const [usedOrders, setUsedOrders] = useState<UsedOrder[]>([]);
+  const [orderView, setOrderView] = useState<OrderView | null>(null);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [highlightName, setHighlightName] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -235,16 +269,65 @@ const NewProducts = () => {
   const startDelete = (item: TempProduct, e: React.MouseEvent) => {
     e.stopPropagation();
     if (item.usage_count === 0) {
-      if (confirm(`Удалить товар ${item.article}?`)) {
-        fetch(`${TEMP_PRODUCTS_URL}?id=${item.id}`, { method: "DELETE", headers: authHeaders, body: "{}" })
-          .then(r => { if (r.ok) { toast({ title: "Товар удалён" }); removeActiveLocal(item.id); } });
-      }
+      setSimpleDeleteItem(item);
       return;
     }
     setDeleteItem(item);
     setReplaceSearch("");
     setReplaceResults([]);
     setReplaceSelected(null);
+    setUsedOrders([]);
+    fetch(`${TEMP_PRODUCTS_URL}?action=orders&id=${item.id}`, { headers: authHeaders })
+      .then(r => r.json())
+      .then(d => setUsedOrders(d.orders || []))
+      .catch(() => { /* ignore */ });
+  };
+
+  const confirmSimpleDelete = async () => {
+    if (!simpleDeleteItem) return;
+    setDeleting(true);
+    try {
+      const resp = await fetch(`${TEMP_PRODUCTS_URL}?id=${simpleDeleteItem.id}`, { method: "DELETE", headers: authHeaders, body: "{}" });
+      if (resp.ok) {
+        toast({ title: "Товар удалён" });
+        removeActiveLocal(simpleDeleteItem.id);
+        setSimpleDeleteItem(null);
+      } else {
+        toast({ title: "Ошибка", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const openOrderView = async (orderId: number, itemName: string) => {
+    setHighlightName(itemName.toLowerCase());
+    setOrderLoading(true);
+    setOrderView({ id: orderId, customer_name: "", comment: null, created_at: null, created_by: "", items: [] });
+    try {
+      const resp = await fetch(`${ORDERS_URL}?id=${orderId}`, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok && data.order) {
+        setOrderView({
+          id: data.order.id,
+          customer_name: data.order.customer_name || "",
+          comment: data.order.comment || null,
+          created_at: data.order.created_at || null,
+          created_by: data.order.created_by || "",
+          items: data.order.items || [],
+        });
+      } else {
+        toast({ title: "Не удалось открыть заявку", variant: "destructive" });
+        setOrderView(null);
+      }
+    } catch {
+      toast({ title: "Ошибка загрузки заявки", variant: "destructive" });
+      setOrderView(null);
+    } finally {
+      setOrderLoading(false);
+    }
   };
 
   const searchReplace = (value: string) => {
@@ -559,7 +642,7 @@ const NewProducts = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteItem} onOpenChange={(o) => { if (!o) { setDeleteItem(null); setReplaceSelected(null); } }}>
+      <Dialog open={!!deleteItem} onOpenChange={(o) => { if (!o) { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); } }}>
         <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
           <DialogHeader>
             <DialogTitle>Удалить товар</DialogTitle>
@@ -572,6 +655,23 @@ const NewProducts = () => {
                   Используется в {deleteItem.usage_count} заявках — выберите замену
                 </p>
               </div>
+              {usedOrders.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Заявки с этим товаром:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {usedOrders.map((o) => (
+                      <button
+                        key={o.id}
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-xs transition-colors flex items-center gap-1"
+                        onClick={() => openOrderView(o.id, `${deleteItem.brand} ${deleteItem.article}`)}
+                      >
+                        <Icon name="FileText" size={12} className="text-muted-foreground" />
+                        №{o.id}{o.customer_name ? ` · ${o.customer_name}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Товар для замены</p>
                 <Input
@@ -623,10 +723,81 @@ const NewProducts = () => {
                 </Button>
               </>
             ) : (
-              <Button variant="ghost" className="rounded-xl" onClick={() => { setDeleteItem(null); setReplaceSelected(null); }}>
+              <Button variant="ghost" className="rounded-xl" onClick={() => { setDeleteItem(null); setReplaceSelected(null); setUsedOrders([]); }}>
                 Отменить
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!simpleDeleteItem} onOpenChange={(o) => { if (!o) setSimpleDeleteItem(null); }}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Удалить товар</DialogTitle>
+          </DialogHeader>
+          {simpleDeleteItem && (
+            <div className="p-3 rounded-xl bg-secondary">
+              <p className="font-medium text-sm">{simpleDeleteItem.brand} {simpleDeleteItem.article}</p>
+              <p className="text-xs text-muted-foreground mt-1">Товар будет удалён без возможности восстановления.</p>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="ghost" className="rounded-xl" onClick={() => setSimpleDeleteItem(null)}>
+              Отмена
+            </Button>
+            <Button variant="destructive" className="rounded-xl" disabled={deleting} onClick={confirmSimpleDelete}>
+              {deleting ? <Icon name="Loader2" size={16} className="animate-spin mr-1.5" /> : <Icon name="Trash2" size={16} className="mr-1.5" />}
+              Удалить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!orderView} onOpenChange={(o) => { if (!o) { setOrderView(null); setHighlightName(""); } }}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card max-w-md">
+          <DialogHeader>
+            <DialogTitle>Заявка №{orderView?.id}</DialogTitle>
+          </DialogHeader>
+          {orderLoading ? (
+            <div className="flex justify-center py-8">
+              <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />
+            </div>
+          ) : orderView && (
+            <div className="space-y-3">
+              <div className="p-3 rounded-xl bg-secondary space-y-1">
+                <p className="text-sm"><span className="text-muted-foreground">Кому:</span> {orderView.customer_name || "—"}</p>
+                <p className="text-sm"><span className="text-muted-foreground">Когда:</span> {formatDate(orderView.created_at)}</p>
+                <p className="text-sm"><span className="text-muted-foreground">Создал:</span> {orderView.created_by || "—"}</p>
+                {orderView.comment && (
+                  <p className="text-sm"><span className="text-muted-foreground">Комментарий:</span> {orderView.comment}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Товары ({orderView.items.length})</p>
+                <div className="border border-white/[0.08] rounded-xl bg-card overflow-hidden max-h-64 overflow-y-auto">
+                  {orderView.items.map((it) => {
+                    const isHighlight = highlightName && it.name.toLowerCase().includes(highlightName);
+                    return (
+                      <div
+                        key={it.id}
+                        className={`px-3 py-2 text-sm border-b border-white/[0.04] last:border-0 ${isHighlight ? "bg-amber-500/15" : ""}`}
+                      >
+                        <div className="flex justify-between gap-2">
+                          <span className={isHighlight ? "font-medium text-amber-300" : ""}>{it.name}</span>
+                          <span className="text-muted-foreground flex-shrink-0">{it.quantity} × {it.price.toLocaleString()} Br</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="rounded-xl border-white/[0.08]" onClick={() => { setOrderView(null); setHighlightName(""); }}>
+              Закрыть
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

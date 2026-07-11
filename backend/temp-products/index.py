@@ -56,6 +56,31 @@ def handler(event: dict, context) -> dict:
 
     is_owner = user[2] == 'owner'
 
+    if method == 'GET' and params.get('action') == 'orders':
+        tp_id = params.get('id')
+        if not tp_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'id обязателен'})}
+        cur.execute("SELECT brand, article FROM temp_products WHERE id = %s", (tp_id,))
+        tp = cur.fetchone()
+        name_match = f"{tp[0]} {tp[1]}" if tp else None
+        cur.execute(
+            """SELECT DISTINCT o.id, o.customer_name, o.created_at
+               FROM wholesale_order_items oi
+               JOIN wholesale_orders o ON o.id = oi.order_id
+               WHERE oi.temp_product_id = %s
+                  OR (oi.product_id = 19 AND oi.item_name = %s)
+               ORDER BY o.created_at DESC""",
+            (tp_id, name_match)
+        )
+        orders = [{
+            'id': r[0],
+            'customer_name': r[1],
+            'created_at': str(r[2]) if r[2] else None,
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'orders': orders})}
+
     if method == 'GET':
         search = params.get('search', '').strip()
         status_filter = params.get('status', '')
