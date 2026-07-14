@@ -676,14 +676,17 @@ const OrderCreatePage = () => {
       const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
       const g = group !== undefined ? group : selectedGroup;
       if (g) params.set("filter_group", g);
-      const [prodResp, tempResp] = await Promise.all([
-        fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders }),
-        fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`, { headers: authHeaders }),
-      ]);
+      const prodResp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const prodData = await prodResp.json();
-      const tempData = await tempResp.json();
-      if (prodResp.ok) setSearchResults(prodData.items || []);
-      if (tempResp.ok) setTempProductResults(tempData.items || []);
+      const prodItems = prodResp.ok ? (prodData.items || []) : [];
+      if (prodResp.ok) setSearchResults(prodItems);
+      if (prodItems.length === 0) {
+        const tempResp = await fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`, { headers: authHeaders });
+        const tempData = await tempResp.json();
+        if (tempResp.ok) setTempProductResults(tempData.items || []);
+      } else {
+        setTempProductResults([]);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -696,7 +699,7 @@ const OrderCreatePage = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       searchProducts(value, searchMode);
-    }, 300);
+    }, 600);
   };
 
   const pendingHandledRef = useRef(false);

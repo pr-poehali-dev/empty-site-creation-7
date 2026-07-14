@@ -279,14 +279,17 @@ const ScanBarcode = () => {
     setSearching(true);
     try {
       const params = new URLSearchParams({ search: query, search_type: mode, per_page: "10" });
-      const [prodResp, tempResp] = await Promise.all([
-        fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders }),
-        fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`, { headers: authHeaders }),
-      ]);
+      const prodResp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
       const prodData = await prodResp.json();
-      const tempData = await tempResp.json();
-      if (prodResp.ok) setSearchResults(prodData.items || []);
-      if (tempResp.ok) setTempResults(tempData.items || []);
+      const prodItems = prodResp.ok ? (prodData.items || []) : [];
+      if (prodResp.ok) setSearchResults(prodItems);
+      if (prodItems.length === 0) {
+        const tempResp = await fetch(`${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`, { headers: authHeaders });
+        const tempData = await tempResp.json();
+        if (tempResp.ok) setTempResults(tempData.items || []);
+      } else {
+        setTempResults([]);
+      }
     } catch { /* ignore */ }
     setSearching(false);
   }, [token]);
@@ -294,7 +297,7 @@ const ScanBarcode = () => {
   const handleSearchInput = (value: string) => {
     setSearchQuery(value);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => doSearch(value, searchMode), 300);
+    searchDebounceRef.current = setTimeout(() => doSearch(value, searchMode), 600);
   };
 
   const selectProduct = (product: { id: number; name: string; price_wholesale?: number | null }) => {
@@ -430,7 +433,7 @@ const ScanBarcode = () => {
         const tempItems = tempResp.ok ? (tempData.items || []).map((t: { id: number; brand: string; article: string }) => ({ id: t.id, name: `${t.brand} ${t.article}`, article: t.article, brand: t.brand })) : [];
         setArticleSuggestions([...tempItems, ...prodItems]);
       } catch { /* ignore */ }
-    }, 300);
+    }, 600);
   };
 
   const filteredBrands = allBrands.filter(b => b.toLowerCase().includes(tempBrand.toLowerCase()));
