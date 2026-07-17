@@ -13,6 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
+import { matchesTransliterated, transliterateVariants } from "@/lib/translit";
 
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -89,6 +90,15 @@ const NewProducts = () => {
   const [activePage, setActivePage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const ACTIVE_PER_PAGE = 50;
+
+  // Поиск по активным товарам
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<TempProduct[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searching, setSearching] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const isSearchActive = searchQuery.trim().length >= 2;
 
   const [addDialog, setAddDialog] = useState<TempProduct | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -168,6 +178,65 @@ const NewProducts = () => {
   const removeActiveLocal = (id: number) => {
     setActiveItems((prev) => prev.filter((it) => it.id !== id));
     setActiveTotal((prev) => Math.max(0, prev - 1));
+    setSearchResults((prev) => prev.filter((it) => it.id !== id));
+  };
+
+  // Серверный поиск активных товаров с учётом транслитерации (кириллица ⇄ латиница)
+  const runSearch = useCallback(async (query: string, page: number) => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    setSearching(true);
+    try {
+      const variants = transliterateVariants(q);
+      const responses = await Promise.all(
+        variants.map((v) =>
+          fetch(`${TEMP_PRODUCTS_URL}?status=pending&search=${encodeURIComponent(v)}&page=${page}&per_page=${ACTIVE_PER_PAGE}`, { headers: authHeaders })
+            .then((r) => (r.ok ? r.json() : { items: [], total: 0 }))
+            .catch(() => ({ items: [], total: 0 }))
+        )
+      );
+      const merged = new Map<number, TempProduct>();
+      let maxTotal = 0;
+      responses.forEach((data) => {
+        (data.items || []).forEach((it: TempProduct) => merged.set(it.id, it));
+        if ((data.total || 0) > maxTotal) maxTotal = data.total || 0;
+      });
+      const items = Array.from(merged.values());
+      setSearchResults((prev) => {
+        if (page === 1) return items;
+        const acc = new Map<number, TempProduct>();
+        [...prev, ...items].forEach((it) => acc.set(it.id, it));
+        return Array.from(acc.values());
+      });
+      setSearchTotal(maxTotal);
+      setSearchPage(page);
+    } finally {
+      setSearching(false);
+    }
+  }, [token]);
+
+  const loadMoreSearch = useCallback(() => {
+    runSearch(searchQuery, searchPage + 1);
+  }, [runSearch, searchQuery, searchPage]);
+
+  const handleSearchInput = (value: string) => {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      setSearchTotal(0);
+      setSearchPage(1);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => runSearch(value, 1), 600);
+  };
+
+  const clearSearch = () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchTotal(0);
+    setSearchPage(1);
   };
 
   const loadHistory = useCallback(async () => {
@@ -401,6 +470,45 @@ const NewProducts = () => {
     c.name.toLowerCase().includes(formCategory.toLowerCase())
   );
 
+  // Список для отображения: при активном поиске — мгновенный клиентский фильтр
+  // уже загруженных + серверные результаты (без дублей), иначе — обычный список.
+  const displayedActive = (() => {
+    if (!isSearchActive) return activeItems;
+    const merged = new Map<number, TempProduct>();
+    activeItems
+      .filter((it) => matchesTransliterated(`${it.brand} ${it.article}`, searchQuery))
+      .forEach((it) => merged.set(it.id, it));
+    searchResults.forEach((it) => merged.set(it.id, it));
+    return Array.from(merged.values());
+  })();
+
+  const highlightMatch = (text: string) => {
+    if (!isSearchActive) return text;
+    const words = searchQuery.trim().split(/\s+/).filter(Boolean);
+    const needles = new Set<string>();
+    words.forEach((w) => transliterateVariants(w).forEach((v) => v && needles.add(v)));
+    const lower = text.toLowerCase();
+    const marks: boolean[] = new Array(text.length).fill(false);
+    needles.forEach((needle) => {
+      let from = 0;
+      let idx = lower.indexOf(needle, from);
+      while (idx !== -1 && needle) {
+        for (let i = idx; i < idx + needle.length; i++) marks[i] = true;
+        from = idx + needle.length;
+        idx = lower.indexOf(needle, from);
+      }
+    });
+    const parts: { text: string; on: boolean }[] = [];
+    for (let i = 0; i < text.length; i++) {
+      const on = marks[i];
+      if (parts.length && parts[parts.length - 1].on === on) parts[parts.length - 1].text += text[i];
+      else parts.push({ text: text[i], on });
+    }
+    return parts.map((p, i) =>
+      p.on ? <mark key={i} className="bg-amber-400/30 text-amber-200 rounded-sm px-0.5">{p.text}</mark> : <span key={i}>{p.text}</span>
+    );
+  };
+
   const formatDate = (d: string | null) => {
     if (!d) return "—";
     return new Date(d).toLocaleDateString("ru-RU");
@@ -429,19 +537,52 @@ const NewProducts = () => {
           </TabsList>
 
           <TabsContent value="active">
+            <div className="relative mb-3">
+              <Icon name="Search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => handleSearchInput(e.target.value)}
+                placeholder="Поиск по бренду или артикулу"
+                className="pl-9 pr-9 rounded-xl bg-white/[0.04] border-white/[0.08]"
+              />
+              {searching ? (
+                <Icon name="Loader2" size={16} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />
+              ) : searchQuery ? (
+                <button
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={clearSearch}
+                >
+                  <Icon name="X" size={16} />
+                </button>
+              ) : null}
+            </div>
+
+            {isSearchActive && (
+              <p className="text-xs text-muted-foreground mb-2">
+                Найдено: {displayedActive.length}{searchTotal > displayedActive.length ? ` из ${searchTotal}` : ""}
+              </p>
+            )}
+
             {loading ? (
               <div className="flex justify-center py-12">
                 <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />
               </div>
-            ) : activeItems.length === 0 ? (
+            ) : displayedActive.length === 0 ? (
               <div className="text-center py-12">
-                <Icon name="PackageCheck" size={48} className="text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">Нет новых товаров</p>
+                <Icon name={isSearchActive ? "SearchX" : "PackageCheck"} size={48} className="text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">
+                  {isSearchActive ? `Ничего не найдено по запросу «${searchQuery.trim()}»` : "Нет новых товаров"}
+                </p>
+                {isSearchActive && (
+                  <Button variant="outline" className="mt-4 rounded-lg border-white/[0.08]" onClick={clearSearch}>
+                    Очистить поиск
+                  </Button>
+                )}
               </div>
             ) : (
               <DebugBadge id="NewProducts:activeList">
               <div className="space-y-2">
-                {activeItems.map((item) => (
+                {displayedActive.map((item) => (
                   <div key={item.id}>
                     <div
                       className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 hover:border-red-500/50 transition-colors cursor-pointer"
@@ -449,7 +590,7 @@ const NewProducts = () => {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-sm">{item.brand} {item.article}</p>
+                          <p className="font-medium text-sm">{highlightMatch(`${item.brand} ${item.article}`)}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {item.price ? `${item.price.toLocaleString()} Br` : "—"} · {formatDate(item.created_at)}
                             {item.usage_count > 0 && <span className="ml-2 text-amber-400">в {item.usage_count} заявках</span>}
@@ -469,25 +610,48 @@ const NewProducts = () => {
                   </div>
                 ))}
               </div>
-              {activeItems.length < activeTotal && (
-                <div className="flex flex-col items-center gap-2 mt-4">
-                  <Button
-                    variant="outline"
-                    className="rounded-lg border-white/[0.08]"
-                    disabled={loadingMore}
-                    onClick={loadMoreActive}
-                  >
-                    {loadingMore ? (
-                      <Icon name="Loader2" size={16} className="animate-spin mr-1.5" />
-                    ) : (
-                      <Icon name="ChevronDown" size={16} className="mr-1.5" />
-                    )}
-                    Показать ещё
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    Показано {activeItems.length} из {activeTotal}
-                  </p>
-                </div>
+              {isSearchActive ? (
+                displayedActive.length < searchTotal && (
+                  <div className="flex flex-col items-center gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      className="rounded-lg border-white/[0.08]"
+                      disabled={searching}
+                      onClick={loadMoreSearch}
+                    >
+                      {searching ? (
+                        <Icon name="Loader2" size={16} className="animate-spin mr-1.5" />
+                      ) : (
+                        <Icon name="ChevronDown" size={16} className="mr-1.5" />
+                      )}
+                      Показать ещё
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Показано {displayedActive.length} из {searchTotal}
+                    </p>
+                  </div>
+                )
+              ) : (
+                activeItems.length < activeTotal && (
+                  <div className="flex flex-col items-center gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      className="rounded-lg border-white/[0.08]"
+                      disabled={loadingMore}
+                      onClick={loadMoreActive}
+                    >
+                      {loadingMore ? (
+                        <Icon name="Loader2" size={16} className="animate-spin mr-1.5" />
+                      ) : (
+                        <Icon name="ChevronDown" size={16} className="mr-1.5" />
+                      )}
+                      Показать ещё
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Показано {activeItems.length} из {activeTotal}
+                    </p>
+                  </div>
+                )
               )}
               </DebugBadge>
             )}
