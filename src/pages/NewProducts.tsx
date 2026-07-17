@@ -297,6 +297,7 @@ const NewProducts = () => {
         toast({ title: "Изменения сохранены" });
         const b = editBrand.trim(), a = editArticle.trim(), p = parseFloat(editPrice || "0") || 0;
         setActiveItems((prev) => prev.map((it) => it.id === addDialog.id ? { ...it, brand: b, article: a, price: p } : it));
+        setSearchResults((prev) => prev.map((it) => it.id === addDialog.id ? { ...it, brand: b, article: a, price: p } : it));
         setAddDialog(null);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
