@@ -175,6 +175,7 @@ def handler(event: dict, context) -> dict:
 
     if method == 'PUT':
         item_id = params.get('id')
+        print(f"[temp-products PUT] item_id={item_id} params={params} body={body}")
         if not item_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'id обязателен'})}
@@ -206,6 +207,7 @@ def handler(event: dict, context) -> dict:
 
         args.append(item_id)
         cur.execute(f"UPDATE temp_products SET {', '.join(updates)} WHERE id = %s", args)
+        print(f"[temp-products PUT] updates={updates} args={args} rowcount={cur.rowcount}")
         conn.commit()
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
