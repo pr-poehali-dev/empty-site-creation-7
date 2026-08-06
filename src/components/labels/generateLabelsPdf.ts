@@ -94,6 +94,36 @@ const barcodeDataUrl = (value: string): { url: string; ratio: number } | null =>
   }
 };
 
+const MIN_BARCODE_MM = 8;
+
+const measureTexts = (
+  doc: jsPDF,
+  product: LabelProduct,
+  rows: LabelRow[],
+  innerW: number,
+  shrink: number,
+): number => {
+  let total = 0;
+  for (const r of rows) {
+    if (r.type === "spacer") total += r.heightMm ?? 2;
+    else if (r.type === "line") total += Math.max(0.1, r.thicknessMm ?? 0.3) + 0.6;
+    else if (r.type === "text") {
+      const size = (r.fontSize || 8) * shrink;
+      const lineH = size * 0.3528 * 1.15;
+      if (r.wrap) {
+        doc.setFont("Roboto", r.bold ? "bold" : "normal");
+        doc.setFontSize(size);
+        const parts = doc.splitTextToSize(renderTokens(r.content, product), innerW);
+        total += lineH * Math.max(1, parts.length);
+      } else {
+        total += lineH;
+      }
+      total += 0.3;
+    }
+  }
+  return total;
+};
+
 const drawLabel = (
   doc: jsPDF,
   product: LabelProduct,
@@ -109,26 +139,22 @@ const drawLabel = (
   const bottom = y + h - PAD;
 
   const barcodeRows = rows.filter((r) => r.type === "barcode").length;
-  let fixedHeight = 0;
-  for (const r of rows) {
-    if (r.type === "spacer") fixedHeight += r.heightMm ?? 2;
-    else if (r.type === "line") fixedHeight += Math.max(0.1, r.thicknessMm ?? 0.3) + 0.6;
-    else if (r.type === "text") {
-      const size = r.fontSize || 8;
-      const lineH = (size * 0.3528) * 1.15;
-      if (r.wrap) {
-        doc.setFont("Roboto", r.bold ? "bold" : "normal");
-        doc.setFontSize(size);
-        const parts = doc.splitTextToSize(renderTokens(r.content, product), innerW);
-        fixedHeight += lineH * Math.max(1, parts.length);
-      } else {
-        fixedHeight += lineH;
-      }
-      fixedHeight += 0.3;
-    }
+  const available = h - PAD * 2;
+  const reserved = barcodeRows * MIN_BARCODE_MM;
+
+  let shrink = 1;
+  while (shrink > 0.55) {
+    const used = measureTexts(doc, product, rows, innerW, shrink);
+    if (used + reserved <= available) break;
+    shrink -= 0.05;
   }
+  shrink = Math.max(0.55, shrink);
+
+  const fixedHeight = measureTexts(doc, product, rows, innerW, shrink);
   const barcodeHeight =
-    barcodeRows > 0 ? Math.max(4, (h - PAD * 2 - fixedHeight) / barcodeRows) : 0;
+    barcodeRows > 0
+      ? Math.max(MIN_BARCODE_MM, (available - fixedHeight) / barcodeRows)
+      : 0;
 
   for (const r of rows) {
     if (cursor >= bottom) break;
@@ -180,7 +206,7 @@ const drawLabel = (
       continue;
     }
 
-    const size = r.fontSize || 8;
+    const size = (r.fontSize || 8) * shrink;
     doc.setFont("Roboto", r.bold ? "bold" : "normal");
     doc.setFontSize(size);
     doc.setTextColor(0);
@@ -191,9 +217,15 @@ const drawLabel = (
       align === "center" ? innerX + innerW / 2 : align === "right" ? innerX + innerW : innerX;
 
     if (r.wrap) {
-      const parts = doc.splitTextToSize(text, innerW);
-      for (const part of parts) {
+      const parts: string[] = doc.splitTextToSize(text, innerW);
+      for (let i = 0; i < parts.length; i++) {
         if (cursor + lineH > bottom) break;
+        const isLastFitting = cursor + lineH * 2 > bottom && i < parts.length - 1;
+        let part = parts[i];
+        if (isLastFitting) {
+          while (part && doc.getTextWidth(part + "…") > innerW) part = part.slice(0, -1);
+          part += "…";
+        }
         doc.text(part, tx, cursor + lineH * 0.8, { align });
         cursor += lineH;
       }

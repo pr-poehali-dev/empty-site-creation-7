@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { LabelRow } from "./LabelTemplateEditor";
 import { LabelProduct } from "@/pages/Labels";
@@ -53,9 +53,26 @@ const Barcode = ({ value, height }: { value: string; height: number }) => {
 const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) => {
   const widthPx = widthMm * scale;
   const heightPx = heightMm * scale;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [shrink, setShrink] = useState(1);
+  const key = JSON.stringify([rows, product.id, product.name, widthMm, heightMm, scale]);
+
+  useLayoutEffect(() => {
+    setShrink(1);
+  }, [key]);
+
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const overflow = el.scrollHeight - el.clientHeight;
+    if (overflow > 1 && shrink > 0.55) {
+      setShrink((s) => Math.max(0.55, s - 0.05));
+    }
+  });
 
   return (
     <div
+      ref={boxRef}
       className="bg-white text-black border border-border overflow-hidden flex flex-col"
       style={{
         width: `${widthPx}px`,
@@ -71,9 +88,9 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
             <div
               key={row.id}
               className="flex items-center justify-center"
-              style={{ flex: 1 }}
+              style={{ flex: 1, minHeight: `${scale * 5 * shrink}px` }}
             >
-              <Barcode value={value} height={Math.max(20, scale * 6)} />
+              <Barcode value={value} height={Math.max(16, scale * 6 * shrink)} />
             </div>
           );
         }
@@ -130,7 +147,8 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
           <div
             key={row.id}
             style={{
-              fontSize: `${row.fontSize * (scale / 4)}px`,
+              fontSize: `${row.fontSize * (scale / 4) * shrink}px`,
+              flexShrink: 0,
               fontWeight: row.bold ? 700 : 400,
               textAlign: row.align,
               lineHeight: 1.1,
