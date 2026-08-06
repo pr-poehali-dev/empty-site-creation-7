@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -5,11 +6,10 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
 
-export type LabelRowType = "text" | "barcode" | "qr";
+export type LabelRowType = "text" | "barcode" | "qr" | "spacer" | "line";
 
 export interface LabelRow {
   id: string;
@@ -18,6 +18,13 @@ export interface LabelRow {
   fontSize: number;
   bold: boolean;
   align: "left" | "center" | "right";
+  wrap?: boolean;
+  heightMm?: number;
+  thicknessMm?: number;
+  marginLeftMm?: number;
+  marginRightMm?: number;
+  dashGapMm?: number;
+  dashLenMm?: number;
 }
 
 interface Props {
@@ -32,9 +39,51 @@ const TOKENS = [
   { value: "{розничная_цена}", label: "Розничная цена" },
   { value: "{оптовая_цена}", label: "Оптовая цена" },
   { value: "{штрихкод}", label: "Штрихкод (текст)" },
+  { value: "__spacer__", label: "Отступ" },
 ];
 
+const TYPE_LABELS: Record<LabelRowType, string> = {
+  text: "Текст",
+  barcode: "Штрихкод",
+  qr: "QR",
+  spacer: "Отступ",
+  line: "Линия",
+};
+
 const newId = () => `r${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+interface NumFieldProps {
+  value: number | undefined;
+  onCommit: (v: number) => void;
+  fallback: number;
+  title: string;
+  width?: string;
+  step?: string;
+}
+
+const NumField = ({ value, onCommit, fallback, title, width = "w-14", step }: NumFieldProps) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft !== null ? draft : value == null ? "" : String(value);
+  return (
+    <Input
+      type="number"
+      step={step}
+      value={shown}
+      title={title}
+      placeholder={String(fallback)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const n = parseFloat(e.target.value);
+        if (!isNaN(n)) onCommit(n);
+      }}
+      onBlur={() => {
+        if (draft !== null && draft.trim() === "") onCommit(fallback);
+        setDraft(null);
+      }}
+      className={`h-7 ${width} px-2 text-xs`}
+    />
+  );
+};
 
 const LabelTemplateEditor = ({ rows, onChange }: Props) => {
   const update = (idx: number, patch: Partial<LabelRow>) => {
@@ -62,103 +111,226 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
       content: type === "barcode" ? "{штрихкод}" : "",
       fontSize: 10,
       bold: false,
-      align: "left",
+      align: type === "line" ? "center" : "left",
+      wrap: false,
+      ...(type === "spacer" ? { heightMm: 2 } : {}),
+      ...(type === "line"
+        ? {
+            thicknessMm: 0.3,
+            marginLeftMm: 0,
+            marginRightMm: 0,
+            dashGapMm: 0,
+            dashLenMm: 0,
+          }
+        : {}),
     };
     onChange([...rows, r]);
   };
 
   const insertToken = (idx: number, token: string) => {
+    if (token === "__spacer__") {
+      update(idx, { type: "spacer", heightMm: rows[idx].heightMm ?? 2 });
+      return;
+    }
     update(idx, { content: (rows[idx].content || "") + token });
   };
 
+  const setDashGap = (idx: number, v: number) => {
+    const row = rows[idx];
+    const patch: Partial<LabelRow> = { dashGapMm: v };
+    if (!row.dashLenMm) patch.dashLenMm = v;
+    update(idx, patch);
+  };
+
+  const addButtons: { type: LabelRowType; icon: string; fallback?: string; label: string }[] = [
+    { type: "text", icon: "Type", label: "Текст" },
+    { type: "barcode", icon: "Barcode", fallback: "Hash", label: "Штрихкод" },
+    { type: "spacer", icon: "MoveVertical", fallback: "ArrowUpDown", label: "Отступ" },
+    { type: "line", icon: "Minus", label: "Линия" },
+  ];
+
   return (
     <div className="rounded-lg border border-border p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">Конструктор</div>
-        <div className="flex gap-1">
+      <div className="text-sm font-medium">Конструктор</div>
+      <div className="flex flex-wrap gap-1">
+        {addButtons.map((b) => (
           <Button
+            key={b.type}
             variant="outline"
             size="sm"
-            className="h-8"
-            onClick={() => addRow("text")}
+            className="h-7 px-2 text-xs"
+            onClick={() => addRow(b.type)}
           >
-            <Icon name="Type" size={14} />
-            <span className="ml-1.5">Текст</span>
+            <Icon name={b.icon} size={12} fallback={b.fallback} />
+            <span className="ml-1">{b.label}</span>
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8"
-            onClick={() => addRow("barcode")}
-          >
-            <Icon name="Barcode" size={14} fallback="Hash" />
-            <span className="ml-1.5">Штрихкод</span>
-          </Button>
-        </div>
+        ))}
       </div>
 
       <div className="space-y-2">
         {rows.map((row, idx) => (
           <div key={row.id} className="rounded-md border border-border p-2 space-y-2 bg-muted/10">
             <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground w-12">
-                {row.type === "barcode" ? "Штрихкод" : row.type === "qr" ? "QR" : "Текст"}
+              <span className="text-xs text-muted-foreground w-14 shrink-0">
+                {TYPE_LABELS[row.type]}
               </span>
-              <Input
-                value={row.content}
-                onChange={(e) => update(idx, { content: e.target.value })}
-                placeholder={row.type === "barcode" ? "{штрихкод}" : "Текст или {токен}"}
-                className="h-8 flex-1 font-mono text-xs"
-              />
-              <Select onValueChange={(v) => insertToken(idx, v)}>
-                <SelectTrigger className="h-8 w-9 px-0 justify-center" aria-label="Вставить токен">
-                  <Icon name="Plus" size={14} />
-                </SelectTrigger>
-                <SelectContent>
-                  {TOKENS.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {row.type === "spacer" ? (
+                <div className="flex items-center gap-1 flex-1">
+                  <span className="text-xs text-muted-foreground">Высота</span>
+                  <NumField
+                    value={row.heightMm}
+                    fallback={2}
+                    step="0.5"
+                    title="Высота отступа, мм"
+                    onCommit={(v) => update(idx, { heightMm: v })}
+                  />
+                  <span className="text-xs text-muted-foreground">мм</span>
+                </div>
+              ) : row.type === "line" ? (
+                <div className="flex-1 text-xs text-muted-foreground">
+                  Разделитель
+                </div>
+              ) : (
+                <>
+                  <Input
+                    value={row.content}
+                    onChange={(e) => update(idx, { content: e.target.value })}
+                    placeholder={row.type === "barcode" ? "{штрихкод}" : "Текст или {токен}"}
+                    className="h-8 flex-1 font-mono text-xs"
+                  />
+                  <Select onValueChange={(v) => insertToken(idx, v)}>
+                    <SelectTrigger className="h-8 w-9 px-0 justify-center" aria-label="Вставить поле">
+                      <Icon name="Plus" size={14} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TOKENS.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
             </div>
 
-            <div className="flex items-center gap-1 flex-wrap">
-              <Input
-                type="number"
-                value={row.fontSize}
-                onChange={(e) => update(idx, { fontSize: parseFloat(e.target.value) || 8 })}
-                className="h-7 w-14 px-2 text-xs"
-                title="Размер шрифта"
-              />
-              <Button
-                variant={row.bold ? "default" : "outline"}
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={() => update(idx, { bold: !row.bold })}
-                title="Жирный"
-              >
-                <Icon name="Bold" size={12} />
-              </Button>
-              <div className="flex">
-                {(["left", "center", "right"] as const).map((a) => (
-                  <Button
-                    key={a}
-                    variant={row.align === a ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 w-7 p-0 rounded-none first:rounded-l-md last:rounded-r-md"
-                    onClick={() => update(idx, { align: a })}
-                  >
-                    <Icon
-                      name={
-                        a === "left" ? "AlignLeft" : a === "center" ? "AlignCenter" : "AlignRight"
-                      }
-                      size={12}
-                    />
-                  </Button>
-                ))}
+            {row.type === "line" && (
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[10px] text-muted-foreground">Толщ.</span>
+                <NumField
+                  value={row.thicknessMm}
+                  fallback={0.3}
+                  step="0.1"
+                  title="Толщина линии, мм"
+                  width="w-12"
+                  onCommit={(v) => update(idx, { thicknessMm: v })}
+                />
+                <span className="text-[10px] text-muted-foreground ml-1">Слева</span>
+                <NumField
+                  value={row.marginLeftMm}
+                  fallback={0}
+                  step="0.5"
+                  title="Отступ слева, мм"
+                  width="w-12"
+                  onCommit={(v) => update(idx, { marginLeftMm: v })}
+                />
+                <div className="flex ml-1">
+                  {(["left", "center", "right"] as const).map((a) => (
+                    <Button
+                      key={a}
+                      variant={row.align === a ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 w-7 p-0 rounded-none first:rounded-l-md last:rounded-r-md"
+                      onClick={() => update(idx, { align: a })}
+                      title="Размещение"
+                    >
+                      <Icon
+                        name={
+                          a === "left" ? "AlignLeft" : a === "center" ? "AlignCenter" : "AlignRight"
+                        }
+                        size={12}
+                      />
+                    </Button>
+                  ))}
+                </div>
+                <span className="text-[10px] text-muted-foreground ml-1">Справа</span>
+                <NumField
+                  value={row.marginRightMm}
+                  fallback={0}
+                  step="0.5"
+                  title="Отступ справа, мм"
+                  width="w-12"
+                  onCommit={(v) => update(idx, { marginRightMm: v })}
+                />
+                <span className="text-[10px] text-muted-foreground ml-1">Пунктир</span>
+                <NumField
+                  value={row.dashGapMm}
+                  fallback={0}
+                  step="0.5"
+                  title="Ширина прерывания, мм"
+                  width="w-12"
+                  onCommit={(v) => setDashGap(idx, v)}
+                />
+                <NumField
+                  value={row.dashLenMm}
+                  fallback={0}
+                  step="0.5"
+                  title="Ширина начертания, мм"
+                  width="w-12"
+                  onCommit={(v) => update(idx, { dashLenMm: v })}
+                />
               </div>
+            )}
+
+            <div className="flex items-center gap-1 flex-wrap">
+              {row.type !== "spacer" && row.type !== "line" && (
+                <>
+                  <NumField
+                    value={row.fontSize}
+                    fallback={8}
+                    title="Размер шрифта"
+                    onCommit={(v) => update(idx, { fontSize: v })}
+                  />
+                  <Button
+                    variant={row.bold ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => update(idx, { bold: !row.bold })}
+                    title="Жирный"
+                  >
+                    <Icon name="Bold" size={12} />
+                  </Button>
+                  {row.type === "text" && (
+                    <Button
+                      variant={row.wrap ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => update(idx, { wrap: !row.wrap })}
+                      title="Перенос слов"
+                    >
+                      <Icon name="WrapText" size={12} fallback="CornerDownLeft" />
+                    </Button>
+                  )}
+                  <div className="flex">
+                    {(["left", "center", "right"] as const).map((a) => (
+                      <Button
+                        key={a}
+                        variant={row.align === a ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 w-7 p-0 rounded-none first:rounded-l-md last:rounded-r-md"
+                        onClick={() => update(idx, { align: a })}
+                      >
+                        <Icon
+                          name={
+                            a === "left" ? "AlignLeft" : a === "center" ? "AlignCenter" : "AlignRight"
+                          }
+                          size={12}
+                        />
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
               <div className="flex-1" />
               <Button
                 variant="ghost"

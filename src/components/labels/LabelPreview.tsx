@@ -77,6 +77,46 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
             </div>
           );
         }
+        if (row.type === "spacer") {
+          return (
+            <div
+              key={row.id}
+              style={{ height: `${(row.heightMm ?? 2) * scale}px`, flexShrink: 0 }}
+            />
+          );
+        }
+        if (row.type === "line") {
+          const thickness = Math.max(0.1, row.thicknessMm ?? 0.3) * scale;
+          const gap = row.dashGapMm ?? 0;
+          const dash = row.dashLenMm ?? 0;
+          const dashed = gap > 0 || dash > 0;
+          const justify =
+            row.align === "left" ? "flex-start" : row.align === "right" ? "flex-end" : "center";
+          return (
+            <div
+              key={row.id}
+              style={{
+                display: "flex",
+                justifyContent: justify,
+                paddingLeft: `${(row.marginLeftMm ?? 0) * scale}px`,
+                paddingRight: `${(row.marginRightMm ?? 0) * scale}px`,
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  height: `${thickness}px`,
+                  ...(dashed
+                    ? {
+                        backgroundImage: `repeating-linear-gradient(to right, #000 0, #000 ${Math.max(dash, 0.2) * scale}px, transparent ${Math.max(dash, 0.2) * scale}px, transparent ${(Math.max(dash, 0.2) + Math.max(gap, 0.2)) * scale}px)`,
+                      }
+                    : { backgroundColor: "#000" }),
+                }}
+              />
+            </div>
+          );
+        }
         if (row.type === "qr") {
           // TODO: добавить рендер QR (заложено на будущее)
           return (
@@ -94,9 +134,17 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
               fontWeight: row.bold ? 700 : 400,
               textAlign: row.align,
               lineHeight: 1.1,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              ...(row.wrap
+                ? {
+                    whiteSpace: "normal",
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                  }
+                : {
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }),
             }}
           >
             {text}
