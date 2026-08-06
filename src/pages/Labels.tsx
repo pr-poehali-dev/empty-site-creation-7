@@ -516,16 +516,28 @@ const Labels = () => {
   };
 
   const totalLabels = lines.reduce((sum, l) => sum + l.copies, 0);
-  const previewProduct: LabelProduct =
-    lines[previewIdx] || {
-      id: 0,
-      name: "Пример товара",
-      article: "ART-001",
-      brand: "Бренд",
-      price_retail: 1990,
-      price_wholesale: 1500,
-      external_id: "4600000000001",
-    };
+  const sampleProduct: LabelProduct = {
+    id: 0,
+    name: "Пример товара",
+    article: "ART-001",
+    brand: "Бренд",
+    price_retail: 1990,
+    price_wholesale: 1500,
+    external_id: "4600000000001",
+  };
+
+  const PREVIEW_PER_PAGE = 3;
+  const previewStart =
+    lines.length > 0
+      ? Math.min(
+          Math.floor(previewIdx / PREVIEW_PER_PAGE) * PREVIEW_PER_PAGE,
+          Math.max(0, lines.length - 1),
+        )
+      : 0;
+  const previewItems: LabelProduct[] =
+    lines.length > 0
+      ? lines.slice(previewStart, previewStart + PREVIEW_PER_PAGE)
+      : [sampleProduct];
 
   return (
     <div className="min-h-screen bg-background">
@@ -902,15 +914,57 @@ const Labels = () => {
           <LabelTemplateEditor rows={rows} onChange={setRows} />
 
           <div className="rounded-lg border border-border p-3">
-            <div className="text-sm font-medium mb-2">Превью</div>
-            <div className="flex justify-center bg-muted/20 p-4 rounded">
-              <LabelPreview
-                product={previewProduct}
-                rows={rows}
-                widthMm={width}
-                heightMm={height}
-                scale={4}
-              />
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium">Превью</div>
+              {lines.length > PREVIEW_PER_PAGE && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={previewStart === 0}
+                    onClick={() =>
+                      setPreviewIdx(Math.max(0, previewStart - PREVIEW_PER_PAGE))
+                    }
+                  >
+                    <Icon name="ChevronLeft" size={16} />
+                  </Button>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {previewStart + 1}–
+                    {Math.min(previewStart + PREVIEW_PER_PAGE, lines.length)} из{" "}
+                    {lines.length}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={previewStart + PREVIEW_PER_PAGE >= lines.length}
+                    onClick={() => setPreviewIdx(previewStart + PREVIEW_PER_PAGE)}
+                  >
+                    <Icon name="ChevronRight" size={16} />
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-center items-start gap-4 bg-muted/20 p-4 rounded">
+              {previewItems.map((p, i) => (
+                <div key={`${p.id}-${i}`} className="flex flex-col items-center gap-1">
+                  <LabelPreview
+                    product={p}
+                    rows={rows}
+                    widthMm={width}
+                    heightMm={height}
+                    scale={4}
+                  />
+                  <div
+                    className="text-[10px] text-muted-foreground text-center truncate"
+                    style={{ maxWidth: `${width * 4}px` }}
+                    title={p.name}
+                  >
+                    {p.name}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
