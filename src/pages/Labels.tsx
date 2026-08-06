@@ -373,6 +373,22 @@ const Labels = () => {
     }
   };
 
+  const findTemplateByName = (name: string) =>
+    templates.find(
+      (t) => t.name.trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+
+  const targetTemplate = (() => {
+    const name = tplName.trim();
+    if (!name) return undefined;
+    const current = templates.find((t) => String(t.id) === selectedTplId);
+    if (current && current.name.trim().toLowerCase() === name.toLowerCase())
+      return current;
+    return findTemplateByName(name);
+  })();
+
+  const isUpdateMode = !!targetTemplate;
+
   const saveTemplate = async () => {
     const name = tplName.trim();
     if (!name) {
@@ -380,8 +396,10 @@ const Labels = () => {
       return;
     }
     try {
-      const isUpdate = selectedTplId && templates.some((t) => String(t.id) === selectedTplId);
-      const url = isUpdate ? `${TEMPLATES_URL}?id=${selectedTplId}` : TEMPLATES_URL;
+      const isUpdate = !!targetTemplate;
+      const url = isUpdate
+        ? `${TEMPLATES_URL}?id=${targetTemplate!.id}`
+        : TEMPLATES_URL;
       const resp = await fetch(url, {
         method: isUpdate ? "PUT" : "POST",
         headers: authHeaders,
@@ -394,7 +412,14 @@ const Labels = () => {
         }),
       });
       if (resp.ok) {
-        toast({ title: isUpdate ? "Шаблон обновлён" : "Шаблон сохранён" });
+        if (isUpdate) {
+          setSelectedTplId(String(targetTemplate!.id));
+          toast({ title: "Шаблон обновлён" });
+        } else {
+          const created = await resp.json().catch(() => null);
+          if (created && created.id) setSelectedTplId(String(created.id));
+          toast({ title: "Шаблон сохранён" });
+        }
         await loadTemplates();
       } else {
         const data = await resp.json();
@@ -793,8 +818,8 @@ const Labels = () => {
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="h-8 flex-1" onClick={saveTemplate}>
-                <Icon name="Save" size={14} />
-                <span className="ml-1.5">Сохранить</span>
+                <Icon name={isUpdateMode ? "RefreshCw" : "Save"} size={14} />
+                <span className="ml-1.5">{isUpdateMode ? "Обновить" : "Сохранить"}</span>
               </Button>
               {selectedTplId && (
                 <Button
