@@ -39,8 +39,20 @@ const TOKENS = [
   { value: "{розничная_цена}", label: "Розничная цена" },
   { value: "{оптовая_цена}", label: "Оптовая цена" },
   { value: "{штрихкод}", label: "Штрихкод (текст)" },
-  { value: "__spacer__", label: "Отступ" },
+  { value: "__plain__", label: "Произвольный текст" },
 ];
+
+const CAPTIONS = [
+  { value: "₽", label: "₽ — российский рубль" },
+  { value: "Br", label: "Br — белорусский рубль" },
+];
+
+const TOKEN_RE = /\{(?:товар|артикул|бренд|розничная_цена|оптовая_цена|штрихкод)\}/;
+
+const findToken = (s: string): string | null => {
+  const m = (s || "").match(TOKEN_RE);
+  return m ? m[0] : null;
+};
 
 const TYPE_LABELS: Record<LabelRowType, string> = {
   text: "Текст",
@@ -128,11 +140,27 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
   };
 
   const insertToken = (idx: number, token: string) => {
-    if (token === "__spacer__") {
-      update(idx, { type: "spacer", heightMm: rows[idx].heightMm ?? 2 });
+    const content = rows[idx].content || "";
+    const current = findToken(content);
+    if (token === "__plain__") {
+      if (current) update(idx, { content: content.replace(current, "").trim() });
       return;
     }
-    update(idx, { content: (rows[idx].content || "") + token });
+    if (current) {
+      update(idx, { content: content.replace(current, token) });
+      return;
+    }
+    update(idx, { content: content + token });
+  };
+
+  const insertCaption = (idx: number, caption: string) => {
+    update(idx, { content: (rows[idx].content || "") + caption });
+  };
+
+  const changeContent = (idx: number, value: string) => {
+    const current = findToken(rows[idx].content || "");
+    if (current && !value.includes(current)) return;
+    update(idx, { content: value });
   };
 
   const setDashGap = (idx: number, v: number) => {
@@ -194,8 +222,8 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
                 <>
                   <Input
                     value={row.content}
-                    onChange={(e) => update(idx, { content: e.target.value })}
-                    placeholder={row.type === "barcode" ? "{штрихкод}" : "Текст или {токен}"}
+                    onChange={(e) => changeContent(idx, e.target.value)}
+                    placeholder={row.type === "barcode" ? "{штрихкод}" : "Текст или {поле}"}
                     className="h-8 flex-1 font-mono text-xs"
                   />
                   <Select onValueChange={(v) => insertToken(idx, v)}>
@@ -301,15 +329,32 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
                     <Icon name="Bold" size={12} />
                   </Button>
                   {row.type === "text" && (
-                    <Button
-                      variant={row.wrap ? "default" : "outline"}
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => update(idx, { wrap: !row.wrap })}
-                      title="Перенос слов"
-                    >
-                      <Icon name="WrapText" size={12} fallback="CornerDownLeft" />
-                    </Button>
+                    <>
+                      <Button
+                        variant={row.wrap ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => update(idx, { wrap: !row.wrap })}
+                        title="Перенос слов"
+                      >
+                        <Icon name="WrapText" size={12} fallback="CornerDownLeft" />
+                      </Button>
+                      <Select onValueChange={(v) => insertCaption(idx, v)}>
+                        <SelectTrigger
+                          className="h-7 w-9 px-0 justify-center"
+                          aria-label="Вставить надпись"
+                        >
+                          <Icon name="Coins" size={12} fallback="Tag" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CAPTIONS.map((c) => (
+                            <SelectItem key={c.value} value={c.value}>
+                              {c.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
                   )}
                   <div className="flex">
                     {(["left", "center", "right"] as const).map((a) => (
