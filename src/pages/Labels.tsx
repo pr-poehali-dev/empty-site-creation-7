@@ -18,6 +18,18 @@ import LabelTemplateEditor, {
   LabelRow,
 } from "@/components/labels/LabelTemplateEditor";
 import PrintLabelsView from "@/components/labels/PrintLabelsView";
+import {
+  generateLabelsPdf,
+  SHEET_SIZES,
+  PdfMode,
+  SheetSize,
+} from "@/components/labels/generateLabelsPdf";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const PRODUCTS_URL =
   "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -111,6 +123,11 @@ const Labels = () => {
   const [tplName, setTplName] = useState("");
 
   const [printing, setPrinting] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMode, setPdfMode] = useState<PdfMode>("roll");
+  const [pdfSheet, setPdfSheet] = useState<SheetSize>("a4");
+  const [cutMarks, setCutMarks] = useState(true);
 
   // Создание нового товара
   const [showCreate, setShowCreate] = useState(false);
@@ -448,6 +465,44 @@ const Labels = () => {
     }
   };
 
+  const currentUserName = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("auth_user") || "{}");
+      return u.name || u.phone || "";
+    } catch {
+      return "";
+    }
+  })();
+
+  const handleGeneratePdf = async () => {
+    if (lines.length === 0) {
+      toast({ title: "Добавь хотя бы один товар", variant: "destructive" });
+      return;
+    }
+    setPdfBusy(true);
+    try {
+      const products: LabelProduct[] = [];
+      for (const l of lines) {
+        for (let i = 0; i < l.copies; i++) products.push(l);
+      }
+      await generateLabelsPdf({
+        products,
+        rows,
+        widthMm: width,
+        heightMm: height,
+        mode: pdfMode,
+        sheet: pdfSheet,
+        userName: currentUserName,
+        cutMarks,
+      });
+      setPdfOpen(false);
+    } catch {
+      toast({ title: "Не удалось создать PDF", variant: "destructive" });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const handlePrint = () => {
     if (lines.length === 0) {
       toast({ title: "Добавь хотя бы один товар", variant: "destructive" });
@@ -497,6 +552,16 @@ const Labels = () => {
           >
             <Icon name="ListPlus" size={16} />
             <span className="ml-1.5 hidden sm:inline">Списком</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            onClick={() => setPdfOpen(true)}
+            disabled={lines.length === 0}
+          >
+            <Icon name="FileDown" size={16} />
+            <span className="ml-1.5 hidden sm:inline">PDF</span>
           </Button>
           <Button size="sm" className="h-9" onClick={handlePrint} disabled={lines.length === 0}>
             <Icon name="Printer" size={16} />
@@ -850,6 +915,81 @@ const Labels = () => {
           </div>
         </div>
       </div>
+
+      <Dialog open={pdfOpen} onOpenChange={setPdfOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Создать PDF</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Режим печати</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={pdfMode === "roll" ? "default" : "outline"}
+                  size="sm"
+                  className="h-auto py-2 flex-col"
+                  onClick={() => setPdfMode("roll")}
+                >
+                  <Icon name="Tag" size={16} />
+                  <span className="text-xs mt-1">Принтер этикеток</span>
+                </Button>
+                <Button
+                  variant={pdfMode === "sheet" ? "default" : "outline"}
+                  size="sm"
+                  className="h-auto py-2 flex-col"
+                  onClick={() => setPdfMode("sheet")}
+                >
+                  <Icon name="Printer" size={16} />
+                  <span className="text-xs mt-1">Обычный принтер</span>
+                </Button>
+              </div>
+            </div>
+
+            {pdfMode === "roll" ? (
+              <p className="text-xs text-muted-foreground">
+                Каждая этикетка — отдельная страница {width} × {height} мм.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Размер листа</Label>
+                  <Select value={pdfSheet} onValueChange={(v) => setPdfSheet(v as SheetSize)}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(SHEET_SIZES) as SheetSize[]).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {SHEET_SIZES[k].label} ({SHEET_SIZES[k].w} × {SHEET_SIZES[k].h} мм)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant={cutMarks ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 w-full"
+                  onClick={() => setCutMarks(!cutMarks)}
+                >
+                  <Icon name="Scissors" size={14} />
+                  <span className="ml-1.5 text-xs">Линии реза</span>
+                </Button>
+              </>
+            )}
+
+            <Button className="w-full" onClick={handleGeneratePdf} disabled={pdfBusy}>
+              {pdfBusy ? (
+                <Icon name="Loader2" size={16} className="animate-spin" />
+              ) : (
+                <Icon name="Download" size={16} />
+              )}
+              <span className="ml-1.5">Скачать ({totalLabels})</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Печатный блок */}
       <PrintLabelsView

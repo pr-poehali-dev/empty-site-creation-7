@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import LabelPreview from "./LabelPreview";
 import { LabelRow } from "./LabelTemplateEditor";
 import { LabelProduct } from "@/pages/Labels";
@@ -21,7 +22,7 @@ const PrintLabelsView = ({ lines, rows, widthMm, heightMm }: Props) => {
     }
   }
 
-  return (
+  return createPortal(
     <>
       <style>{`
         @media print {
@@ -29,16 +30,18 @@ const PrintLabelsView = ({ lines, rows, widthMm, heightMm }: Props) => {
             size: ${widthMm}mm ${heightMm}mm;
             margin: 0;
           }
-          body * {
-            visibility: hidden;
+          body > * {
+            display: none !important;
           }
-          .print-labels, .print-labels * {
-            visibility: visible;
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
           }
           .print-labels {
-            position: absolute;
-            left: 0;
-            top: 0;
+            display: block !important;
+            position: static;
+            margin: 0;
+            padding: 0;
           }
           .print-label {
             page-break-after: always;
@@ -46,6 +49,7 @@ const PrintLabelsView = ({ lines, rows, widthMm, heightMm }: Props) => {
             width: ${widthMm}mm;
             height: ${heightMm}mm;
             overflow: hidden;
+            margin: 0;
           }
           .print-label:last-child {
             page-break-after: auto;
@@ -73,7 +77,8 @@ const PrintLabelsView = ({ lines, rows, widthMm, heightMm }: Props) => {
           </div>
         ))}
       </div>
-    </>
+    </>,
+    document.body,
   );
 };
 
