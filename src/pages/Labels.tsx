@@ -811,14 +811,14 @@ const Labels = () => {
                 {lines.map((l, i) => (
                   <div
                     key={`${l.id}-${i}`}
-                    className={`px-3 py-2 flex items-start gap-2 ${
+                    className={`px-3 py-2 space-y-1.5 ${
                       i === previewIdx ? "bg-muted/30" : ""
                     }`}
                   >
-                    <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-start gap-2">
                       <button
                         type="button"
-                        className="w-full text-left"
+                        className="flex-1 min-w-0 text-left"
                         onClick={() => setPreviewIdx(i)}
                       >
                         <div className="text-sm font-medium line-clamp-2 leading-snug">
@@ -828,61 +828,61 @@ const Labels = () => {
                           {[l.brand, l.article].filter(Boolean).join(" · ")}
                         </div>
                       </button>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-muted-foreground shrink-0">Розн.</span>
-                          <Input
-                            value={l.price_retail ?? ""}
-                            onChange={(e) => setPrice(i, "price_retail", e.target.value)}
-                            placeholder="—"
-                            inputMode="decimal"
-                            className="h-7 w-20 px-2 text-xs"
-                          />
-                        </div>
-                        {!isSeller && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground shrink-0">Опт.</span>
-                            <Input
-                              value={l.price_wholesale ?? ""}
-                              onChange={(e) => setPrice(i, "price_wholesale", e.target.value)}
-                              placeholder="—"
-                              inputMode="decimal"
-                              className="h-7 w-20 px-2 text-xs"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={() => setCopies(i, l.copies - 1)}
-                      >
-                        <Icon name="Minus" size={14} />
-                      </Button>
-                      <Input
-                        value={l.copies}
-                        onChange={(e) => setCopies(i, parseInt(e.target.value) || 1)}
-                        className="h-7 w-12 text-center px-1"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={() => setCopies(i, l.copies + 1)}
-                      >
-                        <Icon name="Plus" size={14} />
-                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-7 p-0 text-destructive"
+                        className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={() => removeLine(i)}
                       >
                         <Icon name="X" size={14} />
                       </Button>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-muted-foreground shrink-0">Розн.</span>
+                        <Input
+                          value={l.price_retail ?? ""}
+                          onChange={(e) => setPrice(i, "price_retail", e.target.value)}
+                          placeholder="—"
+                          inputMode="decimal"
+                          className="h-7 w-16 px-2 text-xs"
+                        />
+                      </div>
+                      {!isSeller && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground shrink-0">Опт.</span>
+                          <Input
+                            value={l.price_wholesale ?? ""}
+                            onChange={(e) => setPrice(i, "price_wholesale", e.target.value)}
+                            placeholder="—"
+                            inputMode="decimal"
+                            className="h-7 w-16 px-2 text-xs"
+                          />
+                        </div>
+                      )}
+                      <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 w-6 p-0"
+                          onClick={() => setCopies(i, l.copies - 1)}
+                        >
+                          <Icon name="Minus" size={12} />
+                        </Button>
+                        <Input
+                          value={l.copies}
+                          onChange={(e) => setCopies(i, parseInt(e.target.value) || 1)}
+                          className="h-7 w-9 text-center px-0 text-xs"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 w-6 p-0"
+                          onClick={() => setCopies(i, l.copies + 1)}
+                        >
+                          <Icon name="Plus" size={12} />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
