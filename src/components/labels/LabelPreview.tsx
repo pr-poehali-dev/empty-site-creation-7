@@ -32,10 +32,12 @@ const Barcode = ({
   value,
   height,
   fontSize,
+  bold,
 }: {
   value: string;
   height: number;
   fontSize: number;
+  bold?: boolean;
 }) => {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -45,17 +47,30 @@ const Barcode = ({
         format: value.length === 13 ? "EAN13" : "CODE128",
         width: 1.2,
         height,
-        displayValue: true,
-        fontSize,
+        displayValue: false,
         margin: 0,
       });
     } catch {
       // некорректный штрихкод — рисуем placeholder
       if (ref.current) ref.current.innerHTML = "";
     }
-  }, [value, height, fontSize]);
+  }, [value, height]);
   if (!value) return <div className="text-[8px] text-muted-foreground">нет штрихкода</div>;
-  return <svg ref={ref} />;
+  return (
+    <div className="flex flex-col items-center">
+      <svg ref={ref} />
+      <div
+        style={{
+          fontSize: `${fontSize}px`,
+          fontWeight: bold ? 700 : 400,
+          lineHeight: 1.1,
+          letterSpacing: "0.08em",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
 };
 
 const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) => {
@@ -102,6 +117,7 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
                 value={value}
                 height={Math.max(16, scale * 6 * shrink)}
                 fontSize={Math.max(4, (row.fontSize || 10) * (scale / 4) * shrink)}
+                bold={row.bold}
               />
             </div>
           );

@@ -76,10 +76,7 @@ const registerFonts = (doc: jsPDF, fonts: { regular: string; bold: string }) => 
   doc.setFont("Roboto", "normal");
 };
 
-const barcodeDataUrl = (
-  value: string,
-  fontSize = 10,
-): { url: string; ratio: number } | null => {
+const barcodeDataUrl = (value: string): { url: string; ratio: number } | null => {
   if (!value) return null;
   try {
     const canvas = document.createElement("canvas");
@@ -87,8 +84,7 @@ const barcodeDataUrl = (
       format: value.length === 13 ? "EAN13" : "CODE128",
       width: 2,
       height: 60,
-      displayValue: true,
-      fontSize: Math.max(4, fontSize * 1.6),
+      displayValue: false,
       margin: 0,
     });
     return { url: canvas.toDataURL("image/png"), ratio: canvas.width / canvas.height };
@@ -141,13 +137,16 @@ const drawLabel = (
   let cursor = y + PAD;
   const bottom = y + h - PAD;
 
-  const barcodeRows = rows.filter((r) => r.type === "barcode").length;
+  const barcodeList = rows.filter((r) => r.type === "barcode");
+  const barcodeRows = barcodeList.length;
   const available = h - PAD * 2;
-  const reserved = barcodeRows * MIN_BARCODE_MM;
+  const captionsAt = (s: number) =>
+    barcodeList.reduce((sum, r) => sum + (r.fontSize || 10) * s * 0.3528 * 1.15, 0);
 
   let shrink = 1;
   while (shrink > 0.55) {
     const used = measureTexts(doc, product, rows, innerW, shrink);
+    const reserved = barcodeRows * MIN_BARCODE_MM + captionsAt(shrink);
     if (used + reserved <= available) break;
     shrink -= 0.05;
   }
@@ -156,7 +155,10 @@ const drawLabel = (
   const fixedHeight = measureTexts(doc, product, rows, innerW, shrink);
   const barcodeHeight =
     barcodeRows > 0
-      ? Math.max(MIN_BARCODE_MM, (available - fixedHeight) / barcodeRows)
+      ? Math.max(
+          MIN_BARCODE_MM + captionsAt(shrink) / barcodeRows,
+          (available - fixedHeight) / barcodeRows,
+        )
       : 0;
 
   for (const r of rows) {
@@ -193,19 +195,29 @@ const drawLabel = (
 
     if (r.type === "barcode") {
       const value = renderTokens(r.content || "{штрихкод}", product);
-      const bc = barcodeDataUrl(value, (r.fontSize || 10) * shrink);
-      const bh = Math.min(barcodeHeight, bottom - cursor);
-      if (bc && bh > 2) {
-        let bw = bh * bc.ratio;
-        let realH = bh;
+      const bc = barcodeDataUrl(value);
+      const total = Math.min(barcodeHeight, bottom - cursor);
+      const capSize = (r.fontSize || 10) * shrink;
+      const capH = capSize * 0.3528 * 1.15;
+      const barsH = Math.max(2, total - capH);
+      if (bc && barsH > 2) {
+        let bw = barsH * bc.ratio;
+        let realH = barsH;
         if (bw > innerW) {
           bw = innerW;
           realH = bw / bc.ratio;
         }
         const bx = innerX + (innerW - bw) / 2;
         doc.addImage(bc.url, "PNG", bx, cursor, bw, realH);
+
+        doc.setFont("Roboto", r.bold ? "bold" : "normal");
+        doc.setFontSize(capSize);
+        doc.setTextColor(0);
+        doc.text(value, innerX + innerW / 2, cursor + realH + capH * 0.8, {
+          align: "center",
+        });
       }
-      cursor += bh;
+      cursor += total;
       continue;
     }
 
