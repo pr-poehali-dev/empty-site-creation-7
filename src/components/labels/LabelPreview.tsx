@@ -28,7 +28,15 @@ export const renderTokens = (template: string, p: LabelProduct): string => {
     .replace(/\{штрихкод\}/g, (p.barcodes && p.barcodes[0]) || "");
 };
 
-const Barcode = ({ value, height }: { value: string; height: number }) => {
+const Barcode = ({
+  value,
+  height,
+  fontSize,
+}: {
+  value: string;
+  height: number;
+  fontSize: number;
+}) => {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
     if (!ref.current || !value) return;
@@ -38,14 +46,14 @@ const Barcode = ({ value, height }: { value: string; height: number }) => {
         width: 1.2,
         height,
         displayValue: true,
-        fontSize: 10,
+        fontSize,
         margin: 0,
       });
     } catch {
       // некорректный штрихкод — рисуем placeholder
       if (ref.current) ref.current.innerHTML = "";
     }
-  }, [value, height]);
+  }, [value, height, fontSize]);
   if (!value) return <div className="text-[8px] text-muted-foreground">нет штрихкода</div>;
   return <svg ref={ref} />;
 };
@@ -90,7 +98,11 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
               className="flex items-center justify-center"
               style={{ flex: 1, minHeight: `${scale * 5 * shrink}px` }}
             >
-              <Barcode value={value} height={Math.max(16, scale * 6 * shrink)} />
+              <Barcode
+                value={value}
+                height={Math.max(16, scale * 6 * shrink)}
+                fontSize={Math.max(4, (row.fontSize || 10) * (scale / 4) * shrink)}
+              />
             </div>
           );
         }

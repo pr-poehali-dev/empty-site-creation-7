@@ -76,7 +76,10 @@ const registerFonts = (doc: jsPDF, fonts: { regular: string; bold: string }) => 
   doc.setFont("Roboto", "normal");
 };
 
-const barcodeDataUrl = (value: string): { url: string; ratio: number } | null => {
+const barcodeDataUrl = (
+  value: string,
+  fontSize = 10,
+): { url: string; ratio: number } | null => {
   if (!value) return null;
   try {
     const canvas = document.createElement("canvas");
@@ -85,7 +88,7 @@ const barcodeDataUrl = (value: string): { url: string; ratio: number } | null =>
       width: 2,
       height: 60,
       displayValue: true,
-      fontSize: 16,
+      fontSize: Math.max(4, fontSize * 1.6),
       margin: 0,
     });
     return { url: canvas.toDataURL("image/png"), ratio: canvas.width / canvas.height };
@@ -190,7 +193,7 @@ const drawLabel = (
 
     if (r.type === "barcode") {
       const value = renderTokens(r.content || "{штрихкод}", product);
-      const bc = barcodeDataUrl(value);
+      const bc = barcodeDataUrl(value, (r.fontSize || 10) * shrink);
       const bh = Math.min(barcodeHeight, bottom - cursor);
       if (bc && bh > 2) {
         let bw = bh * bc.ratio;
