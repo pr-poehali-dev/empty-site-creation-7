@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { LabelRow } from "./LabelTemplateEditor";
+import { stripUsedSuffix } from "./stripUsed";
 import { LabelProduct } from "@/pages/Labels";
 
 interface Props {
@@ -18,9 +19,9 @@ const formatPrice = (v: number | null | undefined): string => {
   return n.toLocaleString("ru-RU");
 };
 
-export const renderTokens = (template: string, p: LabelProduct): string => {
+export const renderTokens = (template: string, p: LabelProduct, hideUsed?: boolean): string => {
   return template
-    .replace(/\{товар\}/g, p.name || "")
+    .replace(/\{товар\}/g, hideUsed ? stripUsedSuffix(p.name || "") : p.name || "")
     .replace(/\{артикул\}/g, p.article || "")
     .replace(/\{бренд\}/g, p.brand || "")
     .replace(/\{розничная_цена\}/g, formatPrice(p.price_retail))
@@ -171,7 +172,7 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
             </div>
           );
         }
-        const text = renderTokens(row.content, product);
+        const text = renderTokens(row.content, product, row.hideUsed);
         return (
           <div
             key={row.id}

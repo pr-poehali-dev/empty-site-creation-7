@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { stripUsedSuffix } from "./stripUsed";
 import JsBarcode from "jsbarcode";
 import { LabelRow } from "./LabelTemplateEditor";
 import { LabelProduct } from "@/pages/Labels";
@@ -35,9 +36,9 @@ const formatPrice = (v: number | null | undefined): string => {
   return n.toLocaleString("ru-RU");
 };
 
-const renderTokens = (template: string, p: LabelProduct): string =>
+const renderTokens = (template: string, p: LabelProduct, hideUsed?: boolean): string =>
   (template || "")
-    .replace(/\{товар\}/g, p.name || "")
+    .replace(/\{товар\}/g, hideUsed ? stripUsedSuffix(p.name || "") : p.name || "")
     .replace(/\{артикул\}/g, p.article || "")
     .replace(/\{бренд\}/g, p.brand || "")
     .replace(/\{розничная_цена\}/g, formatPrice(p.price_retail))
@@ -113,7 +114,7 @@ const measureTexts = (
       if (r.wrap) {
         doc.setFont("Roboto", r.bold ? "bold" : "normal");
         doc.setFontSize(size);
-        const parts = doc.splitTextToSize(renderTokens(r.content, product), innerW);
+        const parts = doc.splitTextToSize(renderTokens(r.content, product, r.hideUsed), innerW);
         total += lineH * Math.max(1, parts.length);
       } else {
         total += lineH;
@@ -226,7 +227,7 @@ const drawLabel = (
     doc.setFont("Roboto", r.bold ? "bold" : "normal");
     doc.setFontSize(size);
     doc.setTextColor(0);
-    const text = renderTokens(r.content, product);
+    const text = renderTokens(r.content, product, r.hideUsed);
     const lineH = size * 0.3528 * 1.15;
     const align = r.align === "center" ? "center" : r.align === "right" ? "right" : "left";
     const tx =

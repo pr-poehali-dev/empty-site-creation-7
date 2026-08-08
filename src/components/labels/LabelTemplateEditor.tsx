@@ -25,6 +25,7 @@ export interface LabelRow {
   marginRightMm?: number;
   dashGapMm?: number;
   dashLenMm?: number;
+  hideUsed?: boolean;
 }
 
 interface Props {
@@ -339,6 +340,17 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
                       >
                         <Icon name="WrapText" size={12} fallback="CornerDownLeft" />
                       </Button>
+                      {row.content.includes("{товар}") && (
+                        <Button
+                          variant={row.hideUsed ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => update(idx, { hideUsed: !row.hideUsed })}
+                          title="Без б/у"
+                        >
+                          <Icon name="TagOff" size={12} fallback="Tag" />
+                        </Button>
+                      )}
                       <Select onValueChange={(v) => insertCaption(idx, v)}>
                         <SelectTrigger
                           className="h-7 w-9 px-0 justify-center"
