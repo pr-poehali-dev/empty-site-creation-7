@@ -127,8 +127,25 @@ const measureTexts = (
     } else if (r.type === "group") {
       const cells = r.cells || [];
       if (cells.length === 0) continue;
-      const maxSize = Math.max(...cells.map((c) => c.fontSize || 8)) * shrink;
-      total += maxSize * 0.3528 * 1.15 + 0.3;
+      const defPct = 100 / cells.length;
+      let maxH = 0;
+      for (const c of cells) {
+        const size = (c.fontSize || 8) * shrink;
+        const lineH = size * 0.3528 * 1.15;
+        let lines = 1;
+        if (c.wrap) {
+          doc.setFont("Roboto", c.bold ? "bold" : "normal");
+          doc.setFontSize(size);
+          const cw = (innerW * (c.widthPct ?? defPct)) / 100;
+          const parts = doc.splitTextToSize(
+            renderTokens(c.content, product, c.hideUsed, labelDate),
+            Math.max(1, cw),
+          );
+          lines = Math.max(1, parts.length);
+        }
+        maxH = Math.max(maxH, lineH * lines);
+      }
+      total += maxH + 0.3;
     }
   }
   return total;
@@ -237,32 +254,50 @@ const drawLabel = (
       const cells = r.cells || [];
       if (cells.length === 0) continue;
       const sep = r.separator && r.separator !== "none" ? r.separator : "";
-      const maxSize = Math.max(...cells.map((c) => c.fontSize || 8)) * shrink;
-      const gLineH = maxSize * 0.3528 * 1.15;
-      if (cursor + gLineH > bottom) break;
-      const baseY = cursor + gLineH * 0.8;
       const defPct = 100 / cells.length;
-      let cx = innerX;
-      cells.forEach((c, ci) => {
+
+      const prepared = cells.map((c, ci) => {
         const cw = (innerW * (c.widthPct ?? defPct)) / 100;
         const cSize = (c.fontSize || 8) * shrink;
+        const lineH = cSize * 0.3528 * 1.15;
         doc.setFont("Roboto", c.bold ? "bold" : "normal");
         doc.setFontSize(cSize);
-        doc.setTextColor(0);
         const sepW = sep && ci < cells.length - 1 ? doc.getTextWidth(` ${sep} `) : 0;
         const textW = Math.max(1, cw - sepW);
-        let t = renderTokens(c.content, product, c.hideUsed, labelDate);
-        while (t && doc.getTextWidth(t) > textW) t = t.slice(0, -1);
-        if (t !== renderTokens(c.content, product, c.hideUsed, labelDate) && t.length > 1) {
-          t = t.slice(0, -1) + "…";
+        const full = renderTokens(c.content, product, c.hideUsed, labelDate);
+        let parts: string[];
+        if (c.wrap) {
+          parts = doc.splitTextToSize(full, textW);
+        } else {
+          let t = full;
+          while (t && doc.getTextWidth(t) > textW) t = t.slice(0, -1);
+          if (t !== full && t.length > 1) t = t.slice(0, -1) + "…";
+          parts = [t];
         }
-        const al = c.align === "center" ? "center" : c.align === "right" ? "right" : "left";
-        const tX = al === "center" ? cx + textW / 2 : al === "right" ? cx + textW : cx;
-        doc.text(t, tX, baseY, { align: al });
-        if (sepW > 0) doc.text(` ${sep} `, cx + textW, baseY, { align: "left" });
-        cx += cw;
+        return { c, cw, cSize, lineH, sepW, textW, parts };
       });
-      cursor += gLineH + 0.3;
+
+      const gHeight = Math.max(...prepared.map((p) => p.lineH * Math.max(1, p.parts.length)));
+      if (cursor + prepared[0].lineH > bottom) break;
+
+      let cx = innerX;
+      for (const p of prepared) {
+        doc.setFont("Roboto", p.c.bold ? "bold" : "normal");
+        doc.setFontSize(p.cSize);
+        doc.setTextColor(0);
+        const al = p.c.align === "center" ? "center" : p.c.align === "right" ? "right" : "left";
+        const tX = al === "center" ? cx + p.textW / 2 : al === "right" ? cx + p.textW : cx;
+        for (let i = 0; i < p.parts.length; i++) {
+          const lineY = cursor + p.lineH * i + p.lineH * 0.8;
+          if (lineY > bottom) break;
+          doc.text(p.parts[i], tX, lineY, { align: al });
+        }
+        if (p.sepW > 0) {
+          doc.text(` ${sep} `, cx + p.textW, cursor + p.lineH * 0.8, { align: "left" });
+        }
+        cx += p.cw;
+      }
+      cursor += gHeight + 0.3;
       continue;
     }
 

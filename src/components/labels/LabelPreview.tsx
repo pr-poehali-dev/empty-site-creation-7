@@ -186,9 +186,9 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4, labelDate }
           const sep = row.separator && row.separator !== "none" ? row.separator : "";
           const defPct = 100 / cells.length;
           return (
-            <div key={row.id} style={{ display: "flex", flexShrink: 0, alignItems: "baseline" }}>
+            <div key={row.id} style={{ display: "flex", flexShrink: 0, alignItems: "flex-start" }}>
               {cells.map((cell, ci) => (
-                <div key={cell.id} style={{ display: "flex", alignItems: "baseline", width: `${cell.widthPct ?? defPct}%` }}>
+                <div key={cell.id} style={{ display: "flex", alignItems: "flex-start", width: `${cell.widthPct ?? defPct}%` }}>
                   <div
                     style={{
                       flex: 1,
@@ -197,9 +197,17 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4, labelDate }
                       fontWeight: cell.bold ? 700 : 400,
                       textAlign: cell.align,
                       lineHeight: 1.1,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      ...(cell.wrap
+                        ? {
+                            whiteSpace: "normal",
+                            overflowWrap: "break-word",
+                            wordBreak: "break-word",
+                          }
+                        : {
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }),
                     }}
                   >
                     {renderTokens(cell.content, product, cell.hideUsed, labelDate)}

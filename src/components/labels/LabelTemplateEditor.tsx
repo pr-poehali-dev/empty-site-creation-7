@@ -19,6 +19,7 @@ export interface LabelCell {
   align: "left" | "center" | "right";
   hideUsed?: boolean;
   widthPct?: number;
+  wrap?: boolean;
 }
 
 export interface LabelRow {
@@ -461,6 +462,17 @@ const LabelTemplateEditor = ({ rows, onChange, labelDate, onDateChange }: Props)
                       >
                         <Icon name="Bold" size={12} />
                       </Button>
+                      {!cell.content.includes("{дата}") && (
+                        <Button
+                          variant={cell.wrap ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => updateCell(idx, ci, { wrap: !cell.wrap })}
+                          title="Перенос слов"
+                        >
+                          <Icon name="WrapText" size={12} fallback="CornerDownLeft" />
+                        </Button>
+                      )}
                       {cell.content.includes("{товар}") && (
                         <Button
                           variant={cell.hideUsed ? "default" : "outline"}
