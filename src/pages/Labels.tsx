@@ -120,6 +120,7 @@ const Labels = () => {
 
   const [templates, setTemplates] = useState<SavedTemplate[]>([]);
   const [selectedTplId, setSelectedTplId] = useState<string>("");
+  const [myTplId, setMyTplId] = useState<number | null>(null);
   const [tplName, setTplName] = useState("");
 
   const isOwner = (() => {
@@ -185,7 +186,10 @@ const Labels = () => {
     try {
       const resp = await fetch(TEMPLATES_URL, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok) setTemplates(data.items || []);
+      if (resp.ok) {
+        setTemplates(data.items || []);
+        setMyTplId(data.my_template_id ?? null);
+      }
     } catch {
       // ignore
     }
@@ -197,8 +201,9 @@ const Labels = () => {
 
   useEffect(() => {
     if (isOwner || selectedTplId || templates.length === 0) return;
-    handleLoadTemplate(String(templates[0].id));
-  }, [templates, isOwner, selectedTplId]);
+    const mine = myTplId && templates.some((t) => t.id === myTplId) ? myTplId : templates[0].id;
+    handleLoadTemplate(String(mine));
+  }, [templates, myTplId, isOwner, selectedTplId]);
 
   // Сохранение списка этикеток (для возврата с UnknownBarcodePage)
   useEffect(() => {
@@ -400,6 +405,14 @@ const Labels = () => {
       setRows(t.rows && t.rows.length > 0 ? t.rows : defaultRows);
       setTplName(t.name);
       setPresetIdx("3");
+      if (!isOwner && t.id !== myTplId) {
+        setMyTplId(t.id);
+        fetch(`${TEMPLATES_URL}?action=pref`, {
+          method: "POST",
+          headers: { ...authHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ template_id: t.id }),
+        }).catch(() => {});
+      }
     }
   };
 

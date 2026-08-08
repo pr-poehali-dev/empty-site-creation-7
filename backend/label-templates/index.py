@@ -61,10 +61,33 @@ def handler(event, context):
                 })}
             cur.execute("SELECT id, name, width_mm, height_mm, dpi, rows_json FROM label_templates ORDER BY name")
             rows = cur.fetchall()
-            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'items': [
-                {'id': r[0], 'name': r[1], 'width_mm': float(r[2]), 'height_mm': float(r[3]), 'dpi': r[4], 'rows': r[5] or []}
-                for r in rows
-            ]})}
+            cur.execute(
+                """SELECT p.template_id FROM label_user_prefs p
+                   JOIN label_templates t ON t.id = p.template_id
+                   WHERE p.user_id = %s""",
+                (user[0],)
+            )
+            pref = cur.fetchone()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
+                'my_template_id': pref[0] if pref else None,
+                'items': [
+                    {'id': r[0], 'name': r[1], 'width_mm': float(r[2]), 'height_mm': float(r[3]), 'dpi': r[4], 'rows': r[5] or []}
+                    for r in rows
+                ]
+            })}
+
+        if method == 'POST' and qs.get('action') == 'pref':
+            body = json.loads(event.get('body') or '{}')
+            pref_id = body.get('template_id')
+            if not pref_id:
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'template_id обязателен'})}
+            cur.execute(
+                """INSERT INTO label_user_prefs (user_id, template_id) VALUES (%s, %s)
+                   ON CONFLICT (user_id) DO UPDATE SET template_id = EXCLUDED.template_id, updated_at = NOW()""",
+                (user[0], int(pref_id))
+            )
+            conn.commit()
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'ok': True})}
 
         if method == 'POST':
             body = json.loads(event.get('body') or '{}')
