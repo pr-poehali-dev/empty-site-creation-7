@@ -85,6 +85,7 @@ const barcodeDataUrl = (value: string): { url: string; ratio: number } | null =>
       width: 2,
       height: 60,
       displayValue: false,
+      flat: true,
       margin: 0,
     });
     return { url: canvas.toDataURL("image/png"), ratio: canvas.width / canvas.height };

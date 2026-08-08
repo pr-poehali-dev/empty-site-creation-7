@@ -48,6 +48,7 @@ const Barcode = ({
         width: 1.2,
         height,
         displayValue: false,
+        flat: true,
         margin: 0,
       });
     } catch {
