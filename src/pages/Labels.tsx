@@ -125,13 +125,15 @@ const Labels = () => {
   const [labelDate, setLabelDate] = useState<string>(todayIso());
   const [tplName, setTplName] = useState("");
 
-  const isOwner = (() => {
+  const authUser = (() => {
     try {
-      return JSON.parse(localStorage.getItem("auth_user") || "{}").role === "owner";
+      return JSON.parse(localStorage.getItem("auth_user") || "{}");
     } catch {
-      return false;
+      return {};
     }
   })();
+  const isOwner = authUser.role === "owner";
+  const isSeller = authUser.role_name === "Продавец";
 
   const [printing, setPrinting] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
@@ -377,6 +379,15 @@ const Labels = () => {
     setLines((prev) => {
       const next = [...prev];
       next[idx] = { ...next[idx], copies: Math.max(1, value) };
+      return next;
+    });
+  };
+
+  const setPrice = (idx: number, field: "price_retail" | "price_wholesale", value: string) => {
+    setLines((prev) => {
+      const next = [...prev];
+      const num = value.trim() === "" ? null : parseFloat(value.replace(",", "."));
+      next[idx] = { ...next[idx], [field]: num != null && isNaN(num) ? null : num };
       return next;
     });
   };
@@ -800,21 +811,49 @@ const Labels = () => {
                 {lines.map((l, i) => (
                   <div
                     key={`${l.id}-${i}`}
-                    className={`px-3 py-2 flex items-center gap-2 ${
+                    className={`px-3 py-2 flex items-start gap-2 ${
                       i === previewIdx ? "bg-muted/30" : ""
                     }`}
                   >
-                    <button
-                      type="button"
-                      className="flex-1 min-w-0 text-left"
-                      onClick={() => setPreviewIdx(i)}
-                    >
-                      <div className="text-sm font-medium truncate">{l.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {[l.brand, l.article].filter(Boolean).join(" · ")}
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => setPreviewIdx(i)}
+                      >
+                        <div className="text-sm font-medium line-clamp-2 leading-snug">
+                          {l.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {[l.brand, l.article].filter(Boolean).join(" · ")}
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground shrink-0">Розн.</span>
+                          <Input
+                            value={l.price_retail ?? ""}
+                            onChange={(e) => setPrice(i, "price_retail", e.target.value)}
+                            placeholder="—"
+                            inputMode="decimal"
+                            className="h-7 w-20 px-2 text-xs"
+                          />
+                        </div>
+                        {!isSeller && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground shrink-0">Опт.</span>
+                            <Input
+                              value={l.price_wholesale ?? ""}
+                              onChange={(e) => setPrice(i, "price_wholesale", e.target.value)}
+                              placeholder="—"
+                              inputMode="decimal"
+                              className="h-7 w-20 px-2 text-xs"
+                            />
+                          </div>
+                        )}
                       </div>
-                    </button>
-                    <div className="flex items-center gap-1">
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
                       <Button
                         variant="outline"
                         size="sm"
