@@ -12,9 +12,10 @@ interface Props {
   rows: LabelRow[];
   widthMm: number;
   heightMm: number;
+  labelDate?: string;
 }
 
-const PrintLabelsView = ({ lines, rows, widthMm, heightMm }: Props) => {
+const PrintLabelsView = ({ lines, rows, widthMm, heightMm, labelDate }: Props) => {
   const expanded: LabelProduct[] = [];
   for (const l of lines) {
     for (let i = 0; i < l.copies; i++) {
@@ -73,6 +74,7 @@ const PrintLabelsView = ({ lines, rows, widthMm, heightMm }: Props) => {
               widthMm={widthMm}
               heightMm={heightMm}
               scale={3.78}
+              labelDate={labelDate}
             />
           </div>
         ))}

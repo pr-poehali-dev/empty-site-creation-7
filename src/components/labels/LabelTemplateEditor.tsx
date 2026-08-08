@@ -9,7 +9,17 @@ import {
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
 
-export type LabelRowType = "text" | "barcode" | "qr" | "spacer" | "line";
+export type LabelRowType = "text" | "barcode" | "qr" | "spacer" | "line" | "group";
+
+export interface LabelCell {
+  id: string;
+  content: string;
+  fontSize: number;
+  bold: boolean;
+  align: "left" | "center" | "right";
+  hideUsed?: boolean;
+  widthPct?: number;
+}
 
 export interface LabelRow {
   id: string;
@@ -26,11 +36,15 @@ export interface LabelRow {
   dashGapMm?: number;
   dashLenMm?: number;
   hideUsed?: boolean;
+  cells?: LabelCell[];
+  separator?: string;
 }
 
 interface Props {
   rows: LabelRow[];
   onChange: (rows: LabelRow[]) => void;
+  labelDate?: string;
+  onDateChange?: (v: string) => void;
 }
 
 const TOKENS = [
@@ -40,6 +54,7 @@ const TOKENS = [
   { value: "{розничная_цена}", label: "Розничная цена" },
   { value: "{оптовая_цена}", label: "Оптовая цена" },
   { value: "{штрихкод}", label: "Штрихкод (текст)" },
+  { value: "{дата}", label: "Дата" },
   { value: "__plain__", label: "Произвольный текст" },
 ];
 
@@ -48,7 +63,7 @@ const CAPTIONS = [
   { value: "Br", label: "Br — белорусский рубль" },
 ];
 
-const TOKEN_RE = /\{(?:товар|артикул|бренд|розничная_цена|оптовая_цена|штрихкод)\}/;
+const TOKEN_RE = /\{(?:товар|артикул|бренд|розничная_цена|оптовая_цена|штрихкод|дата)\}/;
 
 const findToken = (s: string): string | null => {
   const m = (s || "").match(TOKEN_RE);
@@ -61,7 +76,15 @@ const TYPE_LABELS: Record<LabelRowType, string> = {
   qr: "QR",
   spacer: "Отступ",
   line: "Линия",
+  group: "Составное",
 };
+
+const SEPARATORS = [
+  { value: "none", label: "Без разделителя" },
+  { value: "|", label: "Вертикальная черта" },
+  { value: "•", label: "Точка" },
+  { value: "—", label: "Тире" },
+];
 
 const newId = () => `r${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -98,7 +121,7 @@ const NumField = ({ value, onCommit, fallback, title, width = "w-14", step }: Nu
   );
 };
 
-const LabelTemplateEditor = ({ rows, onChange }: Props) => {
+const LabelTemplateEditor = ({ rows, onChange, labelDate, onDateChange }: Props) => {
   const update = (idx: number, patch: Partial<LabelRow>) => {
     const next = [...rows];
     next[idx] = { ...next[idx], ...patch };
@@ -136,8 +159,49 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
             dashLenMm: 0,
           }
         : {}),
+      ...(type === "group" ? { cells: [], separator: "none" } : {}),
     };
     onChange([...rows, r]);
+  };
+
+  const updateCell = (rowIdx: number, cellIdx: number, patch: Partial<LabelCell>) => {
+    const cells = [...(rows[rowIdx].cells || [])];
+    cells[cellIdx] = { ...cells[cellIdx], ...patch };
+    update(rowIdx, { cells });
+  };
+
+  const addCell = (rowIdx: number) => {
+    const cells = [...(rows[rowIdx].cells || [])];
+    if (cells.length >= 3) return;
+    cells.push({ id: newId(), content: "", fontSize: 8, bold: false, align: "left" });
+    update(rowIdx, { cells });
+  };
+
+  const removeCell = (rowIdx: number, cellIdx: number) => {
+    const cells = (rows[rowIdx].cells || []).filter((_, i) => i !== cellIdx);
+    update(rowIdx, { cells });
+  };
+
+  const moveCell = (rowIdx: number, cellIdx: number, dir: -1 | 1) => {
+    const cells = [...(rows[rowIdx].cells || [])];
+    const j = cellIdx + dir;
+    if (j < 0 || j >= cells.length) return;
+    [cells[cellIdx], cells[j]] = [cells[j], cells[cellIdx]];
+    update(rowIdx, { cells });
+  };
+
+  const insertCellToken = (rowIdx: number, cellIdx: number, token: string) => {
+    const content = rows[rowIdx].cells?.[cellIdx]?.content || "";
+    const current = findToken(content);
+    if (token === "__plain__") {
+      if (current) updateCell(rowIdx, cellIdx, { content: content.replace(current, "").trim() });
+      return;
+    }
+    if (current) {
+      updateCell(rowIdx, cellIdx, { content: content.replace(current, token) });
+      return;
+    }
+    updateCell(rowIdx, cellIdx, { content: content + token });
   };
 
   const insertToken = (idx: number, token: string) => {
@@ -181,7 +245,7 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
   return (
     <div className="rounded-lg border border-border p-3 space-y-2">
       <div className="text-sm font-medium">Конструктор</div>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {addButtons.map((b) => (
           <Button
             key={b.type}
@@ -194,6 +258,16 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
             <span className="ml-1">{b.label}</span>
           </Button>
         ))}
+        <div className="w-px h-5 bg-border mx-1" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs border-dashed"
+          onClick={() => addRow("group")}
+        >
+          <Icon name="Columns3" size={12} fallback="Columns" />
+          <span className="ml-1">Составное</span>
+        </Button>
       </div>
 
       <div className="space-y-2">
@@ -218,6 +292,34 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
               ) : row.type === "line" ? (
                 <div className="flex-1 text-xs text-muted-foreground">
                   Разделитель
+                </div>
+              ) : row.type === "group" ? (
+                <div className="flex items-center gap-1 flex-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => addCell(idx)}
+                    disabled={(row.cells || []).length >= 3}
+                  >
+                    <Icon name="Plus" size={12} />
+                    <span className="ml-1">текст</span>
+                  </Button>
+                  <Select
+                    value={row.separator || "none"}
+                    onValueChange={(v) => update(idx, { separator: v })}
+                  >
+                    <SelectTrigger className="h-7 w-9 px-0 justify-center" aria-label="Разделитель">
+                      <Icon name="Minus" size={12} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SEPARATORS.map((s) => (
+                        <SelectItem key={s.value} value={s.value}>
+                          {s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               ) : (
                 <>
@@ -311,8 +413,138 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
               </div>
             )}
 
+            {row.type === "group" && (
+              <div className="pl-3 border-l-2 border-primary/40 ml-1 space-y-2">
+                {(row.cells || []).length === 0 && (
+                  <div className="text-[11px] text-muted-foreground py-1">
+                    Добавьте текстовое поле
+                  </div>
+                )}
+                {(row.cells || []).map((cell, ci) => (
+                  <div key={cell.id} className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={cell.content}
+                        onChange={(e) => updateCell(idx, ci, { content: e.target.value })}
+                        placeholder="Текст или {поле}"
+                        className="h-8 flex-1 font-mono text-xs"
+                      />
+                      <Select onValueChange={(v) => insertCellToken(idx, ci, v)}>
+                        <SelectTrigger
+                          className="h-8 w-9 px-0 justify-center"
+                          aria-label="Вставить поле"
+                        >
+                          <Icon name="Plus" size={14} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TOKENS.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <NumField
+                        value={cell.fontSize}
+                        fallback={8}
+                        title="Размер шрифта"
+                        onCommit={(v) => updateCell(idx, ci, { fontSize: v })}
+                      />
+                      <Button
+                        variant={cell.bold ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => updateCell(idx, ci, { bold: !cell.bold })}
+                        title="Жирный"
+                      >
+                        <Icon name="Bold" size={12} />
+                      </Button>
+                      {cell.content.includes("{товар}") && (
+                        <Button
+                          variant={cell.hideUsed ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => updateCell(idx, ci, { hideUsed: !cell.hideUsed })}
+                          title="Без б/у"
+                        >
+                          <Icon name="TagOff" size={12} fallback="Tag" />
+                        </Button>
+                      )}
+                      <div className="flex">
+                        {(["left", "center", "right"] as const).map((a) => (
+                          <Button
+                            key={a}
+                            variant={cell.align === a ? "default" : "outline"}
+                            size="sm"
+                            className="h-7 w-7 p-0 rounded-none first:rounded-l-md last:rounded-r-md"
+                            onClick={() => updateCell(idx, ci, { align: a })}
+                          >
+                            <Icon
+                              name={
+                                a === "left"
+                                  ? "AlignLeft"
+                                  : a === "center"
+                                    ? "AlignCenter"
+                                    : "AlignRight"
+                              }
+                              size={12}
+                            />
+                          </Button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground ml-1">Доля</span>
+                      <NumField
+                        value={cell.widthPct}
+                        fallback={Math.round(100 / Math.max(1, (row.cells || []).length))}
+                        title="Доля ширины, %"
+                        width="w-12"
+                        onCommit={(v) => updateCell(idx, ci, { widthPct: v })}
+                      />
+                      <div className="flex-1" />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => moveCell(idx, ci, -1)}
+                        disabled={ci === 0}
+                      >
+                        <Icon name="ChevronUp" size={14} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => moveCell(idx, ci, 1)}
+                        disabled={ci === (row.cells || []).length - 1}
+                      >
+                        <Icon name="ChevronDown" size={14} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive"
+                        onClick={() => removeCell(idx, ci)}
+                      >
+                        <Icon name="X" size={14} />
+                      </Button>
+                    </div>
+                    {cell.content.includes("{дата}") && onDateChange && (
+                      <Input
+                        type="date"
+                        value={labelDate || ""}
+                        onChange={(e) => onDateChange(e.target.value)}
+                        className="h-7 w-36 text-xs"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center gap-1 flex-wrap">
-              {row.type !== "spacer" && row.type !== "line" && (
+              {row.type !== "spacer" && row.type !== "line" && row.type !== "group" && (
                 <>
                   <NumField
                     value={row.fontSize}
@@ -329,7 +561,15 @@ const LabelTemplateEditor = ({ rows, onChange }: Props) => {
                   >
                     <Icon name="Bold" size={12} />
                   </Button>
-                  {row.type === "text" && (
+                  {row.type === "text" && row.content.includes("{дата}") && onDateChange && (
+                    <Input
+                      type="date"
+                      value={labelDate || ""}
+                      onChange={(e) => onDateChange(e.target.value)}
+                      className="h-7 w-36 text-xs"
+                    />
+                  )}
+                  {row.type === "text" && !row.content.includes("{дата}") && (
                     <>
                       <Button
                         variant={row.wrap ? "default" : "outline"}

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
 import LabelPreview from "@/components/labels/LabelPreview";
+import { todayIso } from "@/components/labels/formatDate";
 import LabelTemplateEditor, {
   LabelRow,
 } from "@/components/labels/LabelTemplateEditor";
@@ -121,6 +122,7 @@ const Labels = () => {
   const [templates, setTemplates] = useState<SavedTemplate[]>([]);
   const [selectedTplId, setSelectedTplId] = useState<string>("");
   const [myTplId, setMyTplId] = useState<number | null>(null);
+  const [labelDate, setLabelDate] = useState<string>(todayIso());
   const [tplName, setTplName] = useState("");
 
   const isOwner = (() => {
@@ -520,6 +522,7 @@ const Labels = () => {
         sheet: pdfSheet,
         userName: currentUserName,
         cutMarks,
+        labelDate,
       });
       setPdfOpen(false);
     } catch {
@@ -948,7 +951,14 @@ const Labels = () => {
             )}
           </div>
 
-          {isOwner && <LabelTemplateEditor rows={rows} onChange={setRows} />}
+          {isOwner && (
+            <LabelTemplateEditor
+              rows={rows}
+              onChange={setRows}
+              labelDate={labelDate}
+              onDateChange={setLabelDate}
+            />
+          )}
 
           <div className="rounded-lg border border-border p-3">
             <div className="flex items-center justify-between mb-2">
@@ -992,6 +1002,7 @@ const Labels = () => {
                     widthMm={width}
                     heightMm={height}
                     scale={4}
+                    labelDate={labelDate}
                   />
                   <div
                     className="text-[10px] text-muted-foreground text-center truncate"
@@ -1088,6 +1099,7 @@ const Labels = () => {
         rows={rows}
         widthMm={width}
         heightMm={height}
+        labelDate={labelDate}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import JsBarcode from "jsbarcode";
 import { LabelRow } from "./LabelTemplateEditor";
 import { stripUsedSuffix } from "./stripUsed";
+import { formatDate } from "./formatDate";
 import { LabelProduct } from "@/pages/Labels";
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
   widthMm: number;
   heightMm: number;
   scale?: number;
+  labelDate?: string;
 }
 
 const formatPrice = (v: number | null | undefined): string => {
@@ -19,8 +21,14 @@ const formatPrice = (v: number | null | undefined): string => {
   return n.toLocaleString("ru-RU");
 };
 
-export const renderTokens = (template: string, p: LabelProduct, hideUsed?: boolean): string => {
+export const renderTokens = (
+  template: string,
+  p: LabelProduct,
+  hideUsed?: boolean,
+  labelDate?: string,
+): string => {
   return template
+    .replace(/\{дата\}/g, formatDate(labelDate))
     .replace(/\{товар\}/g, hideUsed ? stripUsedSuffix(p.name || "") : p.name || "")
     .replace(/\{артикул\}/g, p.article || "")
     .replace(/\{бренд\}/g, p.brand || "")
@@ -75,7 +83,7 @@ const Barcode = ({
   );
 };
 
-const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) => {
+const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4, labelDate }: Props) => {
   const widthPx = widthMm * scale;
   const heightPx = heightMm * scale;
   const boxRef = useRef<HTMLDivElement>(null);
@@ -172,7 +180,47 @@ const LabelPreview = ({ product, rows, widthMm, heightMm, scale = 4 }: Props) =>
             </div>
           );
         }
-        const text = renderTokens(row.content, product, row.hideUsed);
+        if (row.type === "group") {
+          const cells = row.cells || [];
+          if (cells.length === 0) return null;
+          const sep = row.separator && row.separator !== "none" ? row.separator : "";
+          const defPct = 100 / cells.length;
+          return (
+            <div key={row.id} style={{ display: "flex", flexShrink: 0, alignItems: "baseline" }}>
+              {cells.map((cell, ci) => (
+                <div key={cell.id} style={{ display: "flex", alignItems: "baseline", width: `${cell.widthPct ?? defPct}%` }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: `${cell.fontSize * (scale / 4) * shrink}px`,
+                      fontWeight: cell.bold ? 700 : 400,
+                      textAlign: cell.align,
+                      lineHeight: 1.1,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {renderTokens(cell.content, product, cell.hideUsed, labelDate)}
+                  </div>
+                  {sep && ci < cells.length - 1 && (
+                    <span
+                      style={{
+                        fontSize: `${cell.fontSize * (scale / 4) * shrink}px`,
+                        padding: `0 ${scale * 0.3}px`,
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      {sep}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        }
+        const text = renderTokens(row.content, product, row.hideUsed, labelDate);
         return (
           <div
             key={row.id}

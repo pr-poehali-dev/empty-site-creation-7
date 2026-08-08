@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { stripUsedSuffix } from "./stripUsed";
+import { formatDate } from "./formatDate";
 import JsBarcode from "jsbarcode";
 import { LabelRow } from "./LabelTemplateEditor";
 import { LabelProduct } from "@/pages/Labels";
@@ -22,6 +23,7 @@ interface Options {
   mode: PdfMode;
   sheet?: SheetSize;
   userName?: string;
+  labelDate?: string;
   cutMarks?: boolean;
 }
 
@@ -36,8 +38,9 @@ const formatPrice = (v: number | null | undefined): string => {
   return n.toLocaleString("ru-RU");
 };
 
-const renderTokens = (template: string, p: LabelProduct, hideUsed?: boolean): string =>
+const renderTokens = (template: string, p: LabelProduct, hideUsed?: boolean, labelDate?: string): string =>
   (template || "")
+    .replace(/\{дата\}/g, formatDate(labelDate))
     .replace(/\{товар\}/g, hideUsed ? stripUsedSuffix(p.name || "") : p.name || "")
     .replace(/\{артикул\}/g, p.article || "")
     .replace(/\{бренд\}/g, p.brand || "")
@@ -103,6 +106,7 @@ const measureTexts = (
   rows: LabelRow[],
   innerW: number,
   shrink: number,
+  labelDate?: string,
 ): number => {
   let total = 0;
   for (const r of rows) {
@@ -114,12 +118,17 @@ const measureTexts = (
       if (r.wrap) {
         doc.setFont("Roboto", r.bold ? "bold" : "normal");
         doc.setFontSize(size);
-        const parts = doc.splitTextToSize(renderTokens(r.content, product, r.hideUsed), innerW);
+        const parts = doc.splitTextToSize(renderTokens(r.content, product, r.hideUsed, labelDate), innerW);
         total += lineH * Math.max(1, parts.length);
       } else {
         total += lineH;
       }
       total += 0.3;
+    } else if (r.type === "group") {
+      const cells = r.cells || [];
+      if (cells.length === 0) continue;
+      const maxSize = Math.max(...cells.map((c) => c.fontSize || 8)) * shrink;
+      total += maxSize * 0.3528 * 1.15 + 0.3;
     }
   }
   return total;
@@ -133,6 +142,7 @@ const drawLabel = (
   y: number,
   w: number,
   h: number,
+  labelDate?: string,
 ) => {
   const innerX = x + PAD;
   const innerW = w - PAD * 2;
@@ -147,14 +157,14 @@ const drawLabel = (
 
   let shrink = 1;
   while (shrink > 0.55) {
-    const used = measureTexts(doc, product, rows, innerW, shrink);
+    const used = measureTexts(doc, product, rows, innerW, shrink, labelDate);
     const reserved = barcodeRows * MIN_BARCODE_MM + captionsAt(shrink);
     if (used + reserved <= available) break;
     shrink -= 0.05;
   }
   shrink = Math.max(0.55, shrink);
 
-  const fixedHeight = measureTexts(doc, product, rows, innerW, shrink);
+  const fixedHeight = measureTexts(doc, product, rows, innerW, shrink, labelDate);
   const barcodeHeight =
     barcodeRows > 0
       ? Math.max(
@@ -196,7 +206,7 @@ const drawLabel = (
     }
 
     if (r.type === "barcode") {
-      const value = renderTokens(r.content || "{штрихкод}", product);
+      const value = renderTokens(r.content || "{штрихкод}", product, false, labelDate);
       const bc = barcodeDataUrl(value);
       const total = Math.min(barcodeHeight, bottom - cursor);
       const capSize = (r.fontSize || 10) * shrink;
@@ -223,11 +233,44 @@ const drawLabel = (
       continue;
     }
 
+    if (r.type === "group") {
+      const cells = r.cells || [];
+      if (cells.length === 0) continue;
+      const sep = r.separator && r.separator !== "none" ? r.separator : "";
+      const maxSize = Math.max(...cells.map((c) => c.fontSize || 8)) * shrink;
+      const gLineH = maxSize * 0.3528 * 1.15;
+      if (cursor + gLineH > bottom) break;
+      const baseY = cursor + gLineH * 0.8;
+      const defPct = 100 / cells.length;
+      let cx = innerX;
+      cells.forEach((c, ci) => {
+        const cw = (innerW * (c.widthPct ?? defPct)) / 100;
+        const cSize = (c.fontSize || 8) * shrink;
+        doc.setFont("Roboto", c.bold ? "bold" : "normal");
+        doc.setFontSize(cSize);
+        doc.setTextColor(0);
+        const sepW = sep && ci < cells.length - 1 ? doc.getTextWidth(` ${sep} `) : 0;
+        const textW = Math.max(1, cw - sepW);
+        let t = renderTokens(c.content, product, c.hideUsed, labelDate);
+        while (t && doc.getTextWidth(t) > textW) t = t.slice(0, -1);
+        if (t !== renderTokens(c.content, product, c.hideUsed, labelDate) && t.length > 1) {
+          t = t.slice(0, -1) + "…";
+        }
+        const al = c.align === "center" ? "center" : c.align === "right" ? "right" : "left";
+        const tX = al === "center" ? cx + textW / 2 : al === "right" ? cx + textW : cx;
+        doc.text(t, tX, baseY, { align: al });
+        if (sepW > 0) doc.text(` ${sep} `, cx + textW, baseY, { align: "left" });
+        cx += cw;
+      });
+      cursor += gLineH + 0.3;
+      continue;
+    }
+
     const size = (r.fontSize || 8) * shrink;
     doc.setFont("Roboto", r.bold ? "bold" : "normal");
     doc.setFontSize(size);
     doc.setTextColor(0);
-    const text = renderTokens(r.content, product, r.hideUsed);
+    const text = renderTokens(r.content, product, r.hideUsed, labelDate);
     const lineH = size * 0.3528 * 1.15;
     const align = r.align === "center" ? "center" : r.align === "right" ? "right" : "left";
     const tx =
@@ -284,6 +327,7 @@ export const generateLabelsPdf = async (opts: Options): Promise<void> => {
     mode,
     sheet = "a4",
     userName,
+    labelDate,
     cutMarks = true,
   } = opts;
   if (products.length === 0) return;
@@ -299,7 +343,7 @@ export const generateLabelsPdf = async (opts: Options): Promise<void> => {
     registerFonts(doc, fonts);
     products.forEach((p, i) => {
       if (i > 0) doc.addPage([widthMm, heightMm], widthMm >= heightMm ? "landscape" : "portrait");
-      drawLabel(doc, p, rows, 0, 0, widthMm, heightMm);
+      drawLabel(doc, p, rows, 0, 0, widthMm, heightMm, labelDate);
     });
     doc.save(buildFileName(products.length, widthMm, heightMm, mode, undefined, userName));
     return;
@@ -328,7 +372,7 @@ export const generateLabelsPdf = async (opts: Options): Promise<void> => {
       doc.setLineDashPattern([], 0);
       doc.rect(x, y, widthMm, heightMm);
     }
-    drawLabel(doc, p, rows, x, y, widthMm, heightMm);
+    drawLabel(doc, p, rows, x, y, widthMm, heightMm, labelDate);
   });
 
   doc.save(buildFileName(products.length, widthMm, heightMm, mode, sheet, userName));
