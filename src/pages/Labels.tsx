@@ -122,6 +122,14 @@ const Labels = () => {
   const [selectedTplId, setSelectedTplId] = useState<string>("");
   const [tplName, setTplName] = useState("");
 
+  const isOwner = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("auth_user") || "{}").role === "owner";
+    } catch {
+      return false;
+    }
+  })();
+
   const [printing, setPrinting] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -186,6 +194,11 @@ const Labels = () => {
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates]);
+
+  useEffect(() => {
+    if (isOwner || selectedTplId || templates.length === 0) return;
+    handleLoadTemplate(String(templates[0].id));
+  }, [templates, isOwner, selectedTplId]);
 
   // Сохранение списка этикеток (для возврата с UnknownBarcodePage)
   useEffect(() => {
@@ -566,7 +579,7 @@ const Labels = () => {
             <span className="ml-1.5 hidden sm:inline">Списком</span>
           </Button>
           <Button
-            variant="outline"
+            variant={isOwner ? "outline" : "default"}
             size="sm"
             className="h-9"
             onClick={() => setPdfOpen(true)}
@@ -574,14 +587,19 @@ const Labels = () => {
           >
             <Icon name="FileDown" size={16} />
             <span className="ml-1.5 hidden sm:inline">PDF</span>
-          </Button>
-          <Button size="sm" className="h-9" onClick={handlePrint} disabled={lines.length === 0}>
-            <Icon name="Printer" size={16} />
-            <span className="ml-1.5 hidden sm:inline">Печать</span>
-            {totalLabels > 0 && (
+            {!isOwner && totalLabels > 0 && (
               <span className="ml-1.5 text-xs opacity-80">({totalLabels})</span>
             )}
           </Button>
+          {isOwner && (
+            <Button size="sm" className="h-9" onClick={handlePrint} disabled={lines.length === 0}>
+              <Icon name="Printer" size={16} />
+              <span className="ml-1.5 hidden sm:inline">Печать</span>
+              {totalLabels > 0 && (
+                <span className="ml-1.5 text-xs opacity-80">({totalLabels})</span>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -820,6 +838,7 @@ const Labels = () => {
 
         {/* Правая колонка — шаблон + превью */}
         <div className="space-y-3">
+          {isOwner && (
           <div className="rounded-lg border border-border p-3 space-y-3">
             <div className="text-sm font-medium">Размер этикетки</div>
             <div className="grid grid-cols-2 gap-2">
@@ -870,10 +889,11 @@ const Labels = () => {
               </div>
             </div>
           </div>
+          )}
 
           <div className="rounded-lg border border-border p-3 space-y-2">
             <div className="text-sm font-medium">Шаблон</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={isOwner ? "grid grid-cols-2 gap-2" : ""}>
               <Select value={selectedTplId} onValueChange={handleLoadTemplate}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Загрузить шаблон..." />
@@ -886,13 +906,16 @@ const Labels = () => {
                   ))}
                 </SelectContent>
               </Select>
-              <Input
-                value={tplName}
-                onChange={(e) => setTplName(e.target.value)}
-                placeholder="Название шаблона"
-                className="h-9"
-              />
+              {isOwner && (
+                <Input
+                  value={tplName}
+                  onChange={(e) => setTplName(e.target.value)}
+                  placeholder="Название шаблона"
+                  className="h-9"
+                />
+              )}
             </div>
+            {isOwner && (
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="h-8 flex-1" onClick={saveTemplate}>
                 <Icon name={isUpdateMode ? "RefreshCw" : "Save"} size={14} />
@@ -909,9 +932,10 @@ const Labels = () => {
                 </Button>
               )}
             </div>
+            )}
           </div>
 
-          <LabelTemplateEditor rows={rows} onChange={setRows} />
+          {isOwner && <LabelTemplateEditor rows={rows} onChange={setRows} />}
 
           <div className="rounded-lg border border-border p-3">
             <div className="flex items-center justify-between mb-2">
