@@ -76,11 +76,23 @@ def _mark(cur, route, ok, error=None):
         )
 
 
+NO_KEY_MSG = (
+    'Ключ посредника не задан. Откройте Настройки → Telegram, нажмите '
+    '«Сгенерировать ключ» и вставьте ту же строку в код посредника на Cloudflare.'
+)
+
+
+class NoProxyKey(Exception):
+    pass
+
+
 def _call(route, token, method, payload, secret):
+    if route != DIRECT and not secret:
+        raise NoProxyKey(NO_KEY_MSG)
     url = f'{route}/bot{token}/{method}'
     data = json.dumps(payload).encode()
     headers = {'Content-Type': 'application/json'}
-    if route != DIRECT and secret:
+    if route != DIRECT:
         headers['X-Proxy-Key'] = secret
     req = urllib.request.Request(url, data=data, headers=headers, method='POST')
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
@@ -97,7 +109,7 @@ def tg_call(cur, method, payload, token=None):
         return None, None
 
     routes, s = _routes(cur)
-    secret = os.environ.get('TG_PROXY_KEY', '')
+    secret = (s.get('tg_proxy_key') or '').strip()
     last_err = None
 
     for route in routes[:MAX_TRIES]:
@@ -108,6 +120,9 @@ def tg_call(cur, method, payload, token=None):
                 return result, route
             last_err = str(result.get('description', 'unknown'))
             _mark(cur, route, False, last_err)
+        except NoProxyKey:
+            last_err = NO_KEY_MSG
+            _mark(cur, route, False, 'no_proxy_key')
         except urllib.error.HTTPError as e:
             last_err = f'HTTP {e.code}'
             _mark(cur, route, False, last_err)
@@ -115,7 +130,7 @@ def tg_call(cur, method, payload, token=None):
             last_err = type(e).__name__
             _mark(cur, route, False, last_err)
 
-    return None, None
+    return None, last_err
 
 
 def _probe_one(args):
@@ -128,6 +143,10 @@ def _probe_one(args):
         entry['bot'] = (result.get('result') or {}).get('username')
         if not entry['ok']:
             entry['error'] = str(result.get('description'))[:120]
+    except NoProxyKey:
+        entry['ok'] = False
+        entry['error'] = NO_KEY_MSG
+        entry['no_key'] = True
     except urllib.error.HTTPError as e:
         entry['ok'] = False
         entry['error'] = f'HTTP {e.code}'
@@ -143,8 +162,8 @@ def tg_probe(cur, token=None):
     from concurrent.futures import ThreadPoolExecutor
 
     token = token or os.environ.get('TELEGRAM_BOT_TOKEN', '')
-    secret = os.environ.get('TG_PROXY_KEY', '')
     routes, s = _routes(cur)
+    secret = (s.get('tg_proxy_key') or '').strip()
 
     if not routes:
         return {'mode': s.get('tg_mode', 'auto'), 'routes': []}
@@ -152,4 +171,8 @@ def tg_probe(cur, token=None):
     with ThreadPoolExecutor(max_workers=min(len(routes), 8)) as ex:
         report = list(ex.map(_probe_one, [(r, token, secret) for r in routes]))
 
-    return {'mode': s.get('tg_mode', 'auto'), 'routes': report}
+    return {
+        'mode': s.get('tg_mode', 'auto'),
+        'routes': report,
+        'has_key': bool(secret),
+    }

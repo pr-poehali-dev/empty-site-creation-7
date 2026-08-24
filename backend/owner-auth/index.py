@@ -176,7 +176,7 @@ def handler(event: dict, context) -> dict:
 
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
         if bot_token:
-            result, route = tg_call(cur, 'sendMessage', {
+            result, why = tg_call(cur, 'sendMessage', {
                 'chat_id': user[2],
                 'text': f'{code} — код авторизации.\n\nДействителен 5 минут.',
                 'parse_mode': 'HTML'
@@ -185,7 +185,7 @@ def handler(event: dict, context) -> dict:
             if not result:
                 cur.close()
                 conn.close()
-                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Не удалось отправить код в Telegram'})}
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': why or 'Не удалось отправить код в Telegram'})}
 
         cur.close()
         conn.close()

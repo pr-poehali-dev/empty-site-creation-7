@@ -33,7 +33,7 @@ def handler(event: dict, context) -> dict:
             data, _ = tg_call(cur, 'getMe', {}, bot_token)
             conn.commit(); cur.close(); conn.close()
             if not data:
-                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': why or 'Telegram недоступен'})}
             bot = data.get('result', {})
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'bot': {'username': bot.get('username'), 'first_name': bot.get('first_name'), 'id': bot.get('id')}})}
         except Exception as e:
@@ -44,7 +44,7 @@ def handler(event: dict, context) -> dict:
         data, _ = tg_call(cur, 'getChatMenuButton', {}, bot_token)
         conn.commit(); cur.close(); conn.close()
         if data is None:
-            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram API недоступен'})}
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': why or 'Telegram API недоступен'})}
         result = data.get('result', {})
         web_app = result.get('web_app', {})
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
@@ -60,7 +60,7 @@ def handler(event: dict, context) -> dict:
             data, _ = tg_call(cur, 'getWebhookInfo', {}, bot_token)
             conn.commit(); cur.close(); conn.close()
             if not data:
-                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': why or 'Telegram недоступен'})}
             info = data.get('result', {})
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
                 'url': info.get('url', ''),
@@ -91,7 +91,7 @@ def handler(event: dict, context) -> dict:
         }, bot_token)
         conn.commit(); cur.close(); conn.close()
         if not data:
-            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': why or 'Telegram недоступен'})}
 
         menu_result = _set_menu_button(bot_token)
         data['menu_button'] = menu_result

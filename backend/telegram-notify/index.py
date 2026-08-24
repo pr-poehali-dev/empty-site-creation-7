@@ -36,7 +36,7 @@ def handler(event: dict, context) -> dict:
             cur.close()
             conn.close()
             if not data:
-                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': why or 'Telegram недоступен'})}
             chats = []
             seen = set()
             for upd in data.get('result', []):
@@ -70,11 +70,11 @@ def handler(event: dict, context) -> dict:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         cur = conn.cursor()
         try:
-            data, route = tg_call(cur, 'sendMessage', {'chat_id': chat_id, 'text': text, 'parse_mode': parse_mode}, bot_token)
+            data, why = tg_call(cur, 'sendMessage', {'chat_id': chat_id, 'text': text, 'parse_mode': parse_mode}, bot_token)
             conn.commit()
             if data and data.get('ok'):
-                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'success': True, 'message_id': data.get('result', {}).get('message_id'), 'route': route})}
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не удалось отправить сообщение'})}
+                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'success': True, 'message_id': data.get('result', {}).get('message_id'), 'route': why})}
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': why or 'Не удалось отправить сообщение'})}
         finally:
             cur.close()
             conn.close()

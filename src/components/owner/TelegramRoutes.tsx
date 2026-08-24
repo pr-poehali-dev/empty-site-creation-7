@@ -31,6 +31,8 @@ export default function TelegramRoutes({ token }: { token: string }) {
   const [saving, setSaving] = useState(false);
   const [probing, setProbing] = useState(false);
   const [report, setReport] = useState<RouteReport[] | null>(null);
+  const [proxyKey, setProxyKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     fetch(SETTINGS_URL, { headers: { "X-Authorization": `Bearer ${token}` } })
@@ -39,6 +41,7 @@ export default function TelegramRoutes({ token }: { token: string }) {
         setMode(d.tg_mode || "auto");
         const raw = (d.tg_proxies || "") as string;
         setProxies(raw.split(",").map((s) => s.trim()).filter(Boolean));
+        setProxyKey(d.tg_proxy_key || "");
       })
       .catch(() => undefined);
   }, [token]);
@@ -100,6 +103,31 @@ export default function TelegramRoutes({ token }: { token: string }) {
     saveProxies(list);
   };
 
+  const genKey = async () => {
+    if (proxyKey && !confirm("Старый ключ перестанет работать. Новый нужно будет вписать в код посредника на Cloudflare. Продолжить?")) return;
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    const key = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    const prev = proxyKey;
+    setProxyKey(key);
+    setShowKey(true);
+    if (await save("tg_proxy_key", key)) {
+      toast({ title: "Ключ создан", description: "Скопируйте его и вставьте в код посредника" });
+    } else {
+      setProxyKey(prev);
+    }
+  };
+
+  const copyKey = async () => {
+    try {
+      await navigator.clipboard.writeText(proxyKey);
+      toast({ title: "Скопировано" });
+    } catch {
+      setShowKey(true);
+      toast({ title: "Не удалось скопировать", description: "Выделите ключ вручную", variant: "destructive" });
+    }
+  };
+
   const probe = async () => {
     setProbing(true);
     setReport(null);
@@ -157,6 +185,68 @@ export default function TelegramRoutes({ token }: { token: string }) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="p-4 rounded-xl border border-white/[0.08] bg-card space-y-3">
+        <div>
+          <p className="font-medium">Ключ посредника</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Общий пароль между сайтом и посредником. Одну и ту же строку нужно
+            хранить здесь и вписать в код посредника на Cloudflare.
+          </p>
+        </div>
+
+        {proxyKey ? (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={showKey ? proxyKey : "•".repeat(24)}
+                onFocus={(e) => e.currentTarget.select()}
+                className="font-mono text-xs"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-10 w-10 p-0"
+                onClick={() => setShowKey((v) => !v)}
+              >
+                <Icon name={showKey ? "EyeOff" : "Eye"} size={16} />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-10 w-10 p-0"
+                onClick={copyKey}
+              >
+                <Icon name="Copy" size={16} />
+              </Button>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={saving}
+              onClick={genKey}
+              className="text-muted-foreground"
+            >
+              <Icon name="RefreshCw" size={14} className="mr-1.5" />
+              Сгенерировать заново
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <Icon name="TriangleAlert" size={16} className="text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-200/90">
+                Ключ не задан. Связь через посредника работать не будет — только напрямую.
+              </p>
+            </div>
+            <Button disabled={saving} onClick={genKey} className="w-full">
+              <Icon name="Key" size={16} className="mr-2" />
+              Сгенерировать ключ
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="p-4 rounded-xl border border-white/[0.08] bg-card space-y-4">
