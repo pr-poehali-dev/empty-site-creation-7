@@ -1,6 +1,8 @@
 import json
 import os
 import urllib.request
+import psycopg2
+from tg_transport import tg_call
 
 def handler(event: dict, context) -> dict:
     """Настройка Telegram-бота: установка webhook и получение информации о боте"""
@@ -26,28 +28,23 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'TELEGRAM_BOT_TOKEN не настроен'})}
 
     if method == 'GET' and action == 'info':
-        url = f'https://api.telegram.org/bot{bot_token}/getMe'
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+            conn = psycopg2.connect(os.environ['DATABASE_URL']); cur = conn.cursor()
+            data, _ = tg_call(cur, 'getMe', {}, bot_token)
+            conn.commit(); cur.close(); conn.close()
+            if not data:
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
             bot = data.get('result', {})
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'bot': {'username': bot.get('username'), 'first_name': bot.get('first_name'), 'id': bot.get('id')}})}
         except Exception as e:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
 
     if method == 'GET' and action == 'menu_info':
-        url = f'https://api.telegram.org/bot{bot_token}/getChatMenuButton'
-        data = None
-        last_err = ''
-        for _ in range(3):
-            try:
-                with urllib.request.urlopen(url, timeout=25) as resp:
-                    data = json.loads(resp.read().decode())
-                break
-            except Exception as e:
-                last_err = str(e)
+        conn = psycopg2.connect(os.environ['DATABASE_URL']); cur = conn.cursor()
+        data, _ = tg_call(cur, 'getChatMenuButton', {}, bot_token)
+        conn.commit(); cur.close(); conn.close()
         if data is None:
-            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': f'Telegram API недоступен: {last_err}'})}
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram API недоступен'})}
         result = data.get('result', {})
         web_app = result.get('web_app', {})
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
@@ -58,10 +55,12 @@ def handler(event: dict, context) -> dict:
         })}
 
     if method == 'GET' and action == 'webhook_info':
-        url = f'https://api.telegram.org/bot{bot_token}/getWebhookInfo'
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+            conn = psycopg2.connect(os.environ['DATABASE_URL']); cur = conn.cursor()
+            data, _ = tg_call(cur, 'getWebhookInfo', {}, bot_token)
+            conn.commit(); cur.close(); conn.close()
+            if not data:
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
             info = data.get('result', {})
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
                 'url': info.get('url', ''),
@@ -84,18 +83,15 @@ def handler(event: dict, context) -> dict:
         if not webhook_secret:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'TELEGRAM_WEBHOOK_SECRET не настроен'})}
 
-        url = f'https://api.telegram.org/bot{bot_token}/setWebhook'
-        payload = json.dumps({
+        conn = psycopg2.connect(os.environ['DATABASE_URL']); cur = conn.cursor()
+        data, _ = tg_call(cur, 'setWebhook', {
             'url': webhook_url,
             'secret_token': webhook_secret,
             'allowed_updates': ['message', 'my_chat_member'],
-        }).encode()
-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-        except Exception as e:
-            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': str(e)})}
+        }, bot_token)
+        conn.commit(); cur.close(); conn.close()
+        if not data:
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
 
         menu_result = _set_menu_button(bot_token)
         data['menu_button'] = menu_result
@@ -116,17 +112,17 @@ def _set_menu_button(bot_token: str) -> dict:
         return {'ok': False, 'error': 'WEBAPP_BASE_URL не настроен'}
 
     webapp_url = f'{base_url}/tma'
-    payload = json.dumps({
+    payload = {
         'menu_button': {
             'type': 'web_app',
             'text': 'Открыть',
             'web_app': {'url': webapp_url}
         }
-    }).encode()
-    url = f'https://api.telegram.org/bot{bot_token}/setChatMenuButton'
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    }
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
+        conn = psycopg2.connect(os.environ['DATABASE_URL']); cur = conn.cursor()
+        data, _ = tg_call(cur, 'setChatMenuButton', payload, bot_token)
+        conn.commit(); cur.close(); conn.close()
+        return data or {'ok': False, 'error': 'Telegram недоступен'}
     except Exception as e:
         return {'ok': False, 'error': str(e)}

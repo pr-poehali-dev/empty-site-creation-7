@@ -1,19 +1,21 @@
 {
   "tests": [
     {
-      "name": "Get bot info",
-      "method": "GET",
-      "path": "/?action=info",
-      "expectedStatus": 200,
-      "expectedBody": {"bot": {"username": "string"}},
+      "name": "Set webhook without url",
+      "method": "POST",
+      "path": "/?action=set_webhook",
+      "body": {},
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
-      "name": "Get menu button info",
+      "name": "Unknown action",
       "method": "GET",
-      "path": "/?action=menu_info",
-      "expectedStatus": 200,
-      "expectedBody": {"type": "string"},
+      "path": "/?action=nonexistent",
+      "expectedStatus": 404,
       "bodyMatcher": "partial"
     }
   ]

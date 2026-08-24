@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
 import PasswordSecurity from "@/components/owner/PasswordSecurity";
+import TelegramRoutes from "@/components/owner/TelegramRoutes";
 
 const SETTINGS_URL = "https://functions.poehali.dev/82a95791-7a9f-4f40-8167-eb96c3045d34";
 const MANAGERS_URL = "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e";
@@ -148,7 +149,12 @@ const OwnerSettings = () => {
             <TabsList>
               <TabsTrigger value="orders">Заявки</TabsTrigger>
               <TabsTrigger value="security">Безопасность</TabsTrigger>
+              <TabsTrigger value="telegram">Telegram</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="telegram" className="mt-6">
+              <TelegramRoutes token={token} />
+            </TabsContent>
 
             <TabsContent value="security" className="mt-6">
               <PasswordSecurity people={managers} token={token} />

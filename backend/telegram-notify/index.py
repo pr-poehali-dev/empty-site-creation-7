@@ -1,6 +1,8 @@
 import json
 import os
 import urllib.request
+import psycopg2
+from tg_transport import tg_call
 import urllib.parse
 
 def handler(event: dict, context) -> dict:
@@ -26,10 +28,15 @@ def handler(event: dict, context) -> dict:
 
     # GET — получить последние обновления (для определения chat_id)
     if method == 'GET':
-        url = f'https://api.telegram.org/bot{bot_token}/getUpdates'
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+            conn = psycopg2.connect(os.environ['DATABASE_URL'])
+            cur = conn.cursor()
+            data, _ = tg_call(cur, 'getUpdates', {}, bot_token)
+            conn.commit()
+            cur.close()
+            conn.close()
+            if not data:
+                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Telegram недоступен'})}
             chats = []
             seen = set()
             for upd in data.get('result', []):
@@ -60,24 +67,16 @@ def handler(event: dict, context) -> dict:
         if not chat_id or not text:
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Укажите chat_id и text'})}
 
-        url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
-        payload = json.dumps({'chat_id': chat_id, 'text': text, 'parse_mode': parse_mode}).encode()
-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor()
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-            if data.get('ok'):
-                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'success': True, 'message_id': data.get('result', {}).get('message_id')})}
-            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': data.get('description', 'Ошибка отправки')})}
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode()
-            try:
-                err_data = json.loads(err_body)
-                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': err_data.get('description', str(e))})}
-            except Exception:
-                return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': f'HTTP {e.code}: {err_body}'})}
-        except Exception as e:
-            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': f'Ошибка: {str(e)}'})}
+            data, route = tg_call(cur, 'sendMessage', {'chat_id': chat_id, 'text': text, 'parse_mode': parse_mode}, bot_token)
+            conn.commit()
+            if data and data.get('ok'):
+                return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'success': True, 'message_id': data.get('result', {}).get('message_id'), 'route': route})}
+            return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Не удалось отправить сообщение'})}
+        finally:
+            cur.close()
+            conn.close()
 
     return {'statusCode': 405, 'headers': headers, 'body': json.dumps({'error': 'Метод не поддерживается'})}

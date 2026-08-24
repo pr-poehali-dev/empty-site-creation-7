@@ -6,6 +6,7 @@ import secrets
 import urllib.request
 from datetime import datetime, timedelta
 import psycopg2
+from tg_transport import tg_call, tg_probe
 
 WEAK_PASSWORDS = {'12345678', 'qwerty123', 'password', 'password1', 'qwertyui', 'admin123', '1q2w3e4r'}
 
@@ -175,16 +176,13 @@ def handler(event: dict, context) -> dict:
 
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
         if bot_token:
-            url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
-            payload = json.dumps({
+            result, route = tg_call(cur, 'sendMessage', {
                 'chat_id': user[2],
                 'text': f'{code} — код авторизации.\n\nДействителен 5 минут.',
                 'parse_mode': 'HTML'
-            }).encode()
-            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-            try:
-                urllib.request.urlopen(req, timeout=10)
-            except Exception:
+            }, bot_token)
+            conn.commit()
+            if not result:
                 cur.close()
                 conn.close()
                 return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'error': 'Не удалось отправить код в Telegram'})}
@@ -255,6 +253,40 @@ def handler(event: dict, context) -> dict:
             'headers': headers,
             'body': json.dumps({'token': token, 'user': user_data})
         }
+
+    if method == 'POST' and action == 'tg_probe':
+        auth = event.get('headers', {}).get('X-Authorization', '')
+        token = auth.replace('Bearer ', '').strip()
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT u.role FROM users u JOIN user_sessions s ON s.user_id = u.id
+               WHERE s.token = %s AND s.expires_at > NOW()""",
+            (token,)
+        )
+        me = cur.fetchone()
+        if not me or me[0] != 'owner':
+            cur.close()
+            conn.close()
+            return {'statusCode': 403, 'headers': headers, 'body': json.dumps({'error': 'Доступно только владельцу'})}
+
+        report = tg_probe(cur)
+        cur.execute(
+            """SELECT route, ok, last_success_at, fail_count, last_error
+               FROM tg_route_state ORDER BY last_success_at DESC NULLS LAST"""
+        )
+        report['state'] = [
+            {
+                'route': r[0], 'ok': r[1],
+                'last_success': r[2].isoformat() if r[2] else None,
+                'fail_count': r[3], 'last_error': r[4],
+            }
+            for r in cur.fetchall()
+        ]
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'statusCode': 200, 'headers': headers, 'body': json.dumps(report, ensure_ascii=False)}
 
     if method == 'POST' and action == 'password_status':
         phone = body.get('phone', '').strip()
