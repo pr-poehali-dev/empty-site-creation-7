@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 
 DIRECT = 'https://api.telegram.org'
 COOLDOWN_MIN = 10
-TIMEOUT = 6
+TIMEOUT = 4
+MAX_TRIES = 3
 
 
 def _force_ipv4():
@@ -99,7 +100,7 @@ def tg_call(cur, method, payload, token=None):
     secret = os.environ.get('TG_PROXY_KEY', '')
     last_err = None
 
-    for route in routes:
+    for route in routes[:MAX_TRIES]:
         try:
             result = _call(route, token, method, payload, secret)
             if result.get('ok'):
@@ -117,29 +118,38 @@ def tg_call(cur, method, payload, token=None):
     return None, None
 
 
+def _probe_one(args):
+    route, token, secret = args
+    entry = {'route': route, 'direct': route == DIRECT}
+    t0 = datetime.now()
+    try:
+        result = _call(route, token, 'getMe', {}, secret)
+        entry['ok'] = bool(result.get('ok'))
+        entry['bot'] = (result.get('result') or {}).get('username')
+        if not entry['ok']:
+            entry['error'] = str(result.get('description'))[:120]
+    except urllib.error.HTTPError as e:
+        entry['ok'] = False
+        entry['error'] = f'HTTP {e.code}'
+    except Exception as e:
+        entry['ok'] = False
+        entry['error'] = type(e).__name__
+    entry['ms'] = int((datetime.now() - t0).total_seconds() * 1000)
+    return entry
+
+
 def tg_probe(cur, token=None):
-    """Проверка связи: пробует каждый путь и возвращает отчёт."""
+    """Проверка связи: пробует все пути одновременно и возвращает отчёт."""
+    from concurrent.futures import ThreadPoolExecutor
+
     token = token or os.environ.get('TELEGRAM_BOT_TOKEN', '')
     secret = os.environ.get('TG_PROXY_KEY', '')
     routes, s = _routes(cur)
-    report = []
 
-    for route in routes:
-        entry = {'route': route, 'direct': route == DIRECT}
-        t0 = datetime.now()
-        try:
-            result = _call(route, token, 'getMe', {}, secret)
-            entry['ok'] = bool(result.get('ok'))
-            entry['bot'] = (result.get('result') or {}).get('username')
-            if not entry['ok']:
-                entry['error'] = str(result.get('description'))[:120]
-        except urllib.error.HTTPError as e:
-            entry['ok'] = False
-            entry['error'] = f'HTTP {e.code}'
-        except Exception as e:
-            entry['ok'] = False
-            entry['error'] = type(e).__name__
-        entry['ms'] = int((datetime.now() - t0).total_seconds() * 1000)
-        report.append(entry)
+    if not routes:
+        return {'mode': s.get('tg_mode', 'auto'), 'routes': []}
+
+    with ThreadPoolExecutor(max_workers=min(len(routes), 8)) as ex:
+        report = list(ex.map(_probe_one, [(r, token, secret) for r in routes]))
 
     return {'mode': s.get('tg_mode', 'auto'), 'routes': report}

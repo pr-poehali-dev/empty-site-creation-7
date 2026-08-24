@@ -18,7 +18,9 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [checkingLink, setCheckingLink] = useState(false);
-  const [tgFails, setTgFails] = useState(0);
+  const [tgFails, setTgFails] = useState(() =>
+    Number(sessionStorage.getItem("tg_fails") || 0)
+  );
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [prevStep, setPrevStep] = useState<"phone" | "telegram" | "code">("phone");
@@ -80,18 +82,27 @@ export default function AdminLogin() {
 
       if (resp.ok) {
         setTgFails(0);
+        sessionStorage.removeItem("tg_fails");
         setStep("code");
         toast({ title: "Код отправлен", description: "Проверьте Telegram" });
       } else {
-        if (resp.status >= 500) setTgFails((n) => n + 1);
+        if (resp.status >= 500) bumpFails();
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }
     } catch {
-      setTgFails((n) => n + 1);
+      bumpFails();
       toast({ title: "Ошибка", description: "Не удалось отправить код", variant: "destructive" });
     } finally {
       setLoading(false);
     }
+  };
+
+  const bumpFails = () => {
+    setTgFails((n) => {
+      const next = n + 1;
+      sessionStorage.setItem("tg_fails", String(next));
+      return next;
+    });
   };
 
   const openBackupLogin = async () => {
