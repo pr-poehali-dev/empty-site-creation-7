@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
 import PasswordRules, { isPasswordValid } from "@/components/PasswordRules";
+import PasswordInput from "@/components/ui/password-input";
 
 const AUTH_URL = "https://functions.poehali.dev/4a2cb8d4-f9ea-4107-a828-aced0209a15e";
 
@@ -102,8 +102,7 @@ export default function PasswordSecurity({ people, token }: Props) {
 
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">Текущий пароль</Label>
-          <Input
-            type="password"
+          <PasswordInput
             value={oldPassword}
             onChange={(e) => setOldPassword(e.target.value)}
             placeholder="Текущий пароль"
@@ -113,8 +112,7 @@ export default function PasswordSecurity({ people, token }: Props) {
 
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">Новый пароль</Label>
-          <Input
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Новый пароль"
@@ -126,8 +124,7 @@ export default function PasswordSecurity({ people, token }: Props) {
 
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">Повторите пароль</Label>
-          <Input
-            type="password"
+          <PasswordInput
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             placeholder="Повторите пароль"

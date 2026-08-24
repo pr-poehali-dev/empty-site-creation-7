@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 import PasswordRules, { isPasswordValid } from "@/components/PasswordRules";
+import PasswordInput from "@/components/ui/password-input";
 
 const AUTH_URL = "https://functions.poehali.dev/4a2cb8d4-f9ea-4107-a828-aced0209a15e";
 const BOT_USERNAME = "mirtehniki_plus_bot";
@@ -369,8 +370,7 @@ export default function AdminLogin() {
             <div className="space-y-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Пароль</label>
-                <Input
-                  type="password"
+                <PasswordInput
                   placeholder="Введите пароль"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -406,8 +406,7 @@ export default function AdminLogin() {
               </p>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Новый пароль</label>
-                <Input
-                  type="password"
+                <PasswordInput
                   placeholder="Новый пароль"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -417,8 +416,7 @@ export default function AdminLogin() {
               <PasswordRules password={password} />
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Повторите пароль</label>
-                <Input
-                  type="password"
+                <PasswordInput
                   placeholder="Повторите пароль"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
