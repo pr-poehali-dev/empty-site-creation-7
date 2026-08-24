@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
+import PasswordSecurity from "@/components/owner/PasswordSecurity";
 
 const SETTINGS_URL = "https://functions.poehali.dev/82a95791-7a9f-4f40-8167-eb96c3045d34";
 const MANAGERS_URL = "https://functions.poehali.dev/5d7e7b71-4625-4add-9399-92da64d8bd1e";
@@ -146,7 +147,12 @@ const OwnerSettings = () => {
           <Tabs defaultValue="orders">
             <TabsList>
               <TabsTrigger value="orders">Заявки</TabsTrigger>
+              <TabsTrigger value="security">Безопасность</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="security" className="mt-6">
+              <PasswordSecurity people={managers} token={token} />
+            </TabsContent>
 
             <TabsContent value="orders" className="mt-6 space-y-4">
               <div className="flex items-start gap-3 p-4 rounded-xl border border-white/[0.08] bg-card">
