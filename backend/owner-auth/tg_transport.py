@@ -86,6 +86,24 @@ class NoProxyKey(Exception):
     pass
 
 
+HUMAN = {
+    'URLError': 'Не удалось связаться с Telegram — путь закрыт. Настройте посредника: Настройки → Telegram → Подключение посредников.',
+    'timeout': 'Telegram не ответил вовремя. Если повторяется — настройте посредника: Настройки → Telegram.',
+    'TimeoutError': 'Telegram не ответил вовремя. Если повторяется — настройте посредника: Настройки → Telegram.',
+    'socket.timeout': 'Telegram не ответил вовремя. Если повторяется — настройте посредника: Настройки → Telegram.',
+    'ConnectionResetError': 'Связь с Telegram оборвалась. Настройте посредника: Настройки → Telegram.',
+    'HTTP 403': 'Посредник отклонил запрос — скорее всего ключ на площадке не совпадает с ключом в настройках.',
+    'HTTP 404': 'Посредник не найден по этому адресу. Проверьте адрес в списке посредников.',
+    'HTTP 500': 'Посредник ответил ошибкой. Проверьте, что код вставлен целиком.',
+}
+
+
+def humanize(err):
+    if not err:
+        return None
+    return HUMAN.get(err, err)
+
+
 def _call(route, token, method, payload, secret):
     if route != DIRECT and not secret:
         raise NoProxyKey(NO_KEY_MSG)
@@ -130,7 +148,7 @@ def tg_call(cur, method, payload, token=None):
             last_err = type(e).__name__
             _mark(cur, route, False, last_err)
 
-    return None, last_err
+    return None, humanize(last_err)
 
 
 def _probe_one(args):
@@ -149,10 +167,10 @@ def _probe_one(args):
         entry['no_key'] = True
     except urllib.error.HTTPError as e:
         entry['ok'] = False
-        entry['error'] = f'HTTP {e.code}'
+        entry['error'] = humanize(f'HTTP {e.code}')
     except Exception as e:
         entry['ok'] = False
-        entry['error'] = type(e).__name__
+        entry['error'] = humanize(type(e).__name__)
     entry['ms'] = int((datetime.now() - t0).total_seconds() * 1000)
     return entry
 
