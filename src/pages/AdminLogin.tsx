@@ -252,6 +252,12 @@ export default function AdminLogin() {
                 value={phone}
                 onChange={handlePhoneChange}
                 disabled={step !== "phone"}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
                 className="h-11 rounded-xl bg-secondary border-white/[0.08] text-base"
               />
             </DebugBadge>
@@ -382,6 +388,7 @@ export default function AdminLogin() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Пароль</label>
                 <PasswordInput
+                  name="admin-secret"
                   placeholder="Введите пароль"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -418,6 +425,7 @@ export default function AdminLogin() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Новый пароль</label>
                 <PasswordInput
+                  name="admin-new-secret"
                   placeholder="Новый пароль"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
