@@ -86,6 +86,25 @@ class NoProxyKey(Exception):
     pass
 
 
+class NotAProxy(Exception):
+    pass
+
+
+PLAYGROUND_MSG = (
+    'По этому адресу опубликован демо-пример из песочницы Playground, а не наш код. '
+    'Откройте инструкцию по Cloudflare и создайте воркер через личный кабинет, '
+    'затем вставьте код через «Edit code».'
+)
+NOT_PROXY_MSG = (
+    'Адрес отвечает веб-страницей, а не Telegram. Скорее всего код посредника '
+    'не опубликован или адрес указан не тот. Проверьте адрес и инструкцию.'
+)
+BAD_ANSWER_MSG = (
+    'Посредник ответил непонятным содержимым. Проверьте, что код вставлен целиком '
+    'и опубликован кнопкой «Deploy».'
+)
+
+
 HUMAN = {
     'URLError': 'Не удалось связаться с Telegram — путь закрыт. Настройте посредника: Настройки → Telegram → Подключение посредников.',
     'timeout': 'Telegram не ответил вовремя. Если повторяется — настройте посредника: Настройки → Telegram.',
@@ -114,7 +133,16 @@ def _call(route, token, method, payload, secret):
         headers['X-Proxy-Key'] = secret
     req = urllib.request.Request(url, data=data, headers=headers, method='POST')
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        return json.loads(resp.read().decode())
+        raw = resp.read().decode('utf-8', 'replace')
+        try:
+            return json.loads(raw)
+        except ValueError:
+            head_txt = raw.lstrip()[:400].lower()
+            if 'playground' in head_txt:
+                raise NotAProxy(PLAYGROUND_MSG)
+            if head_txt.startswith('<'):
+                raise NotAProxy(NOT_PROXY_MSG)
+            raise NotAProxy(BAD_ANSWER_MSG)
 
 
 def tg_call(cur, method, payload, token=None):
@@ -141,6 +169,9 @@ def tg_call(cur, method, payload, token=None):
         except NoProxyKey:
             last_err = NO_KEY_MSG
             _mark(cur, route, False, 'no_proxy_key')
+        except NotAProxy as e:
+            last_err = str(e)
+            _mark(cur, route, False, last_err)
         except urllib.error.HTTPError as e:
             last_err = f'HTTP {e.code}'
             _mark(cur, route, False, last_err)
@@ -165,6 +196,9 @@ def _probe_one(args):
         entry['ok'] = False
         entry['error'] = NO_KEY_MSG
         entry['no_key'] = True
+    except NotAProxy as e:
+        entry['ok'] = False
+        entry['error'] = str(e)
     except urllib.error.HTTPError as e:
         entry['ok'] = False
         entry['error'] = humanize(f'HTTP {e.code}')
