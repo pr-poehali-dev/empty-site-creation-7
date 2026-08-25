@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,6 +21,7 @@ interface ManagerItem {
 
 const OwnerSettings = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const token = localStorage.getItem("auth_token") || "";
@@ -145,7 +146,7 @@ const OwnerSettings = () => {
         {loading ? (
           <p className="text-muted-foreground">Загрузка...</p>
         ) : (
-          <Tabs defaultValue="orders">
+          <Tabs defaultValue={searchParams.get("tab") || "orders"}>
             <TabsList>
               <TabsTrigger value="orders">Заявки</TabsTrigger>
               <TabsTrigger value="security">Безопасность</TabsTrigger>

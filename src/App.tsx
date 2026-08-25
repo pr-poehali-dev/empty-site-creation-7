@@ -39,6 +39,7 @@ import Brands from "./pages/Brands";
 import ProductGroups from "./pages/ProductGroups";
 import Labels from "./pages/Labels";
 import OwnerSettings from "./pages/OwnerSettings";
+import ProxyGuide from "./pages/ProxyGuide";
 import OwnerAuctionSettings from "./pages/OwnerAuctionSettings";
 import OwnerAuctions from "./pages/OwnerAuctions";
 import OwnerBackup from "./pages/OwnerBackup";
@@ -102,6 +103,7 @@ const App = () => (
           <Route path="/admin/product-groups" element={<ProtectedRoute><ProductGroups /></ProtectedRoute>} />
           <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute><OwnerSettings /></ProtectedRoute>} />
+          <Route path="/admin/settings/proxy/:platform" element={<ProtectedRoute><ProxyGuide /></ProtectedRoute>} />
           <Route path="/admin/backup" element={<ProtectedRoute><OwnerBackup /></ProtectedRoute>} />
           <Route path="/admin/scheduler" element={<ProtectedRoute><OwnerScheduler /></ProtectedRoute>} />
           <Route path="/admin/message-server" element={<ProtectedRoute><OwnerMessageServer /></ProtectedRoute>} />

@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
-import ProxyGuideDialog from "./ProxyGuideDialog";
-import { RECIPES, type Recipe } from "./proxyRecipes";
+import { RECIPES } from "./proxyRecipes";
 
 const AUTH_URL = "https://functions.poehali.dev/4a2cb8d4-f9ea-4107-a828-aced0209a15e";
 const SETTINGS_URL = "https://functions.poehali.dev/82a95791-7a9f-4f40-8167-eb96c3045d34";
@@ -27,6 +27,7 @@ const MODES = [
 
 export default function TelegramRoutes({ token }: { token: string }) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [mode, setMode] = useState("auto");
   const [proxies, setProxies] = useState<string[]>([]);
   const [newProxy, setNewProxy] = useState("");
@@ -35,7 +36,6 @@ export default function TelegramRoutes({ token }: { token: string }) {
   const [report, setReport] = useState<RouteReport[] | null>(null);
   const [proxyKey, setProxyKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [guide, setGuide] = useState<Recipe | null>(null);
 
   useEffect(() => {
     fetch(SETTINGS_URL, { headers: { "X-Authorization": `Bearer ${token}` } })
@@ -96,15 +96,6 @@ export default function TelegramRoutes({ token }: { token: string }) {
     }
     saveProxies([...proxies, v]);
     setNewProxy("");
-  };
-
-  const addFromGuide = (v: string) => {
-    if (proxies.includes(v)) {
-      toast({ title: "Этот адрес уже в списке" });
-      return;
-    }
-    saveProxies([...proxies, v]);
-    toast({ title: "Посредник добавлен", description: "Нажмите «Проверить», чтобы убедиться, что он отвечает" });
   };
 
   const move = (i: number, dir: -1 | 1) => {
@@ -274,7 +265,7 @@ export default function TelegramRoutes({ token }: { token: string }) {
           {RECIPES.map((r) => (
             <button
               key={r.id}
-              onClick={() => setGuide(r)}
+              onClick={() => navigate(`/admin/settings/proxy/${r.id}`)}
               className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.08] hover:bg-white/[0.04] hover:border-primary/40 text-left transition-colors"
             >
               <span className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -416,16 +407,6 @@ export default function TelegramRoutes({ token }: { token: string }) {
         )}
       </div>
 
-      <ProxyGuideDialog
-        recipe={guide}
-        proxyKey={proxyKey}
-        onClose={() => setGuide(null)}
-        onAddProxy={addFromGuide}
-        onNeedKey={() => {
-          setGuide(null);
-          genKey();
-        }}
-      />
     </div>
   );
 }
