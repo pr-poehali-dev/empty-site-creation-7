@@ -184,6 +184,9 @@ const OrderCreatePage = () => {
   const [wholesalerId, setWholesalerId] = useState<number | null>(null);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [showWholesalerList, setShowWholesalerList] = useState(false);
+  const [newWholesalerOpen, setNewWholesalerOpen] = useState(false);
+  const [newWholesalerName, setNewWholesalerName] = useState("");
+  const [creatingWholesaler, setCreatingWholesaler] = useState(false);
   const wholesalerRef = useRef<HTMLDivElement>(null);
   const [orderStatus, setOrderStatus] = useState("new");
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
@@ -817,6 +820,10 @@ const OrderCreatePage = () => {
   }, [loading, pricingRules, editId]);
 
   const addItem = async (item: ProductSearchItem) => {
+    if (!wholesalerId) {
+      toast({ title: "Сначала укажите оптовика", variant: "destructive" });
+      return;
+    }
     if (!editId) {
       toast({ title: "Заявка ещё создаётся, попробуйте через секунду", variant: "destructive" });
       return;
@@ -1139,6 +1146,67 @@ const OrderCreatePage = () => {
   const filteredWholesalers = wholesalers.filter(w =>
     w.name.toLowerCase().includes(customerName.toLowerCase())
   );
+
+  const norm = (v: string) => v.trim().toLowerCase();
+
+  const findWholesaler = (name: string) =>
+    wholesalers.find((w) => norm(w.name) === norm(name));
+
+  const handleWholesalerBlur = () => {
+    const name = customerName.trim();
+    if (!name || isLocked) return;
+    const found = findWholesaler(name);
+    if (found) {
+      if (found.id !== wholesalerId) {
+        setWholesalerId(found.id);
+        loadPricingRules(found.id);
+      }
+      return;
+    }
+    setNewWholesalerName(name);
+    setNewWholesalerOpen(true);
+  };
+
+  const confirmNewWholesaler = async () => {
+    const name = newWholesalerName.trim();
+    if (!name) return;
+    const found = findWholesaler(name);
+    if (found) {
+      setCustomerName(found.name);
+      setWholesalerId(found.id);
+      loadPricingRules(found.id);
+      setNewWholesalerOpen(false);
+      return;
+    }
+    setCreatingWholesaler(true);
+    try {
+      const resp = await fetch(WHOLESALERS_URL, {
+        method: "POST",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Не удалось создать оптовика");
+      setWholesalers((prev) =>
+        prev.some((w) => w.id === data.id) ? prev : [...prev, { id: data.id, name: data.name }]
+      );
+      setCustomerName(data.name);
+      setWholesalerId(data.id);
+      loadPricingRules(data.id);
+      setNewWholesalerOpen(false);
+      toast({ title: `Оптовик "${data.name}" создан` });
+    } catch (e) {
+      toast({ title: "Ошибка", description: String((e as Error).message), variant: "destructive" });
+    } finally {
+      setCreatingWholesaler(false);
+    }
+  };
+
+  const cancelNewWholesaler = () => {
+    setNewWholesalerOpen(false);
+    setCustomerName("");
+    setWholesalerId(null);
+  };
 
   const selectWholesaler = (w: {id: number; name: string}) => {
     setCustomerName(w.name);
@@ -1806,13 +1874,14 @@ const OrderCreatePage = () => {
             <DebugBadge id="OrderCreate:search">
               <Input
                 placeholder={
-                  searchMode === "article" ? "Введите артикул..."
+                  !wholesalerId ? "Сначала укажите оптовика"
+                  : searchMode === "article" ? "Введите артикул..."
                   : searchMode === "supplier_code" ? "Введите код поставщика..."
                   : "Поиск по названию, артикулу, бренду..."
                 }
                 value={searchQuery}
                 onChange={(e) => handleSearchInput(e.target.value)}
-                disabled={isLocked}
+                disabled={isLocked || !wholesalerId}
                 className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm pr-8"
               />
             </DebugBadge>
@@ -2039,6 +2108,42 @@ const OrderCreatePage = () => {
           </div>
         )}
 
+        <Dialog open={newWholesalerOpen} onOpenChange={(o) => { if (!o) cancelNewWholesaler(); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Новый оптовик</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Такого оптовика ещё нет. Создайте его или исправьте название.
+              </p>
+              <Input
+                value={newWholesalerName}
+                onChange={(e) => setNewWholesalerName(e.target.value)}
+                placeholder="Название оптовика"
+                autoFocus
+                className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
+              />
+              {findWholesaler(newWholesalerName) && (
+                <p className="text-xs text-green-400">Такой оптовик уже есть — будет выбран он.</p>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={cancelNewWholesaler} disabled={creatingWholesaler}>
+                Отмена
+              </Button>
+              <Button
+                onClick={confirmNewWholesaler}
+                disabled={!newWholesalerName.trim() || creatingWholesaler}
+              >
+                {findWholesaler(newWholesalerName)
+                  ? `Выбрать ${findWholesaler(newWholesalerName)?.name}`
+                  : "Создать"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div className="flex gap-2 mb-4">
           <DebugBadge id="OrderCreate:wholesalerId" className="relative flex-1">
             <div className="relative" ref={wholesalerRef}>
@@ -2046,6 +2151,7 @@ const OrderCreatePage = () => {
                 value={customerName}
                 onChange={(e) => { setCustomerName(e.target.value); setShowWholesalerList(true); }}
                 onFocus={() => setShowWholesalerList(true)}
+                onBlur={() => setTimeout(handleWholesalerBlur, 150)}
                 placeholder="Оптовик *"
                 disabled={isLocked}
                 className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"

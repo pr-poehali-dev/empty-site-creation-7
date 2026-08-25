@@ -1319,6 +1319,13 @@ def handler(event: dict, context) -> dict:
                     cname = (body.get('customer_name') or '').strip()
                     fields.append("customer_name = %s")
                     vals.append(cname)
+                    wid_new = None
+                    if cname:
+                        cur.execute("SELECT id FROM wholesalers WHERE LOWER(name) = LOWER(%s)", (cname,))
+                        wrow = cur.fetchone()
+                        wid_new = wrow[0] if wrow else None
+                    fields.append("wholesaler_id = %s")
+                    vals.append(wid_new)
                 if 'comment' in body:
                     fields.append("comment = %s")
                     vals.append(body.get('comment'))

@@ -79,7 +79,7 @@ def handler(event, context):
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Имя обязательно'})}
-        cur.execute("SELECT id, name FROM wholesalers WHERE name = %s", (name,))
+        cur.execute("SELECT id, name FROM wholesalers WHERE LOWER(name) = LOWER(%s)", (name,))
         existing = cur.fetchone()
         if existing:
             cur.close()
