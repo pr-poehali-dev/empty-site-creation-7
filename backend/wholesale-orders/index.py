@@ -263,8 +263,17 @@ def insert_item(cur, order_id, item, customer_name, actor='4'):
     price_source = None
     price_base_date = None
     price_set_at = None
-    if price == 0 and pid != TEMP_PRODUCT_ID:
-        price, price_source, price_base_date = calc_price_detailed(cur, customer_name, pid)
+    if pid != TEMP_PRODUCT_ID:
+        calc, src, base_date = calc_price_detailed(cur, customer_name, pid)
+        if price == 0:
+            # Цену не передали — считаем сами.
+            price, price_source, price_base_date = calc, src, base_date
+        elif abs(float(price) - float(calc)) < 0.005:
+            # Пришло ровно то, что дал бы расчёт — значит правило или карточка.
+            price_source, price_base_date = src, base_date
+        else:
+            price_source = 'manual'
+            price_set_at = datetime.now()
     elif price != 0:
         price_source = 'manual'
         price_set_at = datetime.now()

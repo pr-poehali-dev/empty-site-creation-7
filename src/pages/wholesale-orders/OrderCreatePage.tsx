@@ -104,13 +104,19 @@ const SEARCH_MODES = [
 
 const LEGACY_DATE = "25.08.26";
 
-/** Цвет рамки поля цены: ноль — красный, вручную — жёлтый, правило — синий, карточка — зелёный. */
+const todayShort = () => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${p(d.getFullYear() % 100)}`;
+};
+
+/** Цвет рамки карточки товара по источнику цены. Ноль обрабатывается отдельно. */
 const priceBorder = (line: { price: number; price_is_manual?: boolean; price_source?: string | null }) => {
-  if (!line.price) return "border-red-500/50";
-  if (line.price_is_manual || line.price_source === "manual") return "border-yellow-500/50";
-  if (line.price_source === "rule") return "border-blue-500/50";
-  if (line.price_source === "card") return "border-green-500/50";
-  return "border-white/[0.08]";
+  if (!line.price) return "";
+  if (line.price_is_manual || line.price_source === "manual") return "border-2 border-yellow-500/60";
+  if (line.price_source === "rule") return "border-2 border-blue-500/60";
+  if (line.price_source === "card") return "border-2 border-green-500/60";
+  return "";
 };
 
 /** Подпись под ценой: дата, id автора (владельцу) и буква источника. */
@@ -124,7 +130,8 @@ const priceNote = (
   },
   isOwner: boolean
 ) => {
-  if (!line.price) return "";
+  const who0 = isOwner && line.price_changed_by ? `id=${line.price_changed_by}` : "";
+  if (!line.price) return who0;
   const manual = line.price_is_manual || line.price_source === "manual";
   const src = manual ? "manual" : line.price_source;
   const letter = src === "manual" ? "Р" : src === "rule" ? "П" : src === "card" ? "К" : "";
@@ -848,6 +855,10 @@ const OrderCreatePage = () => {
         temp_product_id: srv.temp_product_id,
         has_uuid: srv.has_uuid,
         from_bulk: srv.from_bulk,
+        price_source: srv.price_source,
+        price_date: srv.price_date,
+        price_is_manual: srv.price_is_manual,
+        price_changed_by: srv.price_changed_by,
       }, ...prev]);
       setSearchQuery("");
       setSearchResults([]);
@@ -889,6 +900,10 @@ const OrderCreatePage = () => {
         temp_product_id: srv.temp_product_id,
         has_uuid: srv.has_uuid,
         from_bulk: srv.from_bulk,
+        price_source: srv.price_source,
+        price_date: srv.price_date,
+        price_is_manual: srv.price_is_manual,
+        price_changed_by: srv.price_changed_by,
       }, ...prev]);
       setSearchQuery("");
       setSearchResults([]);
@@ -1175,7 +1190,13 @@ const OrderCreatePage = () => {
       if (i !== index) return l;
       const newPrice = Math.max(0, price);
       const priceChanged = newPrice !== l.price;
-      const next = { ...l, price: newPrice, price_is_manual: priceChanged ? true : l.price_is_manual };
+      const next = {
+        ...l,
+        price: newPrice,
+        price_is_manual: priceChanged ? true : l.price_is_manual,
+        price_source: priceChanged ? "manual" : l.price_source,
+        price_date: priceChanged ? todayShort() : l.price_date,
+      };
       if (next.id) scheduleItemUpdate(next.id, next.quantity, next.price);
       return next;
     }));
@@ -2087,6 +2108,7 @@ const OrderCreatePage = () => {
               const isBlueLine = line.from_bulk === true && line.is_temp !== true;
               const isRedLine = !isBlueLine && (line.is_temp === true || (line.product_id && line.has_uuid === false));
               const zeroPrice = !line.price || line.price === 0;
+              const srcBorder = priceBorder(line);
               return (
                 <DebugBadge id={`OrderCreate:line[${i}]`} key={i}>
                   <div
@@ -2099,6 +2121,8 @@ const OrderCreatePage = () => {
                     } ${
                       zeroPrice
                         ? "border-2 border-red-500"
+                        : srcBorder
+                        ? srcBorder
                         : isRedLine
                         ? "border border-red-500/30"
                         : isBlueLine
@@ -2185,7 +2209,7 @@ const OrderCreatePage = () => {
                           onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
                           onFocus={(e) => e.currentTarget.select()}
                           disabled={isLocked}
-                          className={`w-20 h-6 text-right text-xs p-1 bg-white/[0.04] rounded ${priceBorder(line)}`}
+                          className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
                         />
                         <span className="text-xs text-muted-foreground">Br</span>
                       </div>
