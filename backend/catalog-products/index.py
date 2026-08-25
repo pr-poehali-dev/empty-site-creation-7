@@ -413,8 +413,11 @@ def handler(event: dict, context) -> dict:
             temp_product_id = body.get('temp_product_id')
             cur.execute(
                 """INSERT INTO products (category_id, name, article, brand, supplier_code,
-                           price_base, price_retail, price_wholesale, price_purchase, product_group, is_new)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                           price_base, price_retail, price_wholesale, price_purchase, product_group, is_new,
+                           price_base_changed_at, price_retail_changed_at,
+                           price_wholesale_changed_at, price_purchase_changed_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE,
+                           NOW(), NOW(), NOW(), NOW())
                    RETURNING id""",
                 (category_id, name, article, brand, supplier_code,
                  price_base, price_retail, price_wholesale, price_purchase, product_group)
@@ -497,6 +500,14 @@ def handler(event: dict, context) -> dict:
             """UPDATE products SET
                    name = %s, category_id = %s,
                    article = %s, brand = %s, supplier_code = %s,
+                   price_base_changed_at = CASE WHEN price_base IS DISTINCT FROM %s
+                       THEN NOW() ELSE price_base_changed_at END,
+                   price_retail_changed_at = CASE WHEN price_retail IS DISTINCT FROM %s
+                       THEN NOW() ELSE price_retail_changed_at END,
+                   price_wholesale_changed_at = CASE WHEN price_wholesale IS DISTINCT FROM %s
+                       THEN NOW() ELSE price_wholesale_changed_at END,
+                   price_purchase_changed_at = CASE WHEN price_purchase IS DISTINCT FROM %s
+                       THEN NOW() ELSE price_purchase_changed_at END,
                    price_base = %s, price_retail = %s, price_wholesale = %s, price_purchase = %s,
                    product_group = %s, updated_at = NOW()
                WHERE id = %s RETURNING id""",
@@ -504,6 +515,8 @@ def handler(event: dict, context) -> dict:
              (body.get('article') or '').strip() or None,
              (body.get('brand') or '').strip() or None,
              (body.get('supplier_code') or '').strip() or None,
+             body.get('price_base'), body.get('price_retail'),
+             body.get('price_wholesale'), body.get('price_purchase'),
              body.get('price_base'), body.get('price_retail'),
              body.get('price_wholesale'), body.get('price_purchase'),
              (body.get('product_group') or '').strip() or None,

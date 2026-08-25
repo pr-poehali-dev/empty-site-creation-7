@@ -52,6 +52,8 @@ interface OrderLine {
   created_by?: string | null;
   qty_changed_by?: string | null;
   price_changed_by?: string | null;
+  price_source?: string | null;
+  price_date?: string | null;
   restored_by?: string | null;
   price_is_manual?: boolean;
 }
@@ -99,6 +101,42 @@ const SEARCH_MODES = [
   { value: "article", label: "Артикул" },
   { value: "supplier_code", label: "Код поставщика" },
 ] as const;
+
+const LEGACY_DATE = "25.08.26";
+
+/** Цвет рамки поля цены: ноль — красный, вручную — жёлтый, правило — синий, карточка — зелёный. */
+const priceBorder = (line: { price: number; price_is_manual?: boolean; price_source?: string | null }) => {
+  if (!line.price) return "border-red-500/50";
+  if (line.price_is_manual || line.price_source === "manual") return "border-yellow-500/50";
+  if (line.price_source === "rule") return "border-blue-500/50";
+  if (line.price_source === "card") return "border-green-500/50";
+  return "border-white/[0.08]";
+};
+
+/** Подпись под ценой: дата, id автора (владельцу) и буква источника. */
+const priceNote = (
+  line: {
+    price: number;
+    price_is_manual?: boolean;
+    price_source?: string | null;
+    price_date?: string | null;
+    price_changed_by?: string | null;
+  },
+  isOwner: boolean
+) => {
+  if (!line.price) return "";
+  const manual = line.price_is_manual || line.price_source === "manual";
+  const src = manual ? "manual" : line.price_source;
+  const letter = src === "manual" ? "Р" : src === "rule" ? "П" : src === "card" ? "К" : "";
+  const prefix = src === "rule" ? "база от" : "цена от";
+  const date = line.price_date
+    ? `${prefix} ${line.price_date}`
+    : letter
+      ? `цена до ${LEGACY_DATE}`
+      : "";
+  const who = isOwner && line.price_changed_by ? `id=${line.price_changed_by}` : "";
+  return [date, who, letter].filter(Boolean).join(" ");
+};
 
 const OrderCreatePage = () => {
   const navigate = useNavigate();
@@ -372,6 +410,8 @@ const OrderCreatePage = () => {
                 created_by: srv.created_by,
                 qty_changed_by: srv.qty_changed_by,
                 price_changed_by: srv.price_changed_by,
+                price_source: srv.price_source,
+                price_date: srv.price_date,
                 restored_by: srv.restored_by,
                 price_is_manual: srv.price_is_manual,
               }));
@@ -490,6 +530,8 @@ const OrderCreatePage = () => {
                 created_by: srv.created_by,
                 qty_changed_by: srv.qty_changed_by,
                 price_changed_by: srv.price_changed_by,
+                price_source: srv.price_source,
+                price_date: srv.price_date,
                 restored_by: srv.restored_by,
                 price_is_manual: srv.price_is_manual,
               }));
@@ -561,6 +603,8 @@ const OrderCreatePage = () => {
             created_by: item.created_by,
             qty_changed_by: item.qty_changed_by,
             price_changed_by: item.price_changed_by,
+            price_source: item.price_source,
+            price_date: item.price_date,
             restored_by: item.restored_by,
             price_is_manual: item.price_is_manual,
           }))
@@ -1337,6 +1381,8 @@ const OrderCreatePage = () => {
         created_by: srv.created_by,
         qty_changed_by: srv.qty_changed_by,
         price_changed_by: srv.price_changed_by,
+        price_source: srv.price_source,
+        price_date: srv.price_date,
         restored_by: srv.restored_by,
       }, ...prev]);
     } catch (e) {
@@ -2139,14 +2185,13 @@ const OrderCreatePage = () => {
                           onChange={(e) => updatePrice(i, parseFloat(e.target.value) || 0)}
                           onFocus={(e) => e.currentTarget.select()}
                           disabled={isLocked}
-                          className="w-20 h-6 text-right text-xs p-1 bg-white/[0.04] border-white/[0.08] rounded"
+                          className={`w-20 h-6 text-right text-xs p-1 bg-white/[0.04] rounded ${priceBorder(line)}`}
                         />
                         <span className="text-xs text-muted-foreground">Br</span>
                       </div>
-                      {(isOwner && line.price_changed_by) || line.price_is_manual ? (
+                      {priceNote(line, isOwner) ? (
                         <span className="text-[9px] text-blue-400 leading-none mt-0.5">
-                          {isOwner && line.price_changed_by ? `id=${line.price_changed_by}` : ""}
-                          {line.price_is_manual ? (isOwner && line.price_changed_by ? " Р" : "Р") : ""}
+                          {priceNote(line, isOwner)}
                         </span>
                       ) : null}
                     </div>

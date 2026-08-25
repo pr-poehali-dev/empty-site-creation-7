@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from datetime import datetime
 import psycopg2
 
 def get_db():
@@ -66,29 +67,44 @@ def apply_formula(base, formula):
     return round(base, 2)
 
 
-def calc_price_by_rules(cur, customer_name, product_id):
-    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
-    w = cur.fetchone()
-    if not w:
-        return 0
-    wholesaler_id = w[0]
+def calc_price_detailed(cur, customer_name, product_id):
+    """Считает цену и возвращает (цена, источник, дата основы).
+
+    Источник: 'rule' — сработало правило, 'card' — взята цена из карточки.
+    Дата основы — когда та цена в карточке менялась последний раз.
+    """
     cur.execute(
-        """SELECT filter_type, filter_value, price_field, formula,
-                  condition_price_field, condition_operator, condition_value
-           FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
-        (wholesaler_id,)
-    )
-    rules = cur.fetchall()
-    cur.execute(
-        "SELECT price_base, price_retail, price_wholesale, price_purchase, product_group FROM products WHERE id = %s",
+        """SELECT price_base, price_retail, price_wholesale, price_purchase, product_group,
+                  price_base_changed_at, price_retail_changed_at,
+                  price_wholesale_changed_at, price_purchase_changed_at
+           FROM products WHERE id = %s""",
         (product_id,)
     )
     prod = cur.fetchone()
     if not prod:
-        return 0
-    price_map = {'price_base': prod[0], 'price_retail': prod[1], 'price_wholesale': prod[2], 'price_purchase': prod[3]}
+        return 0, None, None
+    price_map = {'price_base': prod[0], 'price_retail': prod[1],
+                 'price_wholesale': prod[2], 'price_purchase': prod[3]}
+    date_map = {'price_base': prod[5], 'price_retail': prod[6],
+                'price_wholesale': prod[7], 'price_purchase': prod[8]}
+
+    def from_card():
+        return (float(price_map.get('price_wholesale') or 0), 'card',
+                date_map.get('price_wholesale'))
+
+    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
+    w = cur.fetchone()
+    if not w:
+        return 0, None, None
+    cur.execute(
+        """SELECT filter_type, filter_value, price_field, formula,
+                  condition_price_field, condition_operator, condition_value
+           FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
+        (w[0],)
+    )
+    rules = cur.fetchall()
     if not rules:
-        return float(price_map.get('price_wholesale') or 0)
+        return from_card()
     product_group = prod[4]
     matched = None
     for r in rules:
@@ -97,9 +113,14 @@ def calc_price_by_rules(cur, customer_name, product_id):
                 matched = r
                 break
     if not matched:
-        return float(price_map.get('price_wholesale') or 0)
-    base = float(price_map.get(matched[2]) or 0)
-    return apply_formula(base, matched[3])
+        return from_card()
+    field = matched[2]
+    base = float(price_map.get(field) or 0)
+    return apply_formula(base, matched[3]), 'rule', date_map.get(field)
+
+
+def calc_price_by_rules(cur, customer_name, product_id):
+    return calc_price_detailed(cur, customer_name, product_id)[0]
 
 
 def recalc_total(cur, order_id):
@@ -239,8 +260,14 @@ def insert_item(cur, order_id, item, customer_name, actor='4'):
     qty = int(item.get('quantity', 1))
     price = float(item.get('price', 0) or 0)
     pid = item.get('product_id') or TEMP_PRODUCT_ID
+    price_source = None
+    price_base_date = None
+    price_set_at = None
     if price == 0 and pid != TEMP_PRODUCT_ID:
-        price = calc_price_by_rules(cur, customer_name, pid)
+        price, price_source, price_base_date = calc_price_detailed(cur, customer_name, pid)
+    elif price != 0:
+        price_source = 'manual'
+        price_set_at = datetime.now()
     amount = price * qty
     temp_pid = item.get('temp_product_id')
     item_name = item.get('name')
@@ -258,10 +285,12 @@ def insert_item(cur, order_id, item, customer_name, actor='4'):
     cur.execute(
         """INSERT INTO wholesale_order_items
            (order_id, product_id, quantity, price, amount, temp_product_id, item_name, from_bulk, sort_order, was_restored,
-            created_by, qty_changed_by, price_changed_by, restored_by)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            created_by, qty_changed_by, price_changed_by, restored_by,
+            price_source, price_base_date, price_set_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (order_id, pid, qty, price, amount, temp_pid, item_name, from_bulk, sort_order, was_restored,
-         created_by, qty_changed_by, price_changed_by, restored_by)
+         created_by, qty_changed_by, price_changed_by, restored_by,
+         price_source, price_base_date, price_set_at)
     )
     return cur.fetchone()[0], float(price), float(amount)
 
@@ -273,7 +302,7 @@ def fetch_item_view(cur, item_id):
                   tp.brand, tp.article, tp.nomenclature_id,
                   np.name, np.article, np.brand, oi.was_restored,
                   oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by,
-                  oi.price_is_manual
+                  oi.price_is_manual, oi.price_source, oi.price_base_date, oi.price_set_at
            FROM wholesale_order_items oi
            JOIN products p ON p.id = oi.product_id
            LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -317,6 +346,8 @@ def fetch_item_view(cur, item_id):
         'price_changed_by': r[19],
         'restored_by': r[20],
         'price_is_manual': bool(r[21]),
+        'price_source': r[22],
+        'price_date': (r[23] or r[24]).strftime('%d.%m.%y') if (r[23] or r[24]) else None,
     }
 
 
@@ -335,12 +366,23 @@ def load_rules_for_customer(cur, customer_name):
 
 
 def calc_price_in_memory(prod, rules):
+    return calc_price_in_memory_detailed(prod, rules)[0]
+
+
+def calc_price_in_memory_detailed(prod, rules):
+    """Цена, источник и дата основы без обращения к базе."""
     price_map = {
         'price_base': prod['price_base'], 'price_retail': prod['price_retail'],
         'price_wholesale': prod['price_wholesale'], 'price_purchase': prod['price_purchase'],
     }
+    date_map = prod.get('date_map') or {}
+
+    def from_card():
+        return (float(price_map.get('price_wholesale') or 0), 'card',
+                date_map.get('price_wholesale'))
+
     if not rules:
-        return float(price_map.get('price_wholesale') or 0)
+        return from_card()
     matched = None
     for r in rules:
         if r[0] == 'product_group' and prod['product_group'] == r[1]:
@@ -348,9 +390,10 @@ def calc_price_in_memory(prod, rules):
                 matched = r
                 break
     if not matched:
-        return float(price_map.get('price_wholesale') or 0)
-    base = float(price_map.get(matched[2]) or 0)
-    return apply_formula(base, matched[3])
+        return from_card()
+    field = matched[2]
+    base = float(price_map.get(field) or 0)
+    return apply_formula(base, matched[3]), 'rule', date_map.get(field)
 
 
 def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
@@ -359,7 +402,9 @@ def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
     cur.execute(
         """SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.price_is_manual,
                   p.product_group, p.brand,
-                  p.price_base, p.price_retail, p.price_wholesale, p.price_purchase
+                  p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
+                  p.price_base_changed_at, p.price_retail_changed_at,
+                  p.price_wholesale_changed_at, p.price_purchase_changed_at
            FROM wholesale_order_items oi
            JOIN products p ON p.id = oi.product_id
            WHERE oi.order_id = %s AND oi.temp_product_id IS NULL
@@ -384,13 +429,19 @@ def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
             'price_base': r[7], 'price_retail': r[8],
             'price_wholesale': r[9], 'price_purchase': r[10],
             'product_group': p_group,
+            'date_map': {
+                'price_base': r[11], 'price_retail': r[12],
+                'price_wholesale': r[13], 'price_purchase': r[14],
+            },
         }
-        new_price = calc_price_in_memory(prod, rules)
+        new_price, src, base_date = calc_price_in_memory_detailed(prod, rules)
         targets.append({
             'item_id': item_id, 'quantity': int(qty or 0),
             'old_price': float(price or 0), 'new_price': float(new_price or 0),
             'is_manual': is_manual,
             'price_is_manual': bool(price_is_manual),
+            'price_source': src,
+            'price_base_date': base_date,
         })
     return targets
 
@@ -471,7 +522,7 @@ def handler(event: dict, context) -> dict:
                               tp.brand, tp.article, tp.nomenclature_id,
                               np.name, np.article, np.brand, oi.was_restored,
                               oi.created_by, oi.qty_changed_by, oi.price_changed_by, oi.restored_by,
-                              oi.price_is_manual
+                              oi.price_is_manual, oi.price_source, oi.price_base_date, oi.price_set_at
                        FROM wholesale_order_items oi
                        JOIN products p ON p.id = oi.product_id
                        LEFT JOIN temp_products tp ON tp.id = oi.temp_product_id
@@ -515,6 +566,8 @@ def handler(event: dict, context) -> dict:
                         'price_changed_by': r[19],
                         'restored_by': r[20],
                         'price_is_manual': bool(r[21]),
+                        'price_source': r[22],
+                        'price_date': (r[23] or r[24]).strftime('%d.%m.%y') if (r[23] or r[24]) else None,
                     })
 
                 created_by_str = "Владелец" if row[11] else f"{row[6]} {row[7]}"
@@ -741,8 +794,11 @@ def handler(event: dict, context) -> dict:
                     new_price = t['new_price']
                     amount = new_price * t['quantity']
                     cur.execute(
-                        "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s, price_is_manual = false WHERE id = %s",
-                        (new_price, amount, actor, t['item_id'])
+                        """UPDATE wholesale_order_items
+                           SET price = %s, amount = %s, price_changed_by = %s, price_is_manual = false,
+                               price_source = %s, price_base_date = %s, price_set_at = NOW()
+                           WHERE id = %s""",
+                        (new_price, amount, actor, t.get('price_source'), t.get('price_base_date'), t['item_id'])
                     )
                     updated += 1
                 total, ver = recalc_total(cur, order_id)
@@ -945,7 +1001,9 @@ def handler(event: dict, context) -> dict:
                     products = {}
                     if pids:
                         cur.execute(
-                            """SELECT id, price_base, price_retail, price_wholesale, price_purchase, product_group
+                            """SELECT id, price_base, price_retail, price_wholesale, price_purchase, product_group,
+                                      price_base_changed_at, price_retail_changed_at,
+                                      price_wholesale_changed_at, price_purchase_changed_at
                                FROM products WHERE id = ANY(%s)""",
                             (pids,)
                         )
@@ -954,6 +1012,10 @@ def handler(event: dict, context) -> dict:
                                 'price_base': r[1], 'price_retail': r[2],
                                 'price_wholesale': r[3], 'price_purchase': r[4],
                                 'product_group': r[5],
+                                'date_map': {
+                                    'price_base': r[6], 'price_retail': r[7],
+                                    'price_wholesale': r[8], 'price_purchase': r[9],
+                                },
                             }
                     rlog(f"loaded {len(products)} products")
 
@@ -966,28 +1028,14 @@ def handler(event: dict, context) -> dict:
                             temp_products[r[0]] = r[1]
                     rlog(f"loaded {len(temp_products)} temp_products")
 
-                    def calc_in_memory(pid):
+                    def calc_in_memory_full(pid):
                         prod = products.get(pid)
                         if not prod:
-                            return 0.0
-                        price_map = {
-                            'price_base': prod['price_base'],
-                            'price_retail': prod['price_retail'],
-                            'price_wholesale': prod['price_wholesale'],
-                            'price_purchase': prod['price_purchase'],
-                        }
-                        if not rules:
-                            return float(price_map.get('price_wholesale') or 0)
-                        matched = None
-                        for r in rules:
-                            if r[0] == 'product_group' and prod['product_group'] == r[1]:
-                                if check_condition(price_map, r[4], r[5], r[6]):
-                                    matched = r
-                                    break
-                        if not matched:
-                            return float(price_map.get('price_wholesale') or 0)
-                        base = float(price_map.get(matched[2]) or 0)
-                        return apply_formula(base, matched[3])
+                            return 0.0, None, None
+                        return calc_price_in_memory_detailed(prod, rules)
+
+                    def calc_in_memory(pid):
+                        return calc_in_memory_full(pid)[0]
 
                     updated_count = 0
                     processed = 0
@@ -1000,12 +1048,13 @@ def handler(event: dict, context) -> dict:
                             break
                         try:
                             new_price = 0.0
+                            src, base_date = None, None
                             if temp_pid:
                                 tp = temp_products.get(temp_pid)
                                 if tp:
                                     new_price = float(tp)
                             elif pid and pid != TEMP_PRODUCT_ID:
-                                new_price = calc_in_memory(pid)
+                                new_price, src, base_date = calc_in_memory_full(pid)
                             if new_price > 0:
                                 amount = float(new_price) * int(qty or 0)
                                 # retry на rate limit
@@ -1013,8 +1062,11 @@ def handler(event: dict, context) -> dict:
                                 while True:
                                     try:
                                         cur.execute(
-                                            "UPDATE wholesale_order_items SET price = %s, amount = %s, price_changed_by = %s, price_is_manual = false WHERE id = %s",
-                                            (new_price, amount, actor, item_id)
+                                            """UPDATE wholesale_order_items
+                                               SET price = %s, amount = %s, price_changed_by = %s, price_is_manual = false,
+                                                   price_source = %s, price_base_date = %s, price_set_at = NOW()
+                                               WHERE id = %s""",
+                                            (new_price, amount, actor, src, base_date, item_id)
                                         )
                                         break
                                     except Exception as upd_err:
@@ -1203,6 +1255,8 @@ def handler(event: dict, context) -> dict:
                     set_fields.append("price_changed_by = %s")
                     set_vals.append(actor)
                     set_fields.append("price_is_manual = true")
+                    set_fields.append("price_source = 'manual'")
+                    set_fields.append("price_set_at = NOW()")
                 set_vals.append(item_id)
                 cur.execute(
                     f"UPDATE wholesale_order_items SET {', '.join(set_fields)} WHERE id = %s",

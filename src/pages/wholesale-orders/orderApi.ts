@@ -81,6 +81,8 @@ export interface ServerOrderItem {
   created_by?: string | null;
   qty_changed_by?: string | null;
   price_changed_by?: string | null;
+  price_source?: string | null;
+  price_date?: string | null;
   restored_by?: string | null;
   price_is_manual?: boolean;
 }

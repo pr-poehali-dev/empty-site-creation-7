@@ -222,10 +222,23 @@ def handle_import_products(conn, body):
         if images:
             images_to_process.append((ext_id, images))
 
+    PRICE_COLS = ('price_base', 'price_retail', 'price_wholesale', 'price_purchase')
+
     for fields, product_id, ext_id in to_update:
-        set_parts = [f"{k} = %s" for k in fields]
+        set_parts = []
+        vals = []
+        # Дату двигаем только если цена реально стала другой.
+        for col in PRICE_COLS:
+            if col in fields:
+                set_parts.append(
+                    f"{col}_changed_at = CASE WHEN {col} IS DISTINCT FROM %s "
+                    f"THEN NOW() ELSE {col}_changed_at END"
+                )
+                vals.append(fields[col])
+        for k, v in fields.items():
+            set_parts.append(f"{k} = %s")
+            vals.append(v)
         set_parts.append("updated_at = NOW()")
-        vals = list(fields.values())
         vals.append(product_id)
         cur.execute(f"UPDATE products SET {', '.join(set_parts)} WHERE id = %s", vals)
         updated += 1
@@ -236,6 +249,10 @@ def handle_import_products(conn, body):
         cols = list(fields.keys())
         vals = list(fields.values())
         placeholders = ["%s"] * len(vals)
+        for col in PRICE_COLS:
+            if col in fields:
+                cols.append(f"{col}_changed_at")
+                placeholders.append("NOW()")
         cur.execute(
             f"INSERT INTO products ({', '.join(cols)}) VALUES ({', '.join(placeholders)}) RETURNING id",
             vals
