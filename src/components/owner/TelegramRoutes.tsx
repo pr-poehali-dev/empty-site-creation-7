@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
+import ProxyGuideDialog from "./ProxyGuideDialog";
+import { RECIPES, type Recipe } from "./proxyRecipes";
 
 const AUTH_URL = "https://functions.poehali.dev/4a2cb8d4-f9ea-4107-a828-aced0209a15e";
 const SETTINGS_URL = "https://functions.poehali.dev/82a95791-7a9f-4f40-8167-eb96c3045d34";
@@ -33,6 +35,7 @@ export default function TelegramRoutes({ token }: { token: string }) {
   const [report, setReport] = useState<RouteReport[] | null>(null);
   const [proxyKey, setProxyKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [guide, setGuide] = useState<Recipe | null>(null);
 
   useEffect(() => {
     fetch(SETTINGS_URL, { headers: { "X-Authorization": `Bearer ${token}` } })
@@ -93,6 +96,15 @@ export default function TelegramRoutes({ token }: { token: string }) {
     }
     saveProxies([...proxies, v]);
     setNewProxy("");
+  };
+
+  const addFromGuide = (v: string) => {
+    if (proxies.includes(v)) {
+      toast({ title: "Этот адрес уже в списке" });
+      return;
+    }
+    saveProxies([...proxies, v]);
+    toast({ title: "Посредник добавлен", description: "Нажмите «Проверить», чтобы убедиться, что он отвечает" });
   };
 
   const move = (i: number, dir: -1 | 1) => {
@@ -249,6 +261,34 @@ export default function TelegramRoutes({ token }: { token: string }) {
         )}
       </div>
 
+      <div className="p-4 rounded-xl border border-white/[0.08] bg-card space-y-3">
+        <div>
+          <p className="font-medium">Подключение посредников</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Выберите площадку — покажу пошаговую инструкцию и готовый код
+            с уже вставленным ключом.
+          </p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {RECIPES.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setGuide(r)}
+              className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.08] hover:bg-white/[0.04] hover:border-primary/40 text-left transition-colors"
+            >
+              <span className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <Icon name={r.icon} size={18} className="text-primary" />
+              </span>
+              <div className="min-w-0">
+                <div className="font-medium text-sm truncate">{r.name}</div>
+                <div className="text-xs text-muted-foreground truncate">{r.tagline}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="p-4 rounded-xl border border-white/[0.08] bg-card space-y-4">
         <div>
           <p className="font-medium">Адреса посредников</p>
@@ -375,6 +415,17 @@ export default function TelegramRoutes({ token }: { token: string }) {
           </div>
         )}
       </div>
+
+      <ProxyGuideDialog
+        recipe={guide}
+        proxyKey={proxyKey}
+        onClose={() => setGuide(null)}
+        onAddProxy={addFromGuide}
+        onNeedKey={() => {
+          setGuide(null);
+          genKey();
+        }}
+      />
     </div>
   );
 }
