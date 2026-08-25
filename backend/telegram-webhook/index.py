@@ -2,6 +2,7 @@ import json
 import os
 import hmac
 import psycopg2
+from tg_transport import tg_call
 
 def get_db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -142,14 +143,14 @@ def notify_owner(cur, manager_phone):
         )
 
 def send_message(chat_id, text):
-    import urllib.request
-    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-    if not bot_token:
-        return
-    url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
-    payload = json.dumps({'chat_id': chat_id, 'text': text}).encode()
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    """Отправка сообщения: пробует прямой путь, затем посредников."""
+    conn = get_db()
+    cur = conn.cursor()
     try:
-        urllib.request.urlopen(req, timeout=10)
+        tg_call(cur, 'sendMessage', {'chat_id': chat_id, 'text': text})
+        conn.commit()
     except Exception:
-        pass
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()

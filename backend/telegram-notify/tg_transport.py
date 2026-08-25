@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 DIRECT = 'https://api.telegram.org'
 COOLDOWN_MIN = 10
-TIMEOUT = 4
+TIMEOUT = 3
 MAX_TRIES = 3
 
 
