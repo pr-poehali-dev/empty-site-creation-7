@@ -135,11 +135,11 @@ const priceNote = (
   const manual = line.price_is_manual || line.price_source === "manual";
   const src = manual ? "manual" : line.price_source;
   const letter = src === "manual" ? "Р" : src === "rule" ? "П" : src === "card" ? "К" : "";
-  const prefix = src === "rule" ? "база от" : "цена от";
+  const word = src === "rule" ? "база" : "цена";
   const date = line.price_date
-    ? `${prefix} ${line.price_date}`
+    ? `${word} от ${line.price_date}`
     : letter
-      ? `цена до ${LEGACY_DATE}`
+      ? `${word} до ${LEGACY_DATE}`
       : "";
   const who = isOwner && line.price_changed_by ? `id=${line.price_changed_by}` : "";
   return [date, who, letter].filter(Boolean).join(" ");
@@ -2214,7 +2214,7 @@ const OrderCreatePage = () => {
                         <span className="text-xs text-muted-foreground">Br</span>
                       </div>
                       {priceNote(line, isOwner) ? (
-                        <span className="text-[9px] text-blue-400 leading-none mt-0.5">
+                        <span className="text-[9px] text-blue-400 leading-none mt-0.5 whitespace-nowrap">
                           {priceNote(line, isOwner)}
                         </span>
                       ) : null}
