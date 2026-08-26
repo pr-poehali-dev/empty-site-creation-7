@@ -1,0 +1,1 @@
+ALTER TABLE ttn_files RENAME TO ttn_files_old1;
