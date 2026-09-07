@@ -165,6 +165,7 @@ const OrderCreatePage = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!editId);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [deletingDraft, setDeletingDraft] = useState(false);
   const [showVisibility, setShowVisibility] = useState(false);
 
   const [searchMode, setSearchMode] = useState("all");
@@ -2555,16 +2556,54 @@ const OrderCreatePage = () => {
             </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-xl bg-destructive hover:bg-destructive/90"
-              onClick={async () => {
-                if (editId) {
-                  try {
-                    await fetch(`${ORDERS_URL}?id=${editId}`, { method: "DELETE", headers: authHeaders });
-                  } catch { /* ignore */ }
+              disabled={deletingDraft}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!editId) {
+                  setShowExitDialog(false);
+                  navigate("/admin/orders");
+                  return;
                 }
-                navigate("/admin/orders");
+                setDeletingDraft(true);
+                try {
+                  const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
+                    method: "DELETE",
+                    headers: authHeaders,
+                  });
+                  if (resp.ok) {
+                    setShowExitDialog(false);
+                    navigate("/admin/orders");
+                    return;
+                  }
+                  let msg = `Сервер ответил ошибкой (${resp.status})`;
+                  try {
+                    const data = await resp.json();
+                    if (data?.error) msg = data.error;
+                  } catch { /* тело не JSON — оставляем общий текст */ }
+                  toast({
+                    title: "Не удалось удалить заявку",
+                    description: msg,
+                    variant: "destructive",
+                  });
+                } catch {
+                  toast({
+                    title: "Не удалось удалить заявку",
+                    description: "Нет связи с сервером. Заявка осталась на месте.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setDeletingDraft(false);
+                }
               }}
             >
-              Удалить
+              {deletingDraft ? (
+                <>
+                  <Icon name="Loader2" size={14} className="animate-spin mr-1" />
+                  Удаление…
+                </>
+              ) : (
+                "Удалить"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

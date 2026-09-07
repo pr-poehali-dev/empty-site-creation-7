@@ -1422,6 +1422,8 @@ def handler(event: dict, context) -> dict:
             if not allowed:
                 return json_resp(403, {'error': 'Недостаточно прав для удаления'})
 
+            cur.execute("DELETE FROM order_lock_history WHERE order_id = %s", (order_id,))
+            cur.execute("DELETE FROM wholesale_order_shares WHERE order_id = %s", (order_id,))
             cur.execute("DELETE FROM order_payments WHERE order_id = %s", (order_id,))
             cur.execute("DELETE FROM wholesale_order_items WHERE order_id = %s", (order_id,))
             cur.execute("DELETE FROM wholesale_orders WHERE id = %s", (order_id,))
