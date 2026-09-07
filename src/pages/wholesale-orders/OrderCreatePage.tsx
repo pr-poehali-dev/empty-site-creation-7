@@ -1153,6 +1153,30 @@ const OrderCreatePage = () => {
   const findWholesaler = (name: string) =>
     wholesalers.find((w) => norm(w.name) === norm(name));
 
+  const headerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const headerInitedRef = useRef(false);
+  const headerStateRef = useRef({ customerName, comment });
+
+  const flushHeader = useCallback(async (override?: { customer_name?: string }): Promise<boolean> => {
+    if (!editId) return true;
+    if (headerDebounceRef.current) {
+      clearTimeout(headerDebounceRef.current);
+      headerDebounceRef.current = undefined;
+    }
+    const cn = override?.customer_name ?? headerStateRef.current.customerName;
+    const cm = headerStateRef.current.comment;
+    try {
+      const res = await orderApi.updateHeader(editId, { customer_name: cn, comment: cm }, versionRef.current);
+      versionRef.current = res.version;
+      return true;
+    } catch (e) {
+      if (await handleVersionConflict(e)) return false;
+      const msg = e instanceof Error ? e.message : "Не удалось сохранить";
+      toast({ title: "Оптовик не сохранён", description: msg, variant: "destructive" });
+      return false;
+    }
+  }, [editId, handleVersionConflict, toast]);
+
   const handleWholesalerBlur = () => {
     const name = customerName.trim();
     if (!name || isLocked) return;
@@ -1177,6 +1201,9 @@ const OrderCreatePage = () => {
       setWholesalerId(found.id);
       loadPricingRules(found.id);
       setNewWholesalerOpen(false);
+      headerInitedRef.current = true;
+      headerStateRef.current = { ...headerStateRef.current, customerName: found.name };
+      void flushHeader({ customer_name: found.name });
       return;
     }
     setCreatingWholesaler(true);
@@ -1195,6 +1222,9 @@ const OrderCreatePage = () => {
       setWholesalerId(data.id);
       loadPricingRules(data.id);
       setNewWholesalerOpen(false);
+      headerInitedRef.current = true;
+      headerStateRef.current = { ...headerStateRef.current, customerName: data.name };
+      void flushHeader({ customer_name: data.name });
       toast({ title: `Оптовик "${data.name}" создан` });
     } catch (e) {
       toast({ title: "Ошибка", description: String((e as Error).message), variant: "destructive" });
@@ -1214,11 +1244,14 @@ const OrderCreatePage = () => {
     setWholesalerId(w.id);
     setShowWholesalerList(false);
     loadPricingRules(w.id);
+    headerInitedRef.current = true;
+    headerStateRef.current = { ...headerStateRef.current, customerName: w.name };
+    void flushHeader({ customer_name: w.name });
   };
 
   useEffect(() => {
     if (!customerName.trim() || wholesalers.length === 0) return;
-    const found = wholesalers.find(w => w.name === customerName.trim());
+    const found = wholesalers.find(w => norm(w.name) === norm(customerName));
     if (found && found.id !== wholesalerId) {
       setWholesalerId(found.id);
       loadPricingRules(found.id);
@@ -1486,8 +1519,10 @@ const OrderCreatePage = () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   }, []);
 
-  const headerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const headerInitedRef = useRef(false);
+  useEffect(() => {
+    headerStateRef.current = { customerName, comment };
+  }, [customerName, comment]);
+
   useEffect(() => {
     if (!editId) return;
     if (!headerInitedRef.current) {
@@ -1498,9 +1533,13 @@ const OrderCreatePage = () => {
     headerDebounceRef.current = setTimeout(() => {
       orderApi.updateHeader(editId, { customer_name: customerName, comment }, versionRef.current)
         .then((res) => { versionRef.current = res.version; })
-        .catch(async (e) => { await handleVersionConflict(e); });
+        .catch(async (e) => {
+          if (await handleVersionConflict(e)) return;
+          const msg = e instanceof Error ? e.message : "Не удалось сохранить";
+          toast({ title: "Оптовик не сохранён", description: msg, variant: "destructive" });
+        });
     }, 600);
-  }, [customerName, comment, editId, handleVersionConflict]);
+  }, [customerName, comment, editId, handleVersionConflict, toast]);
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
@@ -1519,12 +1558,24 @@ const OrderCreatePage = () => {
     }
     setSaving(true);
     try {
+      const headerOk = await flushHeader();
+      if (!headerOk) return;
+
       if (orderStatus === "draft") {
-        await fetch(`${ORDERS_URL}?id=${editId}`, {
+        const resp = await fetch(`${ORDERS_URL}?id=${editId}`, {
           method: "PUT",
           headers: authHeaders,
           body: JSON.stringify({ status: "new" }),
         });
+        if (!resp.ok) {
+          let msg = `Сервер ответил ошибкой (${resp.status})`;
+          try {
+            const data = await resp.json();
+            if (data?.error) msg = data.error;
+          } catch { /* тело не JSON — оставляем общий текст */ }
+          toast({ title: "Не удалось сохранить заявку", description: msg, variant: "destructive" });
+          return;
+        }
       }
       toast({ title: "Готово" });
       navigate("/admin/orders");

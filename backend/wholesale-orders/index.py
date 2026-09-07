@@ -1317,6 +1317,11 @@ def handler(event: dict, context) -> dict:
                 vals = []
                 if 'customer_name' in body:
                     cname = (body.get('customer_name') or '').strip()
+                    cur.execute("SELECT status FROM wholesale_orders WHERE id = %s", (order_id,))
+                    srow = cur.fetchone()
+                    cur_status = srow[0] if srow else None
+                    if not cname and cur_status != 'draft':
+                        return json_resp(400, {'error': 'У заявки в работе нельзя очистить оптовика'})
                     fields.append("customer_name = %s")
                     vals.append(cname)
                     wid_new = None
@@ -1387,6 +1392,11 @@ def handler(event: dict, context) -> dict:
                 else:
                     if new_status not in ALLOWED_STATUSES:
                         return json_resp(400, {'error': 'Недопустимый статус'})
+                    if new_status not in ('archived', 'draft'):
+                        cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                        crow = cur.fetchone()
+                        if not ((crow[0] or '').strip() if crow else ''):
+                            return json_resp(400, {'error': 'Укажите оптовика — без него заявку нельзя пустить в работу'})
                     if new_status == 'archived':
                         cur.execute(
                             "UPDATE wholesale_orders SET status = 'archived', previous_status = %s WHERE id = %s",
