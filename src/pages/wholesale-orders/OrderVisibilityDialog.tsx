@@ -26,6 +26,7 @@ const OrderVisibilityDialog = ({ orderId, open, onOpenChange }: Props) => {
   const [error, setError] = useState<string | null>(null);
   const [visibleAll, setVisibleAll] = useState(false);
   const [managers, setManagers] = useState<VisibilityManager[]>([]);
+  const [wholesalerUsers, setWholesalerUsers] = useState<VisibilityManager[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -39,7 +40,17 @@ const OrderVisibilityDialog = ({ orderId, open, onOpenChange }: Props) => {
         if (cancelled) return;
         setVisibleAll(data.visibility === "all");
         setManagers(data.managers || []);
-        setSelected(new Set(data.shared_manager_ids || []));
+        const firmUsers = data.wholesaler_users || [];
+        setWholesalerUsers(firmUsers);
+
+        const shared = new Set(data.shared_manager_ids || []);
+        // Оптовики своей фирмы по умолчанию видят заявку: при первой настройке
+        // отмечаем их сразу, снять галочку менеджер может вручную.
+        const noneChosenYet = firmUsers.length > 0 && !firmUsers.some((u) => shared.has(u.id));
+        if (noneChosenYet && (data.shared_manager_ids || []).length === 0) {
+          firmUsers.forEach((u) => shared.add(u.id));
+        }
+        setSelected(shared);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -63,11 +74,13 @@ const OrderVisibilityDialog = ({ orderId, open, onOpenChange }: Props) => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await orderApi.setVisibility(
-        orderId,
-        visibleAll ? "all" : "private",
-        visibleAll ? [] : Array.from(selected)
-      );
+      const firmIds = new Set(wholesalerUsers.map((u) => u.id));
+      // «Показать всем» касается только менеджеров — доступ оптовиков
+      // всегда поимённый, поэтому их отметки сохраняем в любом случае.
+      const ids = visibleAll
+        ? Array.from(selected).filter((id) => firmIds.has(id))
+        : Array.from(selected);
+      await orderApi.setVisibility(orderId, visibleAll ? "all" : "private", ids);
       toast({ title: "Настройки видимости сохранены" });
       onOpenChange(false);
     } catch (e) {
@@ -107,7 +120,7 @@ const OrderVisibilityDialog = ({ orderId, open, onOpenChange }: Props) => {
               <div>
                 <div className="font-medium">Показать всем менеджерам</div>
                 <div className="text-xs text-muted-foreground">
-                  Заявку увидят все менеджеры
+                  Заявку увидят все менеджеры. На оптовиков не влияет
                 </div>
               </div>
               <Switch checked={visibleAll} onCheckedChange={setVisibleAll} />
@@ -137,6 +150,29 @@ const OrderVisibilityDialog = ({ orderId, open, onOpenChange }: Props) => {
                       </label>
                     ))
                   )}
+                </div>
+              </div>
+            )}
+
+            {wholesalerUsers.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-white/[0.08]">
+                <div className="text-sm font-medium">Оптовики фирмы из заявки</div>
+                <p className="text-xs text-muted-foreground">
+                  Показаны только оптовики, связанные с фирмой этой заявки
+                </p>
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-white/[0.08] divide-y divide-white/[0.06]">
+                  {wholesalerUsers.map((u) => (
+                    <label
+                      key={u.id}
+                      className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-white/[0.03]"
+                    >
+                      <Checkbox
+                        checked={selected.has(u.id)}
+                        onCheckedChange={() => toggleManager(u.id)}
+                      />
+                      <span className="text-sm">{u.name}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
             )}

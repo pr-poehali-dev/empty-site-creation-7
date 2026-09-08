@@ -91,7 +91,7 @@ const ReturnCreatePage = () => {
   const [returnStatus, setReturnStatus] = useState("draft");
   const [statusUpdating, setStatusUpdating] = useState(false);
 
-  // Загрузка справочника оптовиков
+  // Загрузка справочника фирм
   useEffect(() => {
     fetch(WHOLESALERS_URL, { headers: authHeaders })
       .then(r => r.json())
@@ -242,7 +242,7 @@ const ReturnCreatePage = () => {
 
   const handleSave = async () => {
     if (!customerName.trim()) {
-      toast({ title: "Ошибка", description: "Укажите оптовика", variant: "destructive" });
+      toast({ title: "Ошибка", description: "Укажите фирму", variant: "destructive" });
       return;
     }
     if (lines.length === 0) {
@@ -333,9 +333,9 @@ const ReturnCreatePage = () => {
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-6 flex-1 space-y-4">
-        {/* Оптовик */}
+        {/* Фирма */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-muted-foreground">Оптовик *</label>
+          <label className="text-sm font-medium text-muted-foreground">Фирма *</label>
           <DebugBadge id="Returns:wholesaler">
             <div ref={wholesalerRef} className="relative">
               <Input
@@ -347,7 +347,7 @@ const ReturnCreatePage = () => {
                   setWholesalerId(found ? found.id : null);
                 }}
                 onFocus={() => setShowWholesalerList(true)}
-                placeholder="Имя оптовика"
+                placeholder="Название фирмы"
                 disabled={isReadOnly}
                 className="h-10 rounded-xl bg-secondary border-white/[0.08]"
               />

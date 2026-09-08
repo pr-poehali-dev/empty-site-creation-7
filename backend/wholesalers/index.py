@@ -112,13 +112,13 @@ def handler(event, context):
         if not row:
             cur.close()
             conn.close()
-            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Оптовик не найден'})}
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Фирма не найдена'})}
 
         cur.execute("SELECT id FROM wholesalers WHERE name = %s AND id <> %s", (new_name, wid))
         if cur.fetchone():
             cur.close()
             conn.close()
-            return {'statusCode': 409, 'headers': headers, 'body': json.dumps({'error': 'Оптовик с таким названием уже есть'})}
+            return {'statusCode': 409, 'headers': headers, 'body': json.dumps({'error': 'Фирма с таким названием уже есть'})}
 
         cur.execute("UPDATE wholesalers SET name = %s WHERE id = %s", (new_name, wid))
         cur.execute("UPDATE wholesale_orders  SET customer_name = %s WHERE wholesaler_id = %s", (new_name, wid))
@@ -141,7 +141,7 @@ def handler(event, context):
         if not row:
             cur.close()
             conn.close()
-            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Оптовик не найден'})}
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Фирма не найдена'})}
 
         cur.execute("SELECT COUNT(*) FROM wholesale_orders  WHERE wholesaler_id = %s", (wid,))
         orders_count = int(cur.fetchone()[0])
@@ -152,9 +152,19 @@ def handler(event, context):
             cur.close()
             conn.close()
             return {'statusCode': 409, 'headers': headers, 'body': json.dumps({
-                'error': 'Нельзя удалить: оптовик участвует в заявках или возвратах',
+                'error': 'Нельзя удалить: фирма участвует в заявках или возвратах',
                 'orders_count': orders_count,
                 'returns_count': returns_count,
+            })}
+
+        cur.execute("SELECT COUNT(*) FROM manager_wholesalers WHERE wholesaler_id = %s", (wid,))
+        users_count = int(cur.fetchone()[0])
+        if users_count > 0:
+            cur.close()
+            conn.close()
+            return {'statusCode': 409, 'headers': headers, 'body': json.dumps({
+                'error': 'Нельзя удалить: к фирме привязаны пользователи-оптовики',
+                'users_count': users_count,
             })}
 
         cur.execute("DELETE FROM wholesalers WHERE id = %s", (wid,))

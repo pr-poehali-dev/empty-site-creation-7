@@ -126,7 +126,7 @@ export const orderApi = {
       "delete_item",
       { item_id: itemId, expected_version: expectedVersion ?? null }
     ),
-  updateHeader: (orderId: number, fields: { customer_name?: string; comment?: string }, expectedVersion?: string | null) =>
+  updateHeader: (orderId: number, fields: { customer_name?: string; comment?: string; wholesaler_id?: number | null }, expectedVersion?: string | null) =>
     postAction<{ ok: boolean; version: string }>(
       "update_header",
       { order_id: orderId, ...fields, expected_version: expectedVersion ?? null }
@@ -174,4 +174,5 @@ export interface VisibilityInfo {
   visibility: 'private' | 'all';
   shared_manager_ids: number[];
   managers: VisibilityManager[];
+  wholesaler_users?: VisibilityManager[];
 }

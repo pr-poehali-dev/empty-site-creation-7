@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
+import Users from "./pages/Users";
 import AuthorizeManager from "./pages/AuthorizeManager";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import Catalog from "./pages/Catalog";
@@ -71,6 +72,7 @@ const App = () => (
           <Route path="/tma/buy/:id" element={<TmaBuy />} />
           <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/watumiaji" element={<ProtectedRoute><Users /></ProtectedRoute>} />
           <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />
           <Route path="/admin/manager" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
           <Route path="/admin/catalog" element={<ProtectedRoute><Catalog /></ProtectedRoute>} />

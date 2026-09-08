@@ -67,6 +67,17 @@ def handler(event: dict, context) -> dict:
                    ORDER BY m.created_at DESC"""
             )
         rows = cur.fetchall()
+
+        cur.execute(
+            """SELECT mw.manager_id, w.id, w.name
+               FROM manager_wholesalers mw
+               JOIN wholesalers w ON w.id = mw.wholesaler_id
+               ORDER BY w.name"""
+        )
+        firms_by_manager = {}
+        for mid, wid, wname in cur.fetchall():
+            firms_by_manager.setdefault(mid, []).append({'id': wid, 'name': wname})
+
         managers = [
             {
                 'id': r[0],
@@ -77,13 +88,25 @@ def handler(event: dict, context) -> dict:
                 'role': {'id': r[5], 'name': r[6]} if r[5] else None,
                 'status': r[7],
                 'created_at': r[8].isoformat() if r[8] else None,
-                'auction_role': r[9] or 'none'
+                'auction_role': r[9] or 'none',
+                'wholesalers': firms_by_manager.get(r[0], [])
             }
             for r in rows
         ]
+
+        cur.execute("SELECT id, name FROM roles ORDER BY id")
+        roles = [{'id': r[0], 'name': r[1]} for r in cur.fetchall()]
+
+        cur.execute("SELECT id, name FROM wholesalers ORDER BY name")
+        firms = [{'id': r[0], 'name': r[1]} for r in cur.fetchall()]
+
         cur.close()
         conn.close()
-        return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'managers': managers})}
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': json.dumps({'managers': managers, 'roles': roles, 'wholesalers': firms})
+        }
 
     if method == 'POST':
         phone = body.get('phone', '').strip()
@@ -156,11 +179,35 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный доступ к аукциону'})}
 
-        cur.execute("SELECT id FROM roles WHERE id = %s", (role_id,))
-        if not cur.fetchone():
+        cur.execute("SELECT id, name FROM roles WHERE id = %s", (role_id,))
+        role_row = cur.fetchone()
+        if not role_row:
             cur.close()
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Роль не найдена'})}
+
+        role_name = role_row[1]
+        is_wholesaler_role = role_name == 'Оптовик'
+
+        firm_ids = body.get('wholesaler_ids') or []
+        if is_wholesaler_role:
+            try:
+                firm_ids = [int(x) for x in firm_ids]
+            except (TypeError, ValueError):
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный список фирм'})}
+            if not firm_ids:
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Для оптовика укажите хотя бы одну фирму'})}
+            cur.execute("SELECT count(*) FROM wholesalers WHERE id = ANY(%s)", (firm_ids,))
+            if cur.fetchone()[0] != len(set(firm_ids)):
+                cur.close()
+                conn.close()
+                return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некоторые фирмы не найдены'})}
+        else:
+            firm_ids = []
 
         cur.execute(
             """UPDATE managers
@@ -173,7 +220,14 @@ def handler(event: dict, context) -> dict:
         if not row:
             cur.close()
             conn.close()
-            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Управленец не найден или не в подходящем статусе'})}
+            return {'statusCode': 404, 'headers': headers, 'body': json.dumps({'error': 'Пользователь не найден или не в подходящем статусе'})}
+
+        cur.execute("DELETE FROM manager_wholesalers WHERE manager_id = %s", (int(manager_id),))
+        for wid in set(firm_ids):
+            cur.execute(
+                "INSERT INTO manager_wholesalers (manager_id, wholesaler_id) VALUES (%s, %s)",
+                (int(manager_id), wid)
+            )
 
         conn.commit()
         cur.close()
@@ -210,9 +264,11 @@ def handler(event: dict, context) -> dict:
         if action == 'remove':
             phone = mgr[0]
             cur.execute("DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE phone = %s AND role = 'manager')", (phone,))
+            cur.execute("DELETE FROM manager_wholesalers WHERE manager_id = %s", (int(manager_id),))
             cur.execute("DELETE FROM managers WHERE id = %s", (int(manager_id),))
             cur.execute("DELETE FROM users WHERE phone = %s AND role = 'manager'", (phone,))
         else:
+            cur.execute("DELETE FROM manager_wholesalers WHERE manager_id = %s", (int(manager_id),))
             cur.execute("UPDATE managers SET status = 'not_authorized', telegram_chat_id = NULL, first_name = NULL, last_name = NULL, role_id = NULL WHERE id = %s", (int(manager_id),))
 
         conn.commit()

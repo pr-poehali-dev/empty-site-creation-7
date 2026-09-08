@@ -26,10 +26,12 @@ def get_manager_info(cur, phone):
     )
     return cur.fetchone()
 
-def can_manager_see_order(cur, order_id, created_by, created_by_owner, visibility, manager_id):
-    if visibility == 'all':
+def can_manager_see_order(cur, order_id, created_by, created_by_owner, visibility, manager_id, role_name=None):
+    # «Показать всем» касается только управленцев. Оптовик видит заявку
+    # исключительно по поимённому доступу к заявке своей фирмы.
+    if visibility == 'all' and role_name != 'Оптовик':
         return True
-    if not created_by_owner and created_by == manager_id:
+    if role_name != 'Оптовик' and not created_by_owner and created_by == manager_id:
         return True
     cur.execute(
         "SELECT 1 FROM wholesale_order_shares WHERE order_id = %s AND manager_id = %s LIMIT 1",
@@ -522,7 +524,7 @@ def handler(event: dict, context) -> dict:
                 if not row:
                     return json_resp(404, {'error': 'Заявка не найдена'})
 
-                if not is_owner and not can_manager_see_order(cur, row[0], row[12], row[11], row[14], manager_id):
+                if not is_owner and not can_manager_see_order(cur, row[0], row[12], row[11], row[14], manager_id, role_name):
                     return json_resp(403, {'error': 'Нет доступа к этой заявке'})
 
                 cur.execute(
@@ -626,13 +628,21 @@ def handler(event: dict, context) -> dict:
                     conditions.append("o.status != 'archived'")
 
             if not is_owner and not only_my_drafts:
-                conditions.append(
-                    "(o.visibility = 'all' "
-                    "OR (o.created_by = %s AND o.created_by_owner = false) "
-                    "OR EXISTS(SELECT 1 FROM wholesale_order_shares s WHERE s.order_id = o.id AND s.manager_id = %s))"
-                )
-                values.append(manager_id)
-                values.append(manager_id)
+                if role_name == 'Оптовик':
+                    # Оптовик видит только заявки своей фирмы, выданные поимённо.
+                    conditions.append(
+                        "EXISTS(SELECT 1 FROM wholesale_order_shares s "
+                        "WHERE s.order_id = o.id AND s.manager_id = %s)"
+                    )
+                    values.append(manager_id)
+                else:
+                    conditions.append(
+                        "(o.visibility = 'all' "
+                        "OR (o.created_by = %s AND o.created_by_owner = false) "
+                        "OR EXISTS(SELECT 1 FROM wholesale_order_shares s WHERE s.order_id = o.id AND s.manager_id = %s))"
+                    )
+                    values.append(manager_id)
+                    values.append(manager_id)
 
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -690,7 +700,7 @@ def handler(event: dict, context) -> dict:
                 if not order_id:
                     return json_resp(400, {'error': 'Не указан order_id'})
                 cur.execute(
-                    "SELECT created_by, created_by_owner, visibility FROM wholesale_orders WHERE id = %s",
+                    "SELECT created_by, created_by_owner, visibility, wholesaler_id FROM wholesale_orders WHERE id = %s",
                     (order_id,)
                 )
                 o = cur.fetchone()
@@ -700,23 +710,52 @@ def handler(event: dict, context) -> dict:
                 can_manage = is_owner or is_author
                 if not can_manage:
                     return json_resp(403, {'error': 'Нет прав на настройку видимости'})
+                order_wid = o[3]
                 cur.execute(
                     "SELECT manager_id FROM wholesale_order_shares WHERE order_id = %s",
                     (order_id,)
                 )
                 shared_ids = [r[0] for r in cur.fetchall()]
+
+                # Управленцы — все авторизованные, кроме оптовиков и автора заявки.
                 cur.execute(
-                    "SELECT id, first_name, last_name FROM managers WHERE status = 'authorized' ORDER BY first_name, last_name"
+                    """SELECT m.id, m.first_name, m.last_name
+                       FROM managers m
+                       LEFT JOIN roles r ON r.id = m.role_id
+                       WHERE m.status = 'authorized'
+                         AND COALESCE(r.name, '') <> 'Оптовик'
+                       ORDER BY m.first_name, m.last_name"""
                 )
                 managers = [
                     {'id': r[0], 'name': f"{r[1] or ''} {r[2] or ''}".strip() or f"#{r[0]}"}
                     for r in cur.fetchall()
                     if not (not o[1] and r[0] == o[0])
                 ]
+
+                # Оптовики — только связанные с фирмой из этой заявки.
+                wholesaler_users = []
+                if order_wid:
+                    cur.execute(
+                        """SELECT m.id, m.first_name, m.last_name
+                           FROM managers m
+                           JOIN roles r ON r.id = m.role_id
+                           JOIN manager_wholesalers mw ON mw.manager_id = m.id
+                           WHERE m.status = 'authorized'
+                             AND r.name = 'Оптовик'
+                             AND mw.wholesaler_id = %s
+                           ORDER BY m.first_name, m.last_name""",
+                        (order_wid,)
+                    )
+                    wholesaler_users = [
+                        {'id': r[0], 'name': f"{r[1] or ''} {r[2] or ''}".strip() or f"#{r[0]}"}
+                        for r in cur.fetchall()
+                    ]
+
                 return json_resp(200, {
                     'visibility': o[2],
                     'shared_manager_ids': shared_ids,
                     'managers': managers,
+                    'wholesaler_users': wholesaler_users,
                 })
 
             # Сохранить настройки видимости заявки.
@@ -729,7 +768,7 @@ def handler(event: dict, context) -> dict:
                 if visibility not in ('private', 'all'):
                     return json_resp(400, {'error': 'Некорректное значение видимости'})
                 cur.execute(
-                    "SELECT created_by, created_by_owner FROM wholesale_orders WHERE id = %s",
+                    "SELECT created_by, created_by_owner, wholesaler_id FROM wholesale_orders WHERE id = %s",
                     (order_id,)
                 )
                 o = cur.fetchone()
@@ -738,12 +777,38 @@ def handler(event: dict, context) -> dict:
                 is_author = (not o[1]) and o[0] == manager_id
                 if not (is_owner or is_author):
                     return json_resp(403, {'error': 'Нет прав на настройку видимости'})
+                order_wid = o[2]
                 clean_ids = []
                 for x in shared_ids:
                     try:
                         clean_ids.append(int(x))
                     except (TypeError, ValueError):
                         pass
+
+                # Оптовик получает доступ только к заявке своей фирмы — чужой отсекается,
+                # даже если id пришёл в запросе в обход интерфейса.
+                if clean_ids:
+                    cur.execute(
+                        """SELECT m.id
+                           FROM managers m
+                           JOIN roles r ON r.id = m.role_id
+                           WHERE r.name = 'Оптовик' AND m.id = ANY(%s)""",
+                        (clean_ids,)
+                    )
+                    wholesaler_ids = {r[0] for r in cur.fetchall()}
+                    if wholesaler_ids:
+                        allowed = set()
+                        if order_wid:
+                            cur.execute(
+                                """SELECT manager_id FROM manager_wholesalers
+                                   WHERE wholesaler_id = %s AND manager_id = ANY(%s)""",
+                                (order_wid, list(wholesaler_ids))
+                            )
+                            allowed = {r[0] for r in cur.fetchall()}
+                        rejected = wholesaler_ids - allowed
+                        if rejected:
+                            return json_resp(400, {'error': 'Оптовик не связан с фирмой из этой заявки'})
+
                 cur.execute("UPDATE wholesale_orders SET visibility = %s WHERE id = %s", (visibility, order_id))
                 cur.execute("DELETE FROM wholesale_order_shares WHERE order_id = %s", (order_id,))
                 for mid in set(clean_ids):
@@ -1317,20 +1382,54 @@ def handler(event: dict, context) -> dict:
                 vals = []
                 if 'customer_name' in body:
                     cname = (body.get('customer_name') or '').strip()
-                    cur.execute("SELECT status FROM wholesale_orders WHERE id = %s", (order_id,))
+                    cur.execute("SELECT status, wholesaler_id FROM wholesale_orders WHERE id = %s", (order_id,))
                     srow = cur.fetchone()
                     cur_status = srow[0] if srow else None
+                    cur_wid = srow[1] if srow else None
                     if not cname and cur_status != 'draft':
-                        return json_resp(400, {'error': 'У заявки в работе нельзя очистить оптовика'})
+                        return json_resp(400, {'error': 'У заявки в работе нельзя очистить фирму'})
+
+                    # Привязка идёт по id фирмы: он приходит явно с фронта в момент выбора
+                    # и больше не пересчитывается из текста названия.
+                    wid_new = cur_wid
+                    if 'wholesaler_id' in body:
+                        raw_wid = body.get('wholesaler_id')
+                        if raw_wid is None:
+                            wid_new = None
+                        else:
+                            try:
+                                raw_wid = int(raw_wid)
+                            except (TypeError, ValueError):
+                                return json_resp(400, {'error': 'Некорректный id фирмы'})
+                            cur.execute("SELECT id, name FROM wholesalers WHERE id = %s", (raw_wid,))
+                            wrow = cur.fetchone()
+                            if not wrow:
+                                return json_resp(400, {'error': 'Фирма не найдена'})
+                            wid_new = wrow[0]
+                            cname = wrow[1]
+                    elif not cname:
+                        wid_new = None
+
+                    if cur_status != 'draft' and not wid_new:
+                        return json_resp(400, {'error': 'Выберите фирму из справочника — заявка в работе без привязки к фирме не сохраняется'})
+
                     fields.append("customer_name = %s")
                     vals.append(cname)
-                    wid_new = None
-                    if cname:
-                        cur.execute("SELECT id FROM wholesalers WHERE LOWER(name) = LOWER(%s)", (cname,))
-                        wrow = cur.fetchone()
-                        wid_new = wrow[0] if wrow else None
                     fields.append("wholesaler_id = %s")
                     vals.append(wid_new)
+
+                    # Фирма сменилась — доступ оптовиков прежней фирмы снимаем,
+                    # иначе посторонний сохранил бы видимость чужой заявки.
+                    if wid_new != cur_wid:
+                        cur.execute(
+                            """DELETE FROM wholesale_order_shares
+                               WHERE order_id = %s AND manager_id IN (
+                                   SELECT m.id FROM managers m
+                                   JOIN roles r ON r.id = m.role_id
+                                   WHERE r.name = 'Оптовик'
+                               )""",
+                            (order_id,)
+                        )
                 if 'comment' in body:
                     fields.append("comment = %s")
                     vals.append(body.get('comment'))
@@ -1393,10 +1492,12 @@ def handler(event: dict, context) -> dict:
                     if new_status not in ALLOWED_STATUSES:
                         return json_resp(400, {'error': 'Недопустимый статус'})
                     if new_status not in ('archived', 'draft'):
-                        cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                        cur.execute("SELECT customer_name, wholesaler_id FROM wholesale_orders WHERE id = %s", (order_id,))
                         crow = cur.fetchone()
                         if not ((crow[0] or '').strip() if crow else ''):
-                            return json_resp(400, {'error': 'Укажите оптовика — без него заявку нельзя пустить в работу'})
+                            return json_resp(400, {'error': 'Укажите фирму — без неё заявку нельзя пустить в работу'})
+                        if not (crow[1] if crow else None):
+                            return json_resp(400, {'error': 'Выберите фирму из справочника — без привязки заявку нельзя пустить в работу'})
                     if new_status == 'archived':
                         cur.execute(
                             "UPDATE wholesale_orders SET status = 'archived', previous_status = %s WHERE id = %s",

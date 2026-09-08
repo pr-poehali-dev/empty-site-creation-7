@@ -148,7 +148,7 @@ const OrderPayments = () => {
     }
     if (method === "return_offset") {
       if (returnBalance <= 0) {
-        toast({ title: "Ошибка", description: "Нет доступной суммы зачёта по этому оптовику", variant: "destructive" });
+        toast({ title: "Ошибка", description: "Нет доступной суммы зачёта по этой фирме", variant: "destructive" });
         return;
       }
       if (numAmount > returnBalance + 0.001) {
@@ -352,7 +352,7 @@ const OrderPayments = () => {
                     ? "Расчёт доступной суммы..."
                     : returnBalance > 0
                     ? `Доступно к зачёту: ${returnBalance.toLocaleString()} Br`
-                    : "По этому оптовику нет принятых возвратов с остатком"}
+                    : "По этой фирме нет принятых возвратов с остатком"}
                 </p>
               )}
             </div>

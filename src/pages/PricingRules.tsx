@@ -38,13 +38,13 @@ const PricingRules = () => {
         </div>
       </header>
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
-        <p className="text-sm text-muted-foreground mb-4">Выберите оптовика для настройки ценообразования</p>
+        <p className="text-sm text-muted-foreground mb-4">Выберите фирму для настройки ценообразования</p>
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">Загрузка...</div>
         ) : wholesalers.length === 0 ? (
           <div className="text-center py-12">
             <Icon name="Users" size={48} className="text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Оптовиков пока нет</p>
+            <p className="text-muted-foreground">Фирм пока нет</p>
           </div>
         ) : (
           <DebugBadge id="Pricing:list">

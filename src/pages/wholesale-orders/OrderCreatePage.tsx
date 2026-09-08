@@ -21,6 +21,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { fuzzyFilter, findSimilar } from "@/lib/fuzzy";
 import { useToast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import Icon from "@/components/ui/icon";
@@ -822,7 +823,7 @@ const OrderCreatePage = () => {
 
   const addItem = async (item: ProductSearchItem) => {
     if (!wholesalerId) {
-      toast({ title: "Сначала укажите оптовика", variant: "destructive" });
+      toast({ title: "Сначала укажите фирму", variant: "destructive" });
       return;
     }
     if (!editId) {
@@ -1144,9 +1145,8 @@ const OrderCreatePage = () => {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const filteredWholesalers = wholesalers.filter(w =>
-    w.name.toLowerCase().includes(customerName.toLowerCase())
-  );
+  const filteredWholesalers = fuzzyFilter(wholesalers, customerName);
+  const similarWholesalers = findSimilar(wholesalers, newWholesalerName);
 
   const norm = (v: string) => v.trim().toLowerCase();
 
@@ -1155,9 +1155,11 @@ const OrderCreatePage = () => {
 
   const headerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const headerInitedRef = useRef(false);
-  const headerStateRef = useRef({ customerName, comment });
+  const headerStateRef = useRef({ customerName, comment, wholesalerId });
 
-  const flushHeader = useCallback(async (override?: { customer_name?: string }): Promise<boolean> => {
+  const flushHeader = useCallback(async (
+    override?: { customer_name?: string; wholesaler_id?: number | null }
+  ): Promise<boolean> => {
     if (!editId) return true;
     if (headerDebounceRef.current) {
       clearTimeout(headerDebounceRef.current);
@@ -1165,27 +1167,45 @@ const OrderCreatePage = () => {
     }
     const cn = override?.customer_name ?? headerStateRef.current.customerName;
     const cm = headerStateRef.current.comment;
+    const wid = override && "wholesaler_id" in override
+      ? override.wholesaler_id
+      : headerStateRef.current.wholesalerId;
     try {
-      const res = await orderApi.updateHeader(editId, { customer_name: cn, comment: cm }, versionRef.current);
+      const res = await orderApi.updateHeader(
+        editId,
+        { customer_name: cn, comment: cm, wholesaler_id: wid ?? null },
+        versionRef.current
+      );
       versionRef.current = res.version;
       return true;
     } catch (e) {
       if (await handleVersionConflict(e)) return false;
       const msg = e instanceof Error ? e.message : "Не удалось сохранить";
-      toast({ title: "Оптовик не сохранён", description: msg, variant: "destructive" });
+      toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
       return false;
     }
   }, [editId, handleVersionConflict, toast]);
 
   const handleWholesalerBlur = () => {
+    if (isLocked) return;
     const name = customerName.trim();
-    if (!name || isLocked) return;
+    if (!name) {
+      if (orderStatus === "draft" && wholesalerId !== null) {
+        setWholesalerId(null);
+        headerStateRef.current = { ...headerStateRef.current, customerName: "", wholesalerId: null };
+        void flushHeader({ customer_name: "", wholesaler_id: null });
+      }
+      return;
+    }
     const found = findWholesaler(name);
     if (found) {
       if (found.id !== wholesalerId) {
         setWholesalerId(found.id);
         loadPricingRules(found.id);
       }
+      setCustomerName(found.name);
+      headerStateRef.current = { ...headerStateRef.current, customerName: found.name, wholesalerId: found.id };
+      void flushHeader({ customer_name: found.name, wholesaler_id: found.id });
       return;
     }
     setNewWholesalerName(name);
@@ -1202,8 +1222,8 @@ const OrderCreatePage = () => {
       loadPricingRules(found.id);
       setNewWholesalerOpen(false);
       headerInitedRef.current = true;
-      headerStateRef.current = { ...headerStateRef.current, customerName: found.name };
-      void flushHeader({ customer_name: found.name });
+      headerStateRef.current = { ...headerStateRef.current, customerName: found.name, wholesalerId: found.id };
+      void flushHeader({ customer_name: found.name, wholesaler_id: found.id });
       return;
     }
     setCreatingWholesaler(true);
@@ -1214,7 +1234,7 @@ const OrderCreatePage = () => {
         body: JSON.stringify({ name }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Не удалось создать оптовика");
+      if (!resp.ok) throw new Error(data.error || "Не удалось создать фирму");
       setWholesalers((prev) =>
         prev.some((w) => w.id === data.id) ? prev : [...prev, { id: data.id, name: data.name }]
       );
@@ -1223,9 +1243,9 @@ const OrderCreatePage = () => {
       loadPricingRules(data.id);
       setNewWholesalerOpen(false);
       headerInitedRef.current = true;
-      headerStateRef.current = { ...headerStateRef.current, customerName: data.name };
-      void flushHeader({ customer_name: data.name });
-      toast({ title: `Оптовик "${data.name}" создан` });
+      headerStateRef.current = { ...headerStateRef.current, customerName: data.name, wholesalerId: data.id };
+      void flushHeader({ customer_name: data.name, wholesaler_id: data.id });
+      toast({ title: `Фирма "${data.name}" создана` });
     } catch (e) {
       toast({ title: "Ошибка", description: String((e as Error).message), variant: "destructive" });
     } finally {
@@ -1235,28 +1255,39 @@ const OrderCreatePage = () => {
 
   const cancelNewWholesaler = () => {
     setNewWholesalerOpen(false);
+    const prev = wholesalers.find((w) => w.id === wholesalerId);
+    if (prev) {
+      setCustomerName(prev.name);
+      headerStateRef.current = { ...headerStateRef.current, customerName: prev.name, wholesalerId: prev.id };
+      void flushHeader({ customer_name: prev.name, wholesaler_id: prev.id });
+      return;
+    }
     setCustomerName("");
     setWholesalerId(null);
+    headerStateRef.current = { ...headerStateRef.current, customerName: "", wholesalerId: null };
+    if (orderStatus === "draft") void flushHeader({ customer_name: "", wholesaler_id: null });
   };
 
   const selectWholesaler = (w: {id: number; name: string}) => {
     setCustomerName(w.name);
     setWholesalerId(w.id);
     setShowWholesalerList(false);
+    setNewWholesalerOpen(false);
     loadPricingRules(w.id);
     headerInitedRef.current = true;
-    headerStateRef.current = { ...headerStateRef.current, customerName: w.name };
-    void flushHeader({ customer_name: w.name });
+    headerStateRef.current = { ...headerStateRef.current, customerName: w.name, wholesalerId: w.id };
+    void flushHeader({ customer_name: w.name, wholesaler_id: w.id });
   };
 
   useEffect(() => {
+    if (wholesalerId !== null) return;
     if (!customerName.trim() || wholesalers.length === 0) return;
     const found = wholesalers.find(w => norm(w.name) === norm(customerName));
-    if (found && found.id !== wholesalerId) {
+    if (found) {
       setWholesalerId(found.id);
       loadPricingRules(found.id);
     }
-  }, [customerName, wholesalers]);
+  }, [customerName, wholesalers, wholesalerId]);
 
   const itemDebouncesRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -1307,7 +1338,7 @@ const OrderCreatePage = () => {
   const recalcZeroPrices = async () => {
     if (!editId) return;
     if (!wholesalerId) {
-      toast({ title: "Сначала выберите оптовика", variant: "destructive" });
+      toast({ title: "Сначала выберите фирму", variant: "destructive" });
       return;
     }
     const zeroCount = lines.filter((l) => l.price === 0 && l.id).length;
@@ -1520,8 +1551,8 @@ const OrderCreatePage = () => {
   }, []);
 
   useEffect(() => {
-    headerStateRef.current = { customerName, comment };
-  }, [customerName, comment]);
+    headerStateRef.current = { customerName, comment, wholesalerId };
+  }, [customerName, comment, wholesalerId]);
 
   useEffect(() => {
     if (!editId) return;
@@ -1531,15 +1562,19 @@ const OrderCreatePage = () => {
     }
     if (headerDebounceRef.current) clearTimeout(headerDebounceRef.current);
     headerDebounceRef.current = setTimeout(() => {
-      orderApi.updateHeader(editId, { customer_name: customerName, comment }, versionRef.current)
+      orderApi.updateHeader(
+        editId,
+        { customer_name: customerName, comment, wholesaler_id: wholesalerId ?? null },
+        versionRef.current
+      )
         .then((res) => { versionRef.current = res.version; })
         .catch(async (e) => {
           if (await handleVersionConflict(e)) return;
           const msg = e instanceof Error ? e.message : "Не удалось сохранить";
-          toast({ title: "Оптовик не сохранён", description: msg, variant: "destructive" });
+          toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
         });
     }, 600);
-  }, [customerName, comment, editId, handleVersionConflict, toast]);
+  }, [customerName, comment, wholesalerId, editId, handleVersionConflict, toast]);
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
@@ -1549,7 +1584,15 @@ const OrderCreatePage = () => {
       return;
     }
     if (!customerName.trim()) {
-      toast({ title: "Ошибка", description: "Укажите имя оптовика", variant: "destructive" });
+      toast({ title: "Ошибка", description: "Укажите фирму", variant: "destructive" });
+      return;
+    }
+    if (!wholesalerId) {
+      toast({
+        title: "Фирма не выбрана",
+        description: "Выберите фирму из списка — введённого названия недостаточно",
+        variant: "destructive",
+      });
       return;
     }
     if (lines.length === 0) {
@@ -1628,7 +1671,7 @@ const OrderCreatePage = () => {
       return;
     }
     if (!customerName.trim()) {
-      toast({ title: "Ошибка", description: "У заявки не указан оптовик", variant: "destructive" });
+      toast({ title: "Ошибка", description: "У заявки не указана фирма", variant: "destructive" });
       return;
     }
     const items = lines
@@ -1926,7 +1969,7 @@ const OrderCreatePage = () => {
             <DebugBadge id="OrderCreate:search">
               <Input
                 placeholder={
-                  !wholesalerId ? "Сначала укажите оптовика"
+                  !wholesalerId ? "Сначала укажите фирму"
                   : searchMode === "article" ? "Введите артикул..."
                   : searchMode === "supplier_code" ? "Введите код поставщика..."
                   : "Поиск по названию, артикулу, бренду..."
@@ -2163,21 +2206,39 @@ const OrderCreatePage = () => {
         <Dialog open={newWholesalerOpen} onOpenChange={(o) => { if (!o) cancelNewWholesaler(); }}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Новый оптовик</DialogTitle>
+              <DialogTitle>Новая фирма</DialogTitle>
             </DialogHeader>
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                Такого оптовика ещё нет. Создайте его или исправьте название.
+                Такой фирмы ещё нет. Создайте её или исправьте название.
               </p>
               <Input
                 value={newWholesalerName}
                 onChange={(e) => setNewWholesalerName(e.target.value)}
-                placeholder="Название оптовика"
+                placeholder="Название фирмы"
                 autoFocus
                 className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
               />
-              {findWholesaler(newWholesalerName) && (
-                <p className="text-xs text-green-400">Такой оптовик уже есть — будет выбран он.</p>
+              {findWholesaler(newWholesalerName) ? (
+                <p className="text-xs text-green-400">Такая фирма уже есть — будет выбрана она.</p>
+              ) : (
+                similarWholesalers.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-xs text-muted-foreground">Может быть, вы имели в виду:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {similarWholesalers.map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => selectWholesaler(w)}
+                          className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-xs transition-colors"
+                        >
+                          {w.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
               )}
             </div>
             <DialogFooter className="gap-2">
@@ -2204,7 +2265,7 @@ const OrderCreatePage = () => {
                 onChange={(e) => { setCustomerName(e.target.value); setShowWholesalerList(true); }}
                 onFocus={() => setShowWholesalerList(true)}
                 onBlur={() => setTimeout(handleWholesalerBlur, 150)}
-                placeholder="Оптовик *"
+                placeholder="Фирма *"
                 disabled={isLocked}
                 className="h-9 rounded-xl bg-secondary border-white/[0.08] text-sm"
               />
@@ -2676,7 +2737,7 @@ const OrderCreatePage = () => {
 
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Цены пересчитаются по действующим правилам оптовика и актуальным ценам каталога.
+              Цены пересчитаются по действующим правилам фирмы и актуальным ценам каталога.
             </p>
 
             <div className="space-y-2">

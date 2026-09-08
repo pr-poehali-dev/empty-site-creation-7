@@ -63,7 +63,7 @@ const Wholesalers = () => {
       const data = await resp.json().catch(() => ({}));
       if (resp.ok) {
         setItems((prev) => prev.filter((x) => x.id !== toDelete.id));
-        toast({ title: "Оптовик удалён", description: toDelete.name });
+        toast({ title: "Фирма удалена", description: toDelete.name });
         setToDelete(null);
       } else {
         toast({
@@ -128,7 +128,7 @@ const Wholesalers = () => {
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/dashboard")}>
             <Icon name="ArrowLeft" size={18} />
           </Button>
-          <h1 className="text-lg font-semibold">Оптовики</h1>
+          <h1 className="text-lg font-semibold">Фирмы</h1>
         </div>
       </header>
       <main className="max-w-3xl mx-auto w-full px-4 py-4 flex-1">
@@ -139,7 +139,7 @@ const Wholesalers = () => {
         ) : items.length === 0 ? (
           <div className="text-center py-12">
             <Icon name="Users" size={48} className="text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Оптовики появятся автоматически из заявок</p>
+            <p className="text-muted-foreground">Фирмы появятся автоматически из заявок</p>
           </div>
         ) : (
           <DebugBadge id="Wholesalers:list">
@@ -207,7 +207,7 @@ const Wholesalers = () => {
                           type="button"
                           onClick={() => !used && setToDelete(w)}
                           disabled={used}
-                          title={used ? "Оптовик участвует в заявках или возвратах" : "Удалить оптовика"}
+                          title={used ? "Фирма участвует в заявках или возвратах" : "Удалить фирму"}
                           className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:hover:text-muted-foreground disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
                         >
                           <Icon name="Trash2" size={16} />
@@ -225,9 +225,9 @@ const Wholesalers = () => {
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !deleting && setToDelete(null)}>
         <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить оптовика?</AlertDialogTitle>
+            <AlertDialogTitle>Удалить фирму?</AlertDialogTitle>
             <AlertDialogDescription className="break-words">
-              Оптовик «{toDelete?.name}» будет удалён. Это действие нельзя отменить.
+              Фирма «{toDelete?.name}» будет удалена. Это действие нельзя отменить.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
