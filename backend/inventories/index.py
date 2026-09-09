@@ -159,9 +159,12 @@ def resolve_actor(cur, token):
 
 
 def can_see_inventory(cur, inv_row, who):
-    """inv_row: (id, wholesaler_id, created_by, created_by_owner)"""
+    """inv_row: (id, wholesaler_id, created_by, created_by_owner, is_archived)"""
     if who['is_owner']:
         return True
+    # Для всех, кроме владельца, архивная инвентаризация не существует.
+    if len(inv_row) > 4 and inv_row[4]:
+        return False
     inv_id, wid, created_by, by_owner = inv_row[0], inv_row[1], inv_row[2], inv_row[3]
     if who['role'] == WHOLESALER_ROLE:
         # Оптовик видит только свои инвентаризации по своим фирмам.
@@ -234,7 +237,8 @@ def recalc_total(cur, inventory_id):
 
 def load_inventory(cur, inventory_id):
     cur.execute(
-        "SELECT id, wholesaler_id, created_by, created_by_owner FROM inventories WHERE id = %s",
+        """SELECT id, wholesaler_id, created_by, created_by_owner, is_archived
+           FROM inventories WHERE id = %s""",
         (inventory_id,)
     )
     return cur.fetchone()
@@ -368,17 +372,25 @@ def handler(event: dict, context) -> dict:
                     'updated_at': r[6].isoformat() if r[6] else None,
                     'items': items,
                     'can_edit_prices': can_edit_prices(who),
-                    'can_delete': who['is_owner'],
+                    'can_delete': True,
+                    'is_archived': bool(inv[4]),
                     'is_owner': who['is_owner'],
                 })
 
             # Список. Последняя сверху — как в заявках.
+            # Архив видит только владелец: для остальных архивная не существует.
+            show_archived = qs.get('archived') == '1' and who['is_owner']
             conditions, values = [], []
+            conditions.append("i.is_archived = %s")
+            values.append(bool(show_archived))
             if not who['is_owner']:
                 if who['role'] == WHOLESALER_ROLE:
                     own = get_own_wholesaler_ids(cur, who['manager_id'])
                     if not own:
-                        return json_resp(200, {'inventories': [], 'wholesalers': []})
+                        return json_resp(200, {
+                            'inventories': [], 'wholesalers': [],
+                            'is_owner': False, 'can_delete': False,
+                        })
                     conditions.append(
                         "i.created_by = %s AND i.created_by_owner = false AND i.wholesaler_id = ANY(%s)"
                     )
@@ -430,7 +442,8 @@ def handler(event: dict, context) -> dict:
                 'inventories': inventories,
                 'wholesalers': firms,
                 'is_owner': who['is_owner'],
-                'can_delete': who['is_owner'],
+                'can_delete': True,
+                'archived': bool(show_archived),
             })
 
         # ---------------------------------------------------------- POST
@@ -780,21 +793,55 @@ def handler(event: dict, context) -> dict:
                 conn.commit()
                 return json_resp(200, {'ok': True, 'shared_manager_ids': list(set(clean))})
 
+            # Вернуть из архива — только владелец.
+            if action == 'restore':
+                if not who['is_owner']:
+                    return json_resp(403, {'error': 'Восстановление недоступно'})
+                cur.execute(
+                    """UPDATE inventories
+                       SET is_archived = false, archived_at = NULL, archived_by = NULL
+                       WHERE id = %s""",
+                    (int(inventory_id),)
+                )
+                conn.commit()
+                return json_resp(200, {'ok': True})
+
             return json_resp(400, {'error': 'Неизвестное действие'})
 
         # ---------------------------------------------------------- DELETE
         if method == 'DELETE':
-            # Удаляет только владелец.
-            if not who['is_owner']:
-                return json_resp(403, {'error': 'Удаление недоступно'})
             inv_id = qs.get('id')
             if not inv_id:
                 return json_resp(400, {'error': 'Не указана инвентаризация'})
-            cur.execute("DELETE FROM inventory_shares WHERE inventory_id = %s", (int(inv_id),))
-            cur.execute("DELETE FROM inventory_items WHERE inventory_id = %s", (int(inv_id),))
-            cur.execute("DELETE FROM inventories WHERE id = %s", (int(inv_id),))
+            inv = load_inventory(cur, int(inv_id))
+            if not inv:
+                return json_resp(404, {'error': 'Инвентаризация не найдена'})
+            if not can_see_inventory(cur, inv, who):
+                return json_resp(403, {'error': 'Нет доступа'})
+
+            # purge — стереть насовсем. Только владелец и только из архива.
+            if qs.get('purge') == '1':
+                if not who['is_owner']:
+                    return json_resp(403, {'error': 'Удаление недоступно'})
+                cur.execute("SELECT is_archived FROM inventories WHERE id = %s", (int(inv_id),))
+                arch = cur.fetchone()
+                if not arch or not arch[0]:
+                    return json_resp(400, {'error': 'Сначала переместите в архив'})
+                cur.execute("DELETE FROM inventory_shares WHERE inventory_id = %s", (int(inv_id),))
+                cur.execute("DELETE FROM inventory_items WHERE inventory_id = %s", (int(inv_id),))
+                cur.execute("DELETE FROM inventories WHERE id = %s", (int(inv_id),))
+                conn.commit()
+                return json_resp(200, {'ok': True, 'purged': True})
+
+            # Обычное удаление — уход в архив.
+            cur.execute(
+                """UPDATE inventories
+                   SET is_archived = true, archived_at = NOW(), archived_by = %s
+                   WHERE id = %s""",
+                (who['actor'], int(inv_id))
+            )
             conn.commit()
-            return json_resp(200, {'ok': True})
+            return json_resp(200, {'ok': True, 'archived': True})
 
         return json_resp(405, {'error': 'Метод не поддерживается'})
     finally:

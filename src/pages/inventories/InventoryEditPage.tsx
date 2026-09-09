@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { inventoriesPath } from "@/components/WholesalerRoute";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import Icon from "@/components/ui/icon";
@@ -22,7 +33,6 @@ const InventoryEditPage = () => {
   const inventoryId = id ? parseInt(id) : 0;
   const { toast } = useToast();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const barcodeRef = useRef<HTMLInputElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
 
   const [inv, setInv] = useState<Inventory | null>(null);
@@ -38,11 +48,9 @@ const InventoryEditPage = () => {
   const [selectedGroup, setSelectedGroup] = useState("");
   const [showGroupList, setShowGroupList] = useState(false);
 
-  const [showBarcode, setShowBarcode] = useState(false);
-  const [barcodeValue, setBarcodeValue] = useState("");
-  const [barcodeResults, setBarcodeResults] = useState<ProductSearchItem[]>([]);
 
   const [showVisibility, setShowVisibility] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
   const [recalcing, setRecalcing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -57,7 +65,7 @@ const InventoryEditPage = () => {
       setComment(data.comment || "");
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
-      navigate(-1);
+      navigate(inventoriesPath());
     } finally {
       setLoading(false);
     }
@@ -106,46 +114,29 @@ const InventoryEditPage = () => {
     debounceRef.current = setTimeout(() => runSearch(value), 300);
   };
 
-  const addProduct = async (p: ProductSearchItem) => {
-    try {
-      const r = await api.addItem(inventoryId, p.id, 1);
-      setLines((prev) => [r.item, ...prev]);
-      setSearchQuery("");
-      setSearchResults([]);
-      setBarcodeValue("");
-      setBarcodeResults([]);
-    } catch (e) {
-      toast({ title: (e as Error).message, variant: "destructive" });
-    }
-  };
-
-  const handleBarcodeInput = async (value: string) => {
-    setBarcodeValue(value);
-    if (value.trim().length < 3) {
-      setBarcodeResults([]);
-      return;
-    }
-    try {
-      const r = await api.scanBarcode(inventoryId, value.trim(), false);
-      setBarcodeResults(r.products);
-    } catch {
-      setBarcodeResults([]);
-    }
-  };
-
-  const handleBarcodeEnter = async () => {
-    const code = barcodeValue.trim();
-    if (!code) return;
+  /** Enter в поиске: если введён целый штрихкод — сразу добавляем товар.
+   *  Так работает ручной сканер: он печатает код и жмёт Enter. */
+  const handleSearchEnter = async () => {
+    const code = searchQuery.trim();
+    if (!/^\d{6,}$/.test(code)) return;
     try {
       const r = await api.scanBarcode(inventoryId, code, true);
       if (r.product) {
         await addProduct(r.product);
       } else {
         toast({ title: "Товар со штрихкодом не найден", variant: "destructive" });
-        setBarcodeValue("");
       }
-      setBarcodeResults([]);
-      setTimeout(() => barcodeRef.current?.focus(), 50);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    }
+  };
+
+  const addProduct = async (p: ProductSearchItem) => {
+    try {
+      const r = await api.addItem(inventoryId, p.id, 1);
+      setLines((prev) => [r.item, ...prev]);
+      setSearchQuery("");
+      setSearchResults([]);
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
     }
@@ -237,11 +228,11 @@ const InventoryEditPage = () => {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm("Удалить инвентаризацию?")) return;
+  const confirmDelete = async () => {
+    setShowDelete(false);
     try {
       await api.deleteInventory(inventoryId);
-      navigate(isOwner ? "/admin/inventories" : "/wholesaler/inventories");
+      navigate(inventoriesPath());
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
     }
@@ -263,7 +254,7 @@ const InventoryEditPage = () => {
         <div className="flex items-center gap-2 mb-4">
           <button
             className="w-9 h-9 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06]"
-            onClick={() => navigate(-1)}
+            onClick={() => navigate(inventoriesPath())}
           >
             <Icon name="ArrowLeft" size={16} />
           </button>
@@ -359,6 +350,9 @@ const InventoryEditPage = () => {
               }
               value={searchQuery}
               onChange={(e) => handleSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSearchEnter();
+              }}
               className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm pr-8"
             />
             {searching && (
@@ -393,53 +387,7 @@ const InventoryEditPage = () => {
             )}
           </div>
 
-          <button
-            className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 transition-colors ${
-              showBarcode ? "border-primary bg-primary/20" : "border-white/[0.08] hover:bg-white/[0.06]"
-            }`}
-            onClick={() => {
-              setShowBarcode(!showBarcode);
-              if (!showBarcode) setTimeout(() => barcodeRef.current?.focus(), 100);
-            }}
-            title="Сканер штрихкодов"
-          >
-            <Icon name="ScanBarcode" size={18} />
-          </button>
         </div>
-
-        {showBarcode && (
-          <div className="relative mb-3">
-            <Input
-              ref={barcodeRef}
-              placeholder="Введите или отсканируйте штрихкод..."
-              value={barcodeValue}
-              onChange={(e) => handleBarcodeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleBarcodeEnter();
-              }}
-              className="h-10 rounded-xl bg-secondary border-white/[0.08] text-sm"
-            />
-            {barcodeResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-60 overflow-y-auto shadow-lg">
-                {barcodeResults.map((item) => (
-                  <button
-                    key={item.id}
-                    className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors text-sm flex items-center justify-between border-b border-white/[0.04] last:border-0"
-                    onClick={() => addProduct(item)}
-                  >
-                    <div className="min-w-0">
-                      <span className="block break-words">{item.name}</span>
-                      <span className="text-xs text-muted-foreground">{item.article || ""}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                      {item.price ? `${item.price.toLocaleString()} Br` : "—"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         <div className="mb-3">
           <Textarea
@@ -516,16 +464,14 @@ const InventoryEditPage = () => {
             </span>
           </Button>
 
-          {isOwner && (
-            <Button
-              variant="outline"
-              className="w-full h-11 rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
-              onClick={handleDelete}
-            >
-              <Icon name="Trash2" size={16} />
-              <span className="ml-2">Удалить инвентаризацию</span>
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            className="w-full h-11 rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
+            onClick={() => setShowDelete(true)}
+          >
+            <Icon name="Trash2" size={16} />
+            <span className="ml-2">Удалить инвентаризацию</span>
+          </Button>
         </div>
       </div>
 
@@ -535,6 +481,27 @@ const InventoryEditPage = () => {
           onClose={() => setShowVisibility(false)}
         />
       )}
+
+      <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить инвентаризацию?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Инвентаризация №{inventoryId} ({inv?.wholesaler_name}) на сумму{" "}
+              {total.toLocaleString()} Br будет удалена.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

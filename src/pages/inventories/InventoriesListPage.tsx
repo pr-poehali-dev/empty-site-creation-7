@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
+import { homePath, inventoriesPath } from "@/components/WholesalerRoute";
 import * as api from "./inventoryApi";
 import { InventoryListItem, WholesalerOption } from "./types";
 
@@ -16,10 +27,15 @@ const InventoriesListPage = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showFirmPicker, setShowFirmPicker] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<InventoryListItem | null>(null);
+  const [purgeTarget, setPurgeTarget] = useState<InventoryListItem | null>(null);
 
-  const load = async () => {
+  const basePath = inventoriesPath();
+
+  const load = async (archived: boolean) => {
     try {
-      const data = await api.fetchInventories();
+      const data = await api.fetchInventories(archived);
       setItems(data.inventories);
       setFirms(data.wholesalers);
       setIsOwner(data.is_owner);
@@ -31,9 +47,9 @@ const InventoriesListPage = () => {
   };
 
   useEffect(() => {
-    load();
+    load(showArchived);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showArchived]);
 
   const create = async (wholesalerId: number) => {
     setCreating(true);
@@ -48,8 +64,6 @@ const InventoriesListPage = () => {
     }
   };
 
-  const basePath = isOwner ? "/admin/inventories" : "/wholesaler/inventories";
-
   const handleCreateClick = () => {
     if (firms.length === 0) {
       toast({ title: "Нет доступных фирм", variant: "destructive" });
@@ -62,12 +76,36 @@ const InventoriesListPage = () => {
     setShowFirmPicker(true);
   };
 
-  const remove = async (e: React.MouseEvent, id: number) => {
-    e.stopPropagation();
-    if (!confirm("Удалить инвентаризацию?")) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setDeleteTarget(null);
     try {
       await api.deleteInventory(id);
       setItems((prev) => prev.filter((x) => x.id !== id));
+    } catch (err) {
+      toast({ title: (err as Error).message, variant: "destructive" });
+    }
+  };
+
+  const confirmPurge = async () => {
+    if (!purgeTarget) return;
+    const id = purgeTarget.id;
+    setPurgeTarget(null);
+    try {
+      await api.purgeInventory(id);
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    } catch (err) {
+      toast({ title: (err as Error).message, variant: "destructive" });
+    }
+  };
+
+  const restore = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    try {
+      await api.restoreInventory(id);
+      setItems((prev) => prev.filter((x) => x.id !== id));
+      toast({ title: "Возвращена из архива" });
     } catch (err) {
       toast({ title: (err as Error).message, variant: "destructive" });
     }
@@ -87,21 +125,45 @@ const InventoriesListPage = () => {
         <div className="flex items-center gap-2 mb-4">
           <button
             className="w-9 h-9 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06]"
-            onClick={() => navigate(isOwner ? "/admin" : "/wholesaler")}
+            onClick={() => navigate(homePath())}
           >
             <Icon name="ArrowLeft" size={16} />
           </button>
-          <h1 className="text-lg font-semibold flex-1">Инвентаризации</h1>
+          <h1 className="text-lg font-semibold flex-1">
+            {showArchived ? "Архив инвентаризаций" : "Инвентаризации"}
+          </h1>
+          {isOwner && (
+            <button
+              className={`px-3 h-9 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                showArchived
+                  ? "border-primary bg-primary/20 text-primary"
+                  : "border-white/[0.08] hover:bg-white/[0.06] text-muted-foreground"
+              }`}
+              onClick={() => {
+                setLoading(true);
+                setShowArchived(!showArchived);
+              }}
+            >
+              <Icon name="Archive" size={14} />
+              Архив
+            </button>
+          )}
         </div>
 
-        <Button className="w-full h-11 rounded-xl mb-4" onClick={handleCreateClick} disabled={creating}>
-          {creating ? (
-            <Icon name="Loader2" size={16} className="animate-spin" />
-          ) : (
-            <Icon name="Plus" size={16} />
-          )}
-          <span className="ml-2">Новая инвентаризация</span>
-        </Button>
+        {!showArchived && (
+          <Button
+            className="w-full h-11 rounded-xl mb-4"
+            onClick={handleCreateClick}
+            disabled={creating}
+          >
+            {creating ? (
+              <Icon name="Loader2" size={16} className="animate-spin" />
+            ) : (
+              <Icon name="Plus" size={16} />
+            )}
+            <span className="ml-2">Новая инвентаризация</span>
+          </Button>
+        )}
 
         {showFirmPicker && (
           <div className="mb-4 border border-white/[0.08] rounded-xl overflow-hidden">
@@ -120,8 +182,14 @@ const InventoriesListPage = () => {
 
         {items.length === 0 ? (
           <div className="text-center py-16">
-            <Icon name="ClipboardList" size={48} className="text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Инвентаризаций пока нет</p>
+            <Icon
+              name={showArchived ? "Archive" : "ClipboardList"}
+              size={48}
+              className="text-muted-foreground mx-auto mb-3"
+            />
+            <p className="text-muted-foreground">
+              {showArchived ? "Архив пуст" : "Инвентаризаций пока нет"}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -148,10 +216,33 @@ const InventoriesListPage = () => {
                     <span className="text-sm font-semibold">
                       {inv.total_amount.toLocaleString()} Br
                     </span>
-                    {isOwner && (
+                    {showArchived ? (
+                      <>
+                        <button
+                          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-white/[0.08]"
+                          onClick={(e) => restore(e, inv.id)}
+                          title="Вернуть из архива"
+                        >
+                          <Icon name="Undo2" size={14} className="text-primary" />
+                        </button>
+                        <button
+                          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPurgeTarget(inv);
+                          }}
+                          title="Удалить навсегда"
+                        >
+                          <Icon name="Trash2" size={14} className="text-destructive" />
+                        </button>
+                      </>
+                    ) : (
                       <button
                         className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/20"
-                        onClick={(e) => remove(e, inv.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(inv);
+                        }}
                       >
                         <Icon name="Trash2" size={14} className="text-destructive" />
                       </button>
@@ -163,6 +254,58 @@ const InventoriesListPage = () => {
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить инвентаризацию?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Инвентаризация №{deleteTarget?.id} ({deleteTarget?.wholesaler_name}) на сумму{" "}
+              {deleteTarget?.total_amount.toLocaleString()} Br будет удалена.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!purgeTarget}
+        onOpenChange={(open) => {
+          if (!open) setPurgeTarget(null);
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить навсегда?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Инвентаризация №{purgeTarget?.id} ({purgeTarget?.wholesaler_name}) будет стёрта
+              безвозвратно вместе со всеми позициями. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmPurge}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить навсегда
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

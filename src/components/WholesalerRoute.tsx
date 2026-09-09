@@ -13,6 +13,18 @@ export const getAuthUser = () => {
 
 export const isWholesaler = () => getAuthUser().role_name === WHOLESALER_ROLE;
 
+/** Домашняя страница по должности. Используется кнопками «назад». */
+export const homePath = () => {
+  const user = getAuthUser();
+  if (user.role === "owner") return "/admin/dashboard";
+  if (user.role_name === WHOLESALER_ROLE) return "/wholesaler";
+  return "/admin/manager";
+};
+
+/** Список инвентаризаций по должности. */
+export const inventoriesPath = () =>
+  isWholesaler() ? "/wholesaler/inventories" : "/admin/inventories";
+
 /** Страница для всех, кроме оптовика: его уводим на свою страницу. */
 export const NotForWholesaler = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem("auth_token");

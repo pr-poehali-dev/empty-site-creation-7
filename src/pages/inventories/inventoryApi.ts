@@ -23,13 +23,14 @@ async function post<T>(payload: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export async function fetchInventories(): Promise<{
+export async function fetchInventories(archived = false): Promise<{
   inventories: InventoryListItem[];
   wholesalers: WholesalerOption[];
   is_owner: boolean;
   can_delete: boolean;
 }> {
-  const resp = await fetch(INVENTORIES_URL, { headers: authHeaders() });
+  const url = archived ? `${INVENTORIES_URL}?archived=1` : INVENTORIES_URL;
+  const resp = await fetch(url, { headers: authHeaders() });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data?.error || "Не удалось загрузить список");
   return data;
@@ -46,6 +47,7 @@ export function createInventory(wholesalerId: number) {
   return post<{ id: number }>({ action: "create", wholesaler_id: wholesalerId });
 }
 
+/** Обычное удаление — уход в архив. Для всех, кроме владельца, это и есть удаление. */
 export async function deleteInventory(id: number): Promise<void> {
   const resp = await fetch(`${INVENTORIES_URL}?id=${id}`, {
     method: "DELETE",
@@ -55,6 +57,22 @@ export async function deleteInventory(id: number): Promise<void> {
     const data = await resp.json().catch(() => ({}));
     throw new Error(data?.error || "Не удалось удалить");
   }
+}
+
+/** Стереть насовсем. Только владелец и только из архива. */
+export async function purgeInventory(id: number): Promise<void> {
+  const resp = await fetch(`${INVENTORIES_URL}?id=${id}&purge=1`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data?.error || "Не удалось удалить");
+  }
+}
+
+export function restoreInventory(id: number) {
+  return post<{ ok: boolean }>({ action: "restore", inventory_id: id });
 }
 
 export function searchProducts(
