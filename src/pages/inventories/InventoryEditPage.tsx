@@ -51,6 +51,7 @@ const InventoryEditPage = () => {
 
   const [showVisibility, setShowVisibility] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [recalcing, setRecalcing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -179,11 +180,14 @@ const InventoryEditPage = () => {
   };
 
   const handleSaveComment = async () => {
+    setSaving(true);
     try {
       await api.updateHeader(inventoryId, comment);
       toast({ title: "Сохранено" });
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -251,9 +255,9 @@ const InventoryEditPage = () => {
   return (
     <div className="min-h-screen bg-background pb-24">
       <div className="max-w-2xl mx-auto px-4 pt-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-4 sticky top-0 z-20 bg-background py-2 -mx-4 px-4 border-b border-white/[0.08]">
           <button
-            className="w-9 h-9 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06]"
+            className="w-9 h-9 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
             onClick={() => navigate(inventoriesPath())}
           >
             <Icon name="ArrowLeft" size={16} />
@@ -264,13 +268,29 @@ const InventoryEditPage = () => {
           </div>
           {isOwner && (
             <button
-              className="w-9 h-9 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06]"
+              className="w-9 h-9 rounded-xl border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
               onClick={() => setShowVisibility(true)}
               title="Настройки видимости"
             >
               <Icon name="Settings" size={16} />
             </button>
           )}
+          <Button
+            size="sm"
+            className="h-9 rounded-lg px-3 sm:px-4 flex-shrink-0"
+            onClick={handleSaveComment}
+            disabled={saving}
+            title="Сохранить инвентаризацию"
+          >
+            {saving ? (
+              <Icon name="Loader2" size={16} className="animate-spin" />
+            ) : (
+              <Icon name="Check" size={16} />
+            )}
+            <span className="ml-2 hidden sm:inline">
+              {saving ? "Сохранение..." : "Сохранить"}
+            </span>
+          </Button>
         </div>
 
         <div className="flex gap-1 mb-3 items-start">
@@ -429,7 +449,7 @@ const InventoryEditPage = () => {
             <span className="font-semibold">Итого: {total.toLocaleString()} Br</span>
           </div>
 
-          <Button className="w-full h-11 rounded-xl" onClick={handleSaveComment}>
+          <Button className="w-full h-11 rounded-xl" onClick={handleSaveComment} disabled={saving}>
             <Icon name="Check" size={16} />
             <span className="ml-2">Сохранить</span>
           </Button>
