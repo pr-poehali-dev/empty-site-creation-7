@@ -191,6 +191,7 @@ const OrderCreatePage = () => {
   const [creatingWholesaler, setCreatingWholesaler] = useState(false);
   const wholesalerRef = useRef<HTMLDivElement>(null);
   const [orderStatus, setOrderStatus] = useState("new");
+  const [orderCreatedAt, setOrderCreatedAt] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState("not_paid");
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -597,6 +598,7 @@ const OrderCreatePage = () => {
         setCustomerName(data.order.customer_name || "");
         setComment(data.order.comment || "");
         setOrderStatus(data.order.status || "new");
+        setOrderCreatedAt(data.order.created_at || null);
         setPaymentStatus(data.order.payment_status || "not_paid");
         setRecalcInProgress(!!data.order.recalc_in_progress);
         setLines(
@@ -1789,6 +1791,29 @@ const OrderCreatePage = () => {
   const showDropdown = searchQuery.trim().length >= 2 && !showTempForm;
   const hasResults = searchResults.length > 0 || tempProductResults.length > 0;
 
+  /** Пересчёт нулевых цен в заявках прошлых дней доступен только владельцу. */
+  const canRecalcZero = (() => {
+    if (isOwner) return true;
+    if (!orderCreatedAt) return true;
+    const created = new Date(orderCreatedAt.replace(" ", "T"));
+    if (isNaN(created.getTime())) return true;
+    const today = new Date();
+    return (
+      created.getFullYear() === today.getFullYear() &&
+      created.getMonth() === today.getMonth() &&
+      created.getDate() === today.getDate()
+    );
+  })();
+
+  /** Без фирмы цены считать не по чему — объясняем, а не молчим. */
+  const warnNoFirm = () => {
+    toast({
+      title: "Выберите фирму",
+      description: "Без фирмы цены не определяются — сначала укажите её выше",
+      variant: "destructive",
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1965,7 +1990,12 @@ const OrderCreatePage = () => {
         </div>
 
         <div className="flex gap-2 mb-3">
-          <div className="relative flex-1">
+          <div
+            className="relative flex-1"
+            onClick={() => {
+              if (!isLocked && !wholesalerId) warnNoFirm();
+            }}
+          >
             <DebugBadge id="OrderCreate:search">
               <Input
                 placeholder={
@@ -2050,6 +2080,10 @@ const OrderCreatePage = () => {
               showBarcode ? "border-primary bg-primary/20" : "border-white/[0.08] hover:bg-white/[0.06]"
             }`}
             onClick={() => {
+              if (!wholesalerId) {
+                warnNoFirm();
+                return;
+              }
               setShowBarcode(!showBarcode);
               if (!showBarcode) setTimeout(() => barcodeInputRef.current?.focus(), 100);
             }}
@@ -2062,6 +2096,10 @@ const OrderCreatePage = () => {
               disabled={isLocked}
               className="w-10 h-10 rounded-xl border border-white/[0.08] hover:bg-white/[0.06] flex items-center justify-center flex-shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => {
+                if (!wholesalerId) {
+                  warnNoFirm();
+                  return;
+                }
                 sessionStorage.setItem("resolve_request", JSON.stringify({
                   returnTo: editId ? `/admin/orders/${editId}/edit` : "/admin/orders/create",
                   context: "order",
@@ -2543,15 +2581,17 @@ const OrderCreatePage = () => {
                 {exporting ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="FileSpreadsheet" size={16} />}
                 <span className="ml-2">Excel</span>
               </Button>
-              <Button
-                variant="outline"
-                className="rounded-xl border-white/[0.08]"
-                onClick={recalcZeroPrices}
-                disabled={recalculating}
-              >
-                {recalculating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
-                <span className="ml-2">Обновить все нулевые цены</span>
-              </Button>
+              {canRecalcZero && (
+                <Button
+                  variant="outline"
+                  className="rounded-xl border-white/[0.08]"
+                  onClick={recalcZeroPrices}
+                  disabled={recalculating}
+                >
+                  {recalculating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Calculator" size={16} />}
+                  <span className="ml-2">Обновить все нулевые цены</span>
+                </Button>
+              )}
               {recalcBtnVisible && (
                 <Button
                   variant="outline"

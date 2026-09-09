@@ -289,7 +289,12 @@ const BulkPastePage = () => {
       const resp = await fetch(BULK_RESOLVE_URL, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ articles, customer_name: customerName, search_in_names: searchInNames }),
+        body: JSON.stringify({
+          articles,
+          customer_name: customerName,
+          wholesaler_id: req?.wholesalerId ?? null,
+          search_in_names: searchInNames,
+        }),
       });
       const data = await resp.json();
       if (!resp.ok) {

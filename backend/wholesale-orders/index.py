@@ -69,8 +69,11 @@ def apply_formula(base, formula):
     return round(base, 2)
 
 
-def calc_price_detailed(cur, customer_name, product_id):
+def calc_price_detailed(cur, wholesaler_id, product_id):
     """Считает цену и возвращает (цена, источник, дата основы).
+
+    Фирма определяется строго по id — название ненадёжно: переименование,
+    пробел или регистр рвали связь и цена молча уходила в ноль.
 
     Источник: 'rule' — сработало правило, 'card' — взята цена из карточки.
     Дата основы — когда та цена в карточке менялась последний раз.
@@ -94,15 +97,13 @@ def calc_price_detailed(cur, customer_name, product_id):
         return (float(price_map.get('price_wholesale') or 0), 'card',
                 date_map.get('price_wholesale'))
 
-    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
-    w = cur.fetchone()
-    if not w:
+    if not wholesaler_id:
         return 0, None, None
     cur.execute(
         """SELECT filter_type, filter_value, price_field, formula,
                   condition_price_field, condition_operator, condition_value
            FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
-        (w[0],)
+        (wholesaler_id,)
     )
     rules = cur.fetchall()
     if not rules:
@@ -121,8 +122,8 @@ def calc_price_detailed(cur, customer_name, product_id):
     return apply_formula(base, matched[3]), 'rule', date_map.get(field)
 
 
-def calc_price_by_rules(cur, customer_name, product_id):
-    return calc_price_detailed(cur, customer_name, product_id)[0]
+def calc_price_by_rules(cur, wholesaler_id, product_id):
+    return calc_price_detailed(cur, wholesaler_id, product_id)[0]
 
 
 def recalc_total(cur, order_id):
@@ -258,7 +259,7 @@ def check_version(cur, order_id, expected_version):
     return str(current) == str(expected_version), current
 
 
-def insert_item(cur, order_id, item, customer_name, actor='4'):
+def insert_item(cur, order_id, item, wholesaler_id, actor='4'):
     qty = int(item.get('quantity', 1))
     price = float(item.get('price', 0) or 0)
     pid = item.get('product_id') or TEMP_PRODUCT_ID
@@ -266,7 +267,7 @@ def insert_item(cur, order_id, item, customer_name, actor='4'):
     price_base_date = None
     price_set_at = None
     if pid != TEMP_PRODUCT_ID:
-        calc, src, base_date = calc_price_detailed(cur, customer_name, pid)
+        calc, src, base_date = calc_price_detailed(cur, wholesaler_id, pid)
         if price == 0:
             # Цену не передали — считаем сами.
             price, price_source, price_base_date = calc, src, base_date
@@ -362,16 +363,15 @@ def fetch_item_view(cur, item_id):
     }
 
 
-def load_rules_for_customer(cur, customer_name):
-    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
-    w = cur.fetchone()
-    if not w:
+def load_rules_for_customer(cur, wholesaler_id):
+    """Правила фирмы. Строго по id — название для расчёта не используется."""
+    if not wholesaler_id:
         return []
     cur.execute(
         """SELECT filter_type, filter_value, price_field, formula,
                   condition_price_field, condition_operator, condition_value
            FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
-        (w[0],)
+        (wholesaler_id,)
     )
     return cur.fetchall()
 
@@ -423,10 +423,9 @@ def collect_recalc_targets(cur, order_id, group, brand, overwrite_manual):
         (order_id, TEMP_PRODUCT_ID)
     )
     rows = cur.fetchall()
-    cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+    cur.execute("SELECT wholesaler_id FROM wholesale_orders WHERE id = %s", (order_id,))
     crow = cur.fetchone()
-    customer_name = (crow[0] if crow else '') or ''
-    rules = load_rules_for_customer(cur, customer_name)
+    rules = load_rules_for_customer(cur, crow[0] if crow else None)
     targets = []
     for r in rows:
         item_id, pid, qty, price, price_is_manual = r[0], r[1], r[2], r[3], r[4]
@@ -1021,11 +1020,21 @@ def handler(event: dict, context) -> dict:
 
                 started = _time.time()
                 try:
-                    cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                    cur.execute(
+                        "SELECT wholesaler_id, created_at FROM wholesale_orders WHERE id = %s",
+                        (order_id,)
+                    )
                     ord_row = cur.fetchone()
                     if not ord_row:
                         return json_resp(404, {'error': 'Заявка не найдена'})
-                    cname = ord_row[0] or ''
+                    ord_wid = ord_row[0]
+
+                    # В заявках прошлых дней пересчёт доступен только владельцу.
+                    created_at = ord_row[1]
+                    if not is_owner and created_at and created_at.date() < datetime.now().date():
+                        return json_resp(403, {
+                            'error': 'Пересчёт нулевых цен доступен только в заявках текущего дня'
+                        })
 
                     # Поднимаем блокировку и проставляем heartbeat. Один коммит сразу,
                     # чтобы другие запросы видели TRUE и получали 423.
@@ -1036,9 +1045,8 @@ def handler(event: dict, context) -> dict:
                     conn.commit()
                     rlog("LOCK set TRUE + heartbeat")
 
-                    # Загружаем правила оптовика ОДИН РАЗ.
-                    cur.execute("SELECT id FROM wholesalers WHERE name = %s", (cname,))
-                    wrow = cur.fetchone()
+                    # Загружаем правила оптовика ОДИН РАЗ. Фирма — строго по id.
+                    wrow = (ord_wid,) if ord_wid else None
                     rules = []
                     if wrow:
                         cur.execute(
@@ -1048,7 +1056,7 @@ def handler(event: dict, context) -> dict:
                             (wrow[0],)
                         )
                         rules = cur.fetchall()
-                    rlog(f"loaded {len(rules)} rules for '{cname}'")
+                    rlog(f"loaded {len(rules)} rules for wholesaler_id={ord_wid}")
 
                     # Все нулевые позиции (с quantity сразу).
                     cur.execute(
@@ -1258,10 +1266,10 @@ def handler(event: dict, context) -> dict:
                     return json_resp(404, {'error': 'Заявка не найдена'})
                 if not ok_v:
                     return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
-                cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                cur.execute("SELECT wholesaler_id FROM wholesale_orders WHERE id = %s", (order_id,))
                 ord_row = cur.fetchone()
-                cname = ord_row[0] or ''
-                item_id, _, _ = insert_item(cur, order_id, item, cname, actor)
+                ord_wid = ord_row[0] if ord_row else None
+                item_id, _, _ = insert_item(cur, order_id, item, ord_wid, actor)
                 total, ver = recalc_total(cur, order_id)
                 view = fetch_item_view(cur, item_id)
                 conn.commit()
@@ -1285,12 +1293,12 @@ def handler(event: dict, context) -> dict:
                     return json_resp(404, {'error': 'Заявка не найдена'})
                 if not ok_v:
                     return json_resp(409, {'error': 'Версия устарела', 'version': current_v})
-                cur.execute("SELECT customer_name FROM wholesale_orders WHERE id = %s", (order_id,))
+                cur.execute("SELECT wholesaler_id FROM wholesale_orders WHERE id = %s", (order_id,))
                 ord_row = cur.fetchone()
-                cname = ord_row[0] or ''
+                ord_wid = ord_row[0] if ord_row else None
                 created_ids = []
                 for it in items:
-                    iid, _, _ = insert_item(cur, order_id, it, cname, actor)
+                    iid, _, _ = insert_item(cur, order_id, it, ord_wid, actor)
                     created_ids.append(iid)
                 total, ver = recalc_total(cur, order_id)
                 views = [fetch_item_view(cur, i) for i in created_ids]
@@ -1462,7 +1470,7 @@ def handler(event: dict, context) -> dict:
             )
             order_id = cur.fetchone()[0]
             for item in items:
-                insert_item(cur, order_id, item, customer_name, actor)
+                insert_item(cur, order_id, item, wid, actor)
             recalc_total(cur, order_id)
             touch_order(cur, order_id)
             conn.commit()

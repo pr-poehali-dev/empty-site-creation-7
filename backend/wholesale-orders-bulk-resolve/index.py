@@ -83,6 +83,8 @@ def handler(event: dict, context) -> dict:
     body = json.loads(event.get('body') or '{}')
     articles_raw = body.get('articles') or []
     customer_name = body.get('customer_name') or ''
+    # Фирма для расчёта цен определяется строго по id, не по названию.
+    wholesaler_id = body.get('wholesaler_id')
     search_in_names = bool(body.get('search_in_names'))
 
     if not isinstance(articles_raw, list):
@@ -154,15 +156,17 @@ def handler(event: dict, context) -> dict:
                 })
 
     rules = []
-    if customer_name:
-        cur.execute("SELECT id FROM wholesalers WHERE name = %s", (customer_name,))
-        w = cur.fetchone()
-        if w:
+    if wholesaler_id:
+        try:
+            wid_int = int(wholesaler_id)
+        except (TypeError, ValueError):
+            wid_int = None
+        if wid_int:
             cur.execute(
                 """SELECT filter_type, filter_value, price_field, formula,
                           condition_price_field, condition_operator, condition_value
                    FROM pricing_rules WHERE wholesaler_id = %s ORDER BY priority""",
-                (w[0],)
+                (wid_int,)
             )
             rules = cur.fetchall()
 
