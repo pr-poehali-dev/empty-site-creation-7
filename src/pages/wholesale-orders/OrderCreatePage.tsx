@@ -1031,7 +1031,6 @@ const OrderCreatePage = () => {
     setShowTempForm(false);
     setTempBrand("");
     setTempArticle("");
-    setTempQty("1");
     setTempPrice("");
     setArticleSuggestions([]);
     addItem(item);
@@ -1825,33 +1824,33 @@ const OrderCreatePage = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-white/[0.08] bg-card flex-shrink-0 sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleBack}>
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2 px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 flex-shrink-0" onClick={handleBack}>
               <Icon name="ArrowLeft" size={18} />
             </Button>
-            <h1 className="text-lg font-semibold">{editId ? `Заявка #${editId}` : "Новая заявка"}</h1>
+            <h1 className="text-lg font-semibold truncate">{editId ? `Заявка #${editId}` : "Новая заявка"}</h1>
             {editId && (
-              <Badge className={`${(statusLabels[orderStatus] || statusLabels.new).className} text-xs`}>
+              <Badge className={`${(statusLabels[orderStatus] || statusLabels.new).className} text-xs flex-shrink-0`}>
                 {(statusLabels[orderStatus] || statusLabels.new).label}
               </Badge>
             )}
             {scannerActive && (
               <span
                 title="Сканер штрихкодов активен"
-                className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/30 text-[10px] font-medium"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/30 text-[10px] font-medium flex-shrink-0"
               >
                 <Icon name="ScanLine" size={12} />
                 Сканер
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {editId && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9 w-9 p-0 rounded-lg"
+                className="h-9 w-9 p-0 rounded-lg flex-shrink-0"
                 onClick={() => setShowVisibility(true)}
                 title="Настройки видимости заявки"
               >
@@ -1860,7 +1859,7 @@ const OrderCreatePage = () => {
             )}
             <Button
               size="sm"
-              className="h-9 rounded-lg px-3 sm:px-4"
+              className="h-9 rounded-lg px-3 sm:px-4 flex-shrink-0"
               onClick={handleSave}
               disabled={saving || isLocked}
               title="Сохранить заявку"
