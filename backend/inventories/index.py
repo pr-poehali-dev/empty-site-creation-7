@@ -240,6 +240,60 @@ def load_inventory(cur, inventory_id):
     return cur.fetchone()
 
 
+def export_xlsx(cur, inventory_id):
+    """Выгрузка в Excel. Цены берём из строк инвентаризации — те самые,
+    что посчитаны по фирме этой инвентаризации, никакие другие."""
+    import base64
+    import io
+    from openpyxl import Workbook
+
+    cur.execute(
+        """SELECT i.id, w.name, i.comment, i.created_at
+           FROM inventories i JOIN wholesalers w ON w.id = i.wholesaler_id
+           WHERE i.id = %s""",
+        (inventory_id,)
+    )
+    head = cur.fetchone()
+    cur.execute(
+        """SELECT p.name, p.article, ii.quantity, ii.price, ii.amount
+           FROM inventory_items ii
+           JOIN products p ON p.id = ii.product_id
+           WHERE ii.inventory_id = %s
+           ORDER BY ii.sort_order""",
+        (inventory_id,)
+    )
+    rows = cur.fetchall()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Инвентаризация'
+    ws.append([f'Инвентаризация №{head[0]}'])
+    ws.append(['Фирма', head[1]])
+    if head[2]:
+        ws.append(['Комментарий', head[2]])
+    ws.append(['Дата', head[3].strftime('%d.%m.%Y') if head[3] else ''])
+    ws.append([])
+    ws.append(['№', 'Наименование', 'Артикул', 'Кол-во', 'Цена', 'Сумма'])
+
+    total = 0
+    for idx, r in enumerate(rows, 1):
+        amount = float(r[4] or 0)
+        total += amount
+        ws.append([idx, r[0], r[1] or '', int(r[2]), float(r[3] or 0), amount])
+    ws.append([])
+    ws.append(['', '', '', '', 'Итого', round(total, 2)])
+
+    for col, width in zip('ABCDEF', [6, 55, 20, 10, 14, 14]):
+        ws.column_dimensions[col].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return json_resp(200, {
+        'file': base64.b64encode(buf.getvalue()).decode(),
+        'filename': f'Инвентаризация-{head[0]}.xlsx',
+    })
+
+
 def handler(event: dict, context) -> dict:
     """Инвентаризации оптовиков: список, позиции, поиск товаров со своей ценой."""
     method = event.get('httpMethod', 'GET')
@@ -285,6 +339,10 @@ def handler(event: dict, context) -> dict:
                     return json_resp(404, {'error': 'Инвентаризация не найдена'})
                 if not can_see_inventory(cur, inv, who):
                     return json_resp(403, {'error': 'Нет доступа'})
+
+                if qs.get('export'):
+                    return export_xlsx(cur, int(inv_id))
+
                 cur.execute(
                     """SELECT i.id, i.wholesaler_id, w.name, i.comment, i.total_amount,
                               i.created_at, i.updated_at, i.created_by, i.created_by_owner
@@ -419,24 +477,35 @@ def handler(event: dict, context) -> dict:
             if action == 'search_products':
                 q = (body.get('query') or '').strip()
                 group = body.get('product_group')
+                mode = body.get('mode') or 'all'
                 if not q and not group:
                     return json_resp(200, {'products': []})
                 rules = load_rules(cur, inv_wid)
-                conds, vals = ["p.article <> '__TEMP__'"], []
+                conds = ["p.article <> '__TEMP__'", "COALESCE(p.is_archived, false) = false"]
+                vals = []
                 if group:
                     conds.append("p.product_group = %s")
                     vals.append(group)
                 if q:
-                    # Название, артикул, код и штрихкод — цифры ищем как часть кода.
-                    conds.append(
-                        "(p.name ILIKE %s OR p.article ILIKE %s OR CAST(p.id AS TEXT) LIKE %s "
-                        "OR EXISTS(SELECT 1 FROM product_barcodes b "
-                        "WHERE b.product_id = p.id AND b.barcode LIKE %s))"
-                    )
                     like = f"%{q}%"
-                    vals.extend([like, like, f"{q}%", like])
+                    if mode == 'article':
+                        conds.append("p.article ILIKE %s")
+                        vals.append(like)
+                    elif mode == 'supplier_code':
+                        conds.append("p.supplier_code ILIKE %s")
+                        vals.append(like)
+                    else:
+                        # Название, артикул, бренд, код поставщика и штрихкод:
+                        # цифры ищутся как часть штрихкода.
+                        conds.append(
+                            "(p.name ILIKE %s OR p.article ILIKE %s OR p.brand ILIKE %s "
+                            "OR p.supplier_code ILIKE %s "
+                            "OR EXISTS(SELECT 1 FROM product_barcodes b "
+                            "WHERE b.product_id = p.id AND b.barcode LIKE %s))"
+                        )
+                        vals.extend([like, like, like, like, like])
                 cur.execute(
-                    f"""SELECT p.id, p.name, p.article, p.product_group,
+                    f"""SELECT p.id, p.name, p.article, p.product_group, p.brand,
                                p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
                                p.price_base_changed_at, p.price_retail_changed_at,
                                p.price_wholesale_changed_at, p.price_purchase_changed_at
@@ -447,16 +516,17 @@ def handler(event: dict, context) -> dict:
                 )
                 products = []
                 for r in cur.fetchall():
-                    prices = {'price_base': r[4], 'price_retail': r[5],
-                              'price_wholesale': r[6], 'price_purchase': r[7]}
-                    dates = {'price_base': r[8], 'price_retail': r[9],
-                             'price_wholesale': r[10], 'price_purchase': r[11]}
+                    prices = {'price_base': r[5], 'price_retail': r[6],
+                              'price_wholesale': r[7], 'price_purchase': r[8]}
+                    dates = {'price_base': r[9], 'price_retail': r[10],
+                             'price_wholesale': r[11], 'price_purchase': r[12]}
                     price, src, base_date = price_for_product(prices, dates, r[3], rules)
                     # В ответ уходит ТОЛЬКО цена фирмы — остальных цен здесь нет.
                     products.append({
                         'id': r[0],
                         'name': r[1],
                         'article': r[2],
+                        'brand': r[4],
                         'product_group': r[3],
                         'price': price,
                         'price_source': src,
@@ -464,37 +534,56 @@ def handler(event: dict, context) -> dict:
                     })
                 return json_resp(200, {'products': products})
 
+            # Список групп товаров для фильтра.
+            if action == 'product_groups':
+                cur.execute(
+                    """SELECT DISTINCT product_group FROM products
+                       WHERE product_group IS NOT NULL AND product_group <> ''
+                       ORDER BY product_group"""
+                )
+                return json_resp(200, {'groups': [r[0] for r in cur.fetchall()]})
+
             # Поиск товара по штрихкоду целиком — для ручного сканера.
             if action == 'scan_barcode':
                 code = (body.get('barcode') or '').strip()
                 if not code:
                     return json_resp(400, {'error': 'Пустой штрихкод'})
+                # exact=false — подсказки по части кода, true — точное совпадение.
+                exact = bool(body.get('exact'))
+                if exact:
+                    where, arg, limit = "b.barcode = %s", code, 1
+                else:
+                    where, arg, limit = "b.barcode LIKE %s", f"%{code}%", 20
                 cur.execute(
-                    """SELECT p.id, p.name, p.article, p.product_group,
-                              p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
-                              p.price_base_changed_at, p.price_retail_changed_at,
-                              p.price_wholesale_changed_at, p.price_purchase_changed_at
+                    f"""SELECT DISTINCT ON (p.id)
+                               p.id, p.name, p.article, p.product_group, p.brand,
+                               p.price_base, p.price_retail, p.price_wholesale, p.price_purchase,
+                               p.price_base_changed_at, p.price_retail_changed_at,
+                               p.price_wholesale_changed_at, p.price_purchase_changed_at
                        FROM products p
                        JOIN product_barcodes b ON b.product_id = p.id
-                       WHERE b.barcode = %s LIMIT 1""",
-                    (code,)
+                       WHERE {where} AND COALESCE(p.is_archived, false) = false
+                       LIMIT {limit}""",
+                    (arg,)
                 )
-                r = cur.fetchone()
-                if not r:
-                    return json_resp(200, {'found': False})
-                prices = {'price_base': r[4], 'price_retail': r[5],
-                          'price_wholesale': r[6], 'price_purchase': r[7]}
-                dates = {'price_base': r[8], 'price_retail': r[9],
-                         'price_wholesale': r[10], 'price_purchase': r[11]}
-                price, src, base_date = price_for_product(
-                    prices, dates, r[3], load_rules(cur, inv_wid))
-                return json_resp(200, {
-                    'found': True,
-                    'product': {
-                        'id': r[0], 'name': r[1], 'article': r[2],
+                rows = cur.fetchall()
+                rules = load_rules(cur, inv_wid)
+                found = []
+                for r in rows:
+                    prices = {'price_base': r[5], 'price_retail': r[6],
+                              'price_wholesale': r[7], 'price_purchase': r[8]}
+                    dates = {'price_base': r[9], 'price_retail': r[10],
+                             'price_wholesale': r[11], 'price_purchase': r[12]}
+                    price, src, base_date = price_for_product(prices, dates, r[3], rules)
+                    found.append({
+                        'id': r[0], 'name': r[1], 'article': r[2], 'brand': r[4],
                         'price': price, 'price_source': src,
                         'price_date': base_date.strftime('%d.%m.%y') if base_date else None,
-                    },
+                    })
+                return json_resp(200, {
+                    'found': len(found) > 0,
+                    'products': found,
+                    'product': found[0] if found else None,
                 })
 
             # Добавить позицию. Цена считается на сервере и застывает в строке.
