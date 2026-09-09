@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1158,6 +1158,15 @@ const OrderCreatePage = () => {
   const headerInitedRef = useRef(false);
   const headerStateRef = useRef({ customerName, comment, wholesalerId });
 
+  const isLegacyOrder = useMemo(() => {
+    if (!orderCreatedAt) return false;
+    const created = new Date(orderCreatedAt.replace(" ", "T"));
+    if (isNaN(created.getTime())) return false;
+    return created < new Date(2026, 8, 9);
+  }, [orderCreatedAt]);
+
+  const showHeaderError = isOwner || !isLegacyOrder;
+
   const flushHeader = useCallback(async (
     override?: { customer_name?: string; wholesaler_id?: number | null }
   ): Promise<boolean> => {
@@ -1182,12 +1191,12 @@ const OrderCreatePage = () => {
     } catch (e) {
       if (await handleVersionConflict(e)) return false;
       const msg = e instanceof Error ? e.message : "Не удалось сохранить";
-      if (isOwner) {
+      if (showHeaderError) {
         toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
       }
       return false;
     }
-  }, [editId, handleVersionConflict, toast, isOwner]);
+  }, [editId, handleVersionConflict, toast, showHeaderError]);
 
   const handleWholesalerBlur = () => {
     if (isLocked) return;
@@ -1574,12 +1583,12 @@ const OrderCreatePage = () => {
         .catch(async (e) => {
           if (await handleVersionConflict(e)) return;
           const msg = e instanceof Error ? e.message : "Не удалось сохранить";
-          if (isOwner) {
+          if (showHeaderError) {
             toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
           }
         });
     }, 600);
-  }, [customerName, comment, wholesalerId, editId, handleVersionConflict, toast, isOwner]);
+  }, [customerName, comment, wholesalerId, editId, handleVersionConflict, toast, showHeaderError]);
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
