@@ -254,52 +254,54 @@ const InventoryEditPage = () => {
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      <header className="border-b border-white/[0.08] bg-card sticky top-0 z-20">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2 px-4 py-3">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 flex-shrink-0"
-              onClick={() => navigate(inventoriesPath())}
-            >
-              <Icon name="ArrowLeft" size={18} />
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold truncate leading-tight">
-                Инвентаризация №{inventoryId}
-              </h1>
-              <p className="text-xs text-muted-foreground truncate">{inv?.wholesaler_name}</p>
-            </div>
+      <header className="border-b border-white/[0.08] bg-card sticky -top-10 z-20">
+        <div className="max-w-2xl mx-auto px-4 py-2">
+          <div className="h-10 flex flex-col justify-center">
+            <h1 className="text-lg font-semibold break-words leading-tight">
+              Инвентаризация №{inventoryId}
+            </h1>
+            <p className="text-xs text-muted-foreground truncate">{inv?.wholesaler_name}</p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {isOwner && (
+          <div className="flex items-center justify-between gap-2 pb-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9 w-9 p-0 rounded-lg flex-shrink-0"
-                onClick={() => setShowVisibility(true)}
-                title="Настройки видимости"
+                className="h-8 w-8 p-0 flex-shrink-0"
+                onClick={() => navigate(inventoriesPath())}
               >
-                <Icon name="Settings" size={18} />
+                <Icon name="ArrowLeft" size={18} />
               </Button>
-            )}
-            <Button
-              size="sm"
-              className="h-9 rounded-lg px-3 sm:px-4 flex-shrink-0"
-              onClick={handleSaveComment}
-              disabled={saving}
-              title="Сохранить инвентаризацию"
-            >
-              {saving ? (
-                <Icon name="Loader2" size={16} className="animate-spin" />
-              ) : (
-                <Icon name="Check" size={16} />
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {isOwner && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 w-9 p-0 rounded-lg flex-shrink-0"
+                  onClick={() => setShowVisibility(true)}
+                  title="Настройки видимости"
+                >
+                  <Icon name="Settings" size={18} />
+                </Button>
               )}
-              <span className="ml-2 hidden sm:inline">
-                {saving ? "Сохранение..." : "Сохранить"}
-              </span>
-            </Button>
+              <Button
+                size="sm"
+                className="h-9 rounded-lg px-3 sm:px-4 flex-shrink-0"
+                onClick={handleSaveComment}
+                disabled={saving}
+                title="Сохранить инвентаризацию"
+              >
+                {saving ? (
+                  <Icon name="Loader2" size={16} className="animate-spin" />
+                ) : (
+                  <Icon name="Check" size={16} />
+                )}
+                <span className="ml-2 hidden sm:inline">
+                  {saving ? "Сохранение..." : "Сохранить"}
+                </span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
