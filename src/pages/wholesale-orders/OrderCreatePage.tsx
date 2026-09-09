@@ -1182,10 +1182,12 @@ const OrderCreatePage = () => {
     } catch (e) {
       if (await handleVersionConflict(e)) return false;
       const msg = e instanceof Error ? e.message : "Не удалось сохранить";
-      toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
+      if (isOwner) {
+        toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
+      }
       return false;
     }
-  }, [editId, handleVersionConflict, toast]);
+  }, [editId, handleVersionConflict, toast, isOwner]);
 
   const handleWholesalerBlur = () => {
     if (isLocked) return;
@@ -1572,10 +1574,12 @@ const OrderCreatePage = () => {
         .catch(async (e) => {
           if (await handleVersionConflict(e)) return;
           const msg = e instanceof Error ? e.message : "Не удалось сохранить";
-          toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
+          if (isOwner) {
+            toast({ title: "Фирма не сохранена", description: msg, variant: "destructive" });
+          }
         });
     }, 600);
-  }, [customerName, comment, wholesalerId, editId, handleVersionConflict, toast]);
+  }, [customerName, comment, wholesalerId, editId, handleVersionConflict, toast, isOwner]);
 
   const totalAmount = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
