@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "GET without auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    },
+    {
+      "name": "POST without auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "create"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "DELETE without auth",
+      "method": "DELETE",
+      "path": "/?id=1",
+      "expectedStatus": 401
+    }
+  ]
+}
