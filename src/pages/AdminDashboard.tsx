@@ -177,6 +177,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Возвраты</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.inventories" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/inventories")}
+            >
+              <Icon name="ClipboardCheck" size={20} />
+              <span className="font-medium">Инвентаризации</span>
+            </Button>
+          </DebugBadge>
           <DebugBadge id="Admin:nav.labels" className="flex-1">
             <Button
               variant="outline"

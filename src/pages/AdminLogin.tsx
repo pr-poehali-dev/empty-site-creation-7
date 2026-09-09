@@ -129,11 +129,21 @@ export default function AdminLogin() {
     }
   };
 
-  const finishLogin = (data: { token: string; user: { role: string } }) => {
+  /** Куда ведём после входа: у оптовика своя страница. */
+  const homeFor = (user: { role?: string; role_name?: string }) => {
+    if (user.role === "owner") return "/admin/dashboard";
+    if (user.role_name === "Оптовик") return "/wholesaler";
+    return "/admin/manager";
+  };
+
+  const finishLogin = (data: {
+    token: string;
+    user: { role: string; role_name?: string };
+  }) => {
     localStorage.setItem("auth_token", data.token);
     localStorage.setItem("auth_user", JSON.stringify(data.user));
     toast({ title: "Karibu!" });
-    navigate(data.user.role === "owner" ? "/admin/dashboard" : "/admin/manager");
+    navigate(homeFor(data.user));
   };
 
   const loginWithPassword = async () => {
@@ -216,11 +226,7 @@ export default function AdminLogin() {
         localStorage.setItem("auth_token", data.token);
         localStorage.setItem("auth_user", JSON.stringify(data.user));
         toast({ title: "Karibu!" });
-        if (data.user.role === "owner") {
-          navigate("/admin/dashboard");
-        } else {
-          navigate("/admin/manager");
-        }
+        navigate(homeFor(data.user));
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
       }

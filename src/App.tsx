@@ -46,7 +46,10 @@ import OwnerAuctions from "./pages/OwnerAuctions";
 import OwnerBackup from "./pages/OwnerBackup";
 import OwnerScheduler from "./pages/OwnerScheduler";
 import OwnerMessageServer from "./pages/OwnerMessageServer";
-import ProtectedRoute from "./components/ProtectedRoute";
+import { NotForWholesaler, OnlyWholesaler, WholesalerRoute } from "./components/WholesalerRoute";
+import WholesalerDashboard from "./pages/WholesalerDashboard";
+import InventoriesListPage from "./pages/inventories/InventoriesListPage";
+import InventoryEditPage from "./pages/inventories/InventoryEditPage";
 import DebugProvider from "./contexts/DebugContext";
 import KeyboardFab from "./components/KeyboardFab";
 import NotFound from "./pages/NotFound";
@@ -71,42 +74,47 @@ const App = () => (
           <Route path="/tma/my" element={<TmaMy />} />
           <Route path="/tma/buy/:id" element={<TmaBuy />} />
           <Route path="/admin" element={<AdminLogin />} />
-          <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-          <Route path="/admin/watumiaji" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-          <Route path="/admin/authorize/:id" element={<ProtectedRoute><AuthorizeManager /></ProtectedRoute>} />
-          <Route path="/admin/manager" element={<ProtectedRoute><ManagerDashboard /></ProtectedRoute>} />
-          <Route path="/admin/catalog" element={<ProtectedRoute><Catalog /></ProtectedRoute>} />
-          <Route path="/admin/catalog/new" element={<ProtectedRoute><CatalogNewProducts /></ProtectedRoute>} />
-          <Route path="/admin/orders" element={<ProtectedRoute><WholesaleOrders /></ProtectedRoute>} />
-          <Route path="/admin/receipts" element={<ProtectedRoute><Receipts /></ProtectedRoute>} />
-          <Route path="/admin/orders/:orderId/payments" element={<ProtectedRoute><OrderPayments /></ProtectedRoute>} />
-          <Route path="/admin/orders/create" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
-          <Route path="/admin/orders/:id/edit" element={<ProtectedRoute><OrderCreatePage /></ProtectedRoute>} />
-          <Route path="/admin/orders/unknown-barcode/:barcode" element={<ProtectedRoute><UnknownBarcodePage /></ProtectedRoute>} />
-          <Route path="/admin/returns" element={<ProtectedRoute><WholesaleReturns /></ProtectedRoute>} />
-          <Route path="/admin/returns/create" element={<ProtectedRoute><ReturnCreatePage /></ProtectedRoute>} />
-          <Route path="/admin/returns/:id/edit" element={<ProtectedRoute><ReturnCreatePage /></ProtectedRoute>} />
-          <Route path="/admin/scan" element={<ProtectedRoute><ScanBarcode /></ProtectedRoute>} />
-          <Route path="/admin/shared/scan" element={<ProtectedRoute><BarcodeScanPage /></ProtectedRoute>} />
-          <Route path="/admin/shared/bulk-paste" element={<ProtectedRoute><BulkPastePage /></ProtectedRoute>} />
-          <Route path="/admin/exchange-1c" element={<ProtectedRoute><Exchange1C /></ProtectedRoute>} />
-          <Route path="/admin/instructions" element={<ProtectedRoute><Instructions /></ProtectedRoute>} />
-          <Route path="/admin/auctions" element={<ProtectedRoute><OwnerAuctions /></ProtectedRoute>} />
-          <Route path="/admin/auctions/info" element={<ProtectedRoute><AuctionsInfo /></ProtectedRoute>} />
-          <Route path="/admin/auctions/settings" element={<ProtectedRoute><OwnerAuctionSettings /></ProtectedRoute>} />
-          <Route path="/admin/wholesalers" element={<ProtectedRoute><Wholesalers /></ProtectedRoute>} />
-          <Route path="/admin/pricing" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
-          <Route path="/admin/pricing/:id" element={<ProtectedRoute><PricingRulesEdit /></ProtectedRoute>} />
-          <Route path="/admin/new-products" element={<ProtectedRoute><NewProducts /></ProtectedRoute>} />
-          <Route path="/admin/new-barcodes" element={<ProtectedRoute><NewBarcodes /></ProtectedRoute>} />
-          <Route path="/admin/brands" element={<ProtectedRoute><Brands /></ProtectedRoute>} />
-          <Route path="/admin/product-groups" element={<ProtectedRoute><ProductGroups /></ProtectedRoute>} />
-          <Route path="/admin/labels" element={<ProtectedRoute><Labels /></ProtectedRoute>} />
-          <Route path="/admin/settings" element={<ProtectedRoute><OwnerSettings /></ProtectedRoute>} />
-          <Route path="/admin/settings/proxy/:platform" element={<ProtectedRoute><ProxyGuide /></ProtectedRoute>} />
-          <Route path="/admin/backup" element={<ProtectedRoute><OwnerBackup /></ProtectedRoute>} />
-          <Route path="/admin/scheduler" element={<ProtectedRoute><OwnerScheduler /></ProtectedRoute>} />
-          <Route path="/admin/message-server" element={<ProtectedRoute><OwnerMessageServer /></ProtectedRoute>} />
+          <Route path="/admin/dashboard" element={<NotForWholesaler><AdminDashboard /></NotForWholesaler>} />
+          <Route path="/admin/watumiaji" element={<NotForWholesaler><Users /></NotForWholesaler>} />
+          <Route path="/admin/authorize/:id" element={<NotForWholesaler><AuthorizeManager /></NotForWholesaler>} />
+          <Route path="/admin/manager" element={<NotForWholesaler><ManagerDashboard /></NotForWholesaler>} />
+          <Route path="/admin/catalog" element={<NotForWholesaler><Catalog /></NotForWholesaler>} />
+          <Route path="/admin/catalog/new" element={<NotForWholesaler><CatalogNewProducts /></NotForWholesaler>} />
+          <Route path="/admin/orders" element={<NotForWholesaler><WholesaleOrders /></NotForWholesaler>} />
+          <Route path="/admin/receipts" element={<NotForWholesaler><Receipts /></NotForWholesaler>} />
+          <Route path="/admin/orders/:orderId/payments" element={<NotForWholesaler><OrderPayments /></NotForWholesaler>} />
+          <Route path="/admin/orders/create" element={<NotForWholesaler><OrderCreatePage /></NotForWholesaler>} />
+          <Route path="/admin/orders/:id/edit" element={<NotForWholesaler><OrderCreatePage /></NotForWholesaler>} />
+          <Route path="/admin/orders/unknown-barcode/:barcode" element={<NotForWholesaler><UnknownBarcodePage /></NotForWholesaler>} />
+          <Route path="/admin/returns" element={<NotForWholesaler><WholesaleReturns /></NotForWholesaler>} />
+          <Route path="/admin/returns/create" element={<NotForWholesaler><ReturnCreatePage /></NotForWholesaler>} />
+          <Route path="/admin/returns/:id/edit" element={<NotForWholesaler><ReturnCreatePage /></NotForWholesaler>} />
+          <Route path="/admin/scan" element={<NotForWholesaler><ScanBarcode /></NotForWholesaler>} />
+          <Route path="/admin/shared/scan" element={<NotForWholesaler><BarcodeScanPage /></NotForWholesaler>} />
+          <Route path="/admin/shared/bulk-paste" element={<NotForWholesaler><BulkPastePage /></NotForWholesaler>} />
+          <Route path="/admin/exchange-1c" element={<NotForWholesaler><Exchange1C /></NotForWholesaler>} />
+          <Route path="/admin/instructions" element={<NotForWholesaler><Instructions /></NotForWholesaler>} />
+          <Route path="/admin/auctions" element={<NotForWholesaler><OwnerAuctions /></NotForWholesaler>} />
+          <Route path="/admin/auctions/info" element={<NotForWholesaler><AuctionsInfo /></NotForWholesaler>} />
+          <Route path="/admin/auctions/settings" element={<NotForWholesaler><OwnerAuctionSettings /></NotForWholesaler>} />
+          <Route path="/admin/wholesalers" element={<NotForWholesaler><Wholesalers /></NotForWholesaler>} />
+          <Route path="/admin/pricing" element={<NotForWholesaler><PricingRules /></NotForWholesaler>} />
+          <Route path="/admin/pricing/:id" element={<NotForWholesaler><PricingRulesEdit /></NotForWholesaler>} />
+          <Route path="/admin/new-products" element={<NotForWholesaler><NewProducts /></NotForWholesaler>} />
+          <Route path="/admin/new-barcodes" element={<NotForWholesaler><NewBarcodes /></NotForWholesaler>} />
+          <Route path="/admin/brands" element={<NotForWholesaler><Brands /></NotForWholesaler>} />
+          <Route path="/admin/product-groups" element={<NotForWholesaler><ProductGroups /></NotForWholesaler>} />
+          <Route path="/admin/labels" element={<NotForWholesaler><Labels /></NotForWholesaler>} />
+          <Route path="/admin/settings" element={<NotForWholesaler><OwnerSettings /></NotForWholesaler>} />
+          <Route path="/admin/settings/proxy/:platform" element={<NotForWholesaler><ProxyGuide /></NotForWholesaler>} />
+          <Route path="/admin/backup" element={<NotForWholesaler><OwnerBackup /></NotForWholesaler>} />
+          <Route path="/admin/scheduler" element={<NotForWholesaler><OwnerScheduler /></NotForWholesaler>} />
+          <Route path="/admin/message-server" element={<NotForWholesaler><OwnerMessageServer /></NotForWholesaler>} />
+          <Route path="/admin/inventories" element={<NotForWholesaler><InventoriesListPage /></NotForWholesaler>} />
+          <Route path="/admin/inventories/:id" element={<NotForWholesaler><InventoryEditPage /></NotForWholesaler>} />
+          <Route path="/wholesaler" element={<OnlyWholesaler><WholesalerDashboard /></OnlyWholesaler>} />
+          <Route path="/wholesaler/inventories" element={<WholesalerRoute><InventoriesListPage /></WholesalerRoute>} />
+          <Route path="/wholesaler/inventories/:id" element={<WholesalerRoute><InventoryEditPage /></WholesalerRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
