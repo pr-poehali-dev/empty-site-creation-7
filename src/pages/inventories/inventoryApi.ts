@@ -1,9 +1,11 @@
 import {
   INVENTORIES_URL,
+  TEMP_PRODUCTS_URL,
   Inventory,
   InventoryItem,
   InventoryListItem,
   ProductSearchItem,
+  TempProductItem,
   WholesalerOption,
 } from "./types";
 
@@ -90,6 +92,16 @@ export function searchProducts(
   });
 }
 
+export async function searchTempProducts(query: string): Promise<TempProductItem[]> {
+  const resp = await fetch(
+    `${TEMP_PRODUCTS_URL}?search=${encodeURIComponent(query)}&per_page=5`,
+    { headers: authHeaders() }
+  );
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) return [];
+  return (data.items || []) as TempProductItem[];
+}
+
 export function fetchProductGroups(inventoryId: number) {
   return post<{ groups: string[] }>({
     action: "product_groups",
@@ -111,6 +123,15 @@ export function addItem(inventoryId: number, productId: number, quantity: number
     action: "add_item",
     inventory_id: inventoryId,
     product_id: productId,
+    quantity,
+  });
+}
+
+export function addTempItem(inventoryId: number, tempProductId: number, quantity: number) {
+  return post<{ item: InventoryItem; total_amount: number }>({
+    action: "add_item",
+    inventory_id: inventoryId,
+    temp_product_id: tempProductId,
     quantity,
   });
 }

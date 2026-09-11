@@ -192,20 +192,24 @@ def fetch_item_view(cur, item_id, is_owner):
         """SELECT ii.id, ii.product_id, p.name, p.article, ii.quantity, ii.price, ii.amount,
                   ii.created_by, ii.qty_changed_by, ii.price_changed_by,
                   ii.price_is_manual, ii.price_source, ii.price_base_date, ii.price_set_at,
-                  ii.sort_order
+                  ii.sort_order, ii.temp_product_id, tp.brand, tp.article
            FROM inventory_items ii
            JOIN products p ON p.id = ii.product_id
+           LEFT JOIN temp_products tp ON tp.id = ii.temp_product_id
            WHERE ii.id = %s""",
         (item_id,)
     )
     r = cur.fetchone()
     if not r:
         return None
+    is_temp = r[15] is not None
     view = {
         'id': r[0],
         'product_id': r[1],
-        'name': r[2],
-        'article': r[3],
+        'name': (' '.join([p for p in [r[16], r[17]] if p]) or 'Без названия') if is_temp else r[2],
+        'article': r[17] if is_temp else r[3],
+        'is_temp': is_temp,
+        'temp_product_id': r[15],
         'quantity': r[4],
         'price': float(r[5]),
         'amount': float(r[6]),
@@ -259,9 +263,14 @@ def export_xlsx(cur, inventory_id):
     )
     head = cur.fetchone()
     cur.execute(
-        """SELECT p.name, p.article, ii.quantity, ii.price, ii.amount
+        """SELECT CASE WHEN ii.temp_product_id IS NOT NULL
+                       THEN COALESCE(NULLIF(TRIM(CONCAT_WS(' ', tp.brand, tp.article)), ''), 'Без названия')
+                       ELSE p.name END,
+                  CASE WHEN ii.temp_product_id IS NOT NULL THEN tp.article ELSE p.article END,
+                  ii.quantity, ii.price, ii.amount
            FROM inventory_items ii
            JOIN products p ON p.id = ii.product_id
+           LEFT JOIN temp_products tp ON tp.id = ii.temp_product_id
            WHERE ii.inventory_id = %s
            ORDER BY ii.sort_order""",
         (inventory_id,)
@@ -602,13 +611,31 @@ def handler(event: dict, context) -> dict:
             # Добавить позицию. Цена считается на сервере и застывает в строке.
             if action == 'add_item':
                 pid = body.get('product_id')
-                if not pid:
-                    return json_resp(400, {'error': 'Не указан товар'})
+                temp_pid = body.get('temp_product_id')
                 qty = int(body.get('quantity') or 1)
-                cur.execute("SELECT id FROM products WHERE id = %s", (int(pid),))
-                if not cur.fetchone():
-                    return json_resp(400, {'error': 'Товар не найден'})
-                price, src, base_date = calc_price_detailed(cur, inv_wid, int(pid))
+
+                if temp_pid:
+                    # Временный товар: цена своя, правила фирмы к нему неприменимы.
+                    cur.execute(
+                        "SELECT price FROM temp_products WHERE id = %s", (int(temp_pid),)
+                    )
+                    trow = cur.fetchone()
+                    if not trow:
+                        return json_resp(400, {'error': 'Временный товар не найден'})
+                    cur.execute("SELECT id FROM products WHERE article = '__TEMP__' LIMIT 1")
+                    prow = cur.fetchone()
+                    if not prow:
+                        return json_resp(400, {'error': 'Нет заглушки временных товаров'})
+                    pid = prow[0]
+                    price = float(trow[0] or 0)
+                    src, base_date = 'temp', None
+                else:
+                    if not pid:
+                        return json_resp(400, {'error': 'Не указан товар'})
+                    cur.execute("SELECT id FROM products WHERE id = %s", (int(pid),))
+                    if not cur.fetchone():
+                        return json_resp(400, {'error': 'Товар не найден'})
+                    price, src, base_date = calc_price_detailed(cur, inv_wid, int(pid))
                 amount = round(price * qty, 2)
                 cur.execute(
                     "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM inventory_items WHERE inventory_id = %s",
@@ -617,11 +644,12 @@ def handler(event: dict, context) -> dict:
                 sort_order = cur.fetchone()[0]
                 cur.execute(
                     """INSERT INTO inventory_items
-                       (inventory_id, product_id, quantity, price, amount, sort_order,
+                       (inventory_id, product_id, temp_product_id, quantity, price, amount, sort_order,
                         created_by, qty_changed_by, price_changed_by,
                         price_source, price_base_date)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                    (int(inventory_id), int(pid), qty, price, amount, sort_order,
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (int(inventory_id), int(pid), int(temp_pid) if temp_pid else None,
+                     qty, price, amount, sort_order,
                      who['actor'], who['actor'], who['actor'], src, base_date)
                 )
                 item_id = cur.fetchone()[0]
@@ -712,7 +740,8 @@ def handler(event: dict, context) -> dict:
             if action == 'recalc_zero_prices':
                 cur.execute(
                     """SELECT id, product_id, quantity FROM inventory_items
-                       WHERE inventory_id = %s AND price = 0""",
+                       WHERE inventory_id = %s AND price = 0
+                         AND temp_product_id IS NULL""",
                     (int(inventory_id),)
                 )
                 zeros = cur.fetchall()

@@ -27,11 +27,14 @@ const InventoryLineCard = ({
   const zeroPrice = !line.price || line.price === 0;
   const srcBorder = priceBorder(line);
   const note = priceNote(line, isOwner);
+  const isTemp = line.is_temp === true || line.temp_product_id != null;
 
   return (
     <div
-      className={`rounded-lg p-2.5 bg-white/[0.02] ${
-        zeroPrice ? "border-2 border-red-500" : srcBorder || "border border-white/[0.08]"
+      className={`rounded-lg p-2.5 ${isTemp ? "bg-red-950/20" : "bg-white/[0.02]"} ${
+        zeroPrice
+          ? "border-2 border-red-500"
+          : srcBorder || (isTemp ? "border border-red-500/30" : "border border-white/[0.08]")
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -40,6 +43,11 @@ const InventoryLineCard = ({
             <span className="text-muted-foreground">{total - index}.</span> {line.name}
           </p>
           {line.article && <p className="text-xs text-muted-foreground">{line.article}</p>}
+          {isTemp && (
+            <p className="text-xs text-amber-400 flex items-center gap-1">
+              <Icon name="AlertTriangle" size={10} /> временный товар
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-center flex-shrink-0">
           {isOwner && line.created_by && (

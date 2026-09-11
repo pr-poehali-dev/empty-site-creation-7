@@ -1,4 +1,5 @@
 export const INVENTORIES_URL = "https://functions.poehali.dev/01b573b5-2132-431d-952f-a2b55bd120ff";
+export const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 
 export interface InventoryListItem {
   id: number;
@@ -26,6 +27,16 @@ export interface InventoryItem {
   created_by?: string | null;
   qty_changed_by?: string | null;
   price_changed_by?: string | null;
+  is_temp?: boolean;
+  temp_product_id?: number | null;
+}
+
+export interface TempProductItem {
+  id: number;
+  brand: string;
+  article: string;
+  price: number;
+  barcode?: string | null;
 }
 
 export interface Inventory {

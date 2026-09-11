@@ -25,6 +25,7 @@ import {
   INVENTORIES_URL,
   ProductSearchItem,
   SEARCH_MODES,
+  TempProductItem,
 } from "./types";
 
 const InventoryEditPage = () => {
@@ -43,6 +44,7 @@ const InventoryEditPage = () => {
   const [searchMode, setSearchMode] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
+  const [tempResults, setTempResults] = useState<TempProductItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [productGroups, setProductGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -96,14 +98,22 @@ const InventoryEditPage = () => {
   const runSearch = async (q: string, mode = searchMode, group = selectedGroup) => {
     if (q.trim().length < 2 && !group) {
       setSearchResults([]);
+      setTempResults([]);
       return;
     }
     setSearching(true);
     try {
       const r = await api.searchProducts(inventoryId, q, mode, group);
       setSearchResults(r.products);
+      // Временные ищем только когда каталог пуст — как в заявках.
+      if (r.products.length === 0 && q.trim().length >= 2) {
+        setTempResults(await api.searchTempProducts(q));
+      } else {
+        setTempResults([]);
+      }
     } catch {
       setSearchResults([]);
+      setTempResults([]);
     } finally {
       setSearching(false);
     }
@@ -138,6 +148,19 @@ const InventoryEditPage = () => {
       setLines((prev) => [r.item, ...prev]);
       setSearchQuery("");
       setSearchResults([]);
+      setTempResults([]);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    }
+  };
+
+  const addTempProduct = async (tp: TempProductItem) => {
+    try {
+      const r = await api.addTempItem(inventoryId, tp.id, 1);
+      setLines((prev) => [r.item, ...prev]);
+      setSearchQuery("");
+      setSearchResults([]);
+      setTempResults([]);
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
     }
@@ -250,7 +273,8 @@ const InventoryEditPage = () => {
     );
   }
 
-  const showDropdown = searchQuery.trim().length >= 2 && searchResults.length > 0;
+  const showDropdown =
+    searchQuery.trim().length >= 2 && (searchResults.length > 0 || tempResults.length > 0);
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -400,6 +424,23 @@ const InventoryEditPage = () => {
             )}
             {showDropdown && (
               <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-white/[0.08] rounded-xl bg-orange-950 overflow-hidden max-h-72 overflow-y-auto shadow-lg">
+                {tempResults.map((tp) => (
+                  <button
+                    key={`tp-${tp.id}`}
+                    className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors text-sm flex items-center justify-between border-b border-white/[0.04]"
+                    onClick={() => addTempProduct(tp)}
+                  >
+                    <div className="min-w-0">
+                      <span className="block truncate">{tp.brand} {tp.article}</span>
+                      <span className="text-xs text-amber-400 flex items-center gap-1">
+                        <Icon name="AlertTriangle" size={10} /> временный товар
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                      {tp.price ? `${tp.price.toLocaleString()} Br` : "—"}
+                    </span>
+                  </button>
+                ))}
                 {searchResults.map((item) => (
                   <button
                     key={item.id}
