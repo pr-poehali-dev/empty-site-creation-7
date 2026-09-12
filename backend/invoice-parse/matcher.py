@@ -44,6 +44,17 @@ def _row(r):
     }
 
 
+def _is_wider_code(key, hay):
+    """Кандидат — тот же код с дописанными цифрами? Значит, это другой товар.
+
+    900/68/3/2 против 900/68/3/25, КТ-535-1 против КТ-5351. Хвост из цифр
+    меняет товар, а не уточняет его.
+    """
+    if not hay.startswith(key) or hay == key:
+        return False
+    return hay[len(key):].isdigit()
+
+
 def _similarity(a, b):
     """Грубая близость названий: доля общих слов. Нужна только для порядка."""
     wa = {w for w in str(a or '').lower().split() if len(w) > 2}
@@ -117,6 +128,9 @@ def find_substring(cur, articles, product_group=None, in_names=False):
             hits = []
             for p in rows:
                 hay = norm(p.get('article'))
+                if hay and _is_wider_code(k, hay):
+                    # 900/68/3/2 и 900/68/3/25 — разные товары, как КТ-535-1 и КТ-5351.
+                    continue
                 if k in hay or (in_names and k in norm(p.get('name'))):
                     hits.append(p)
                     if len(hits) >= MAX_PER_KEY:

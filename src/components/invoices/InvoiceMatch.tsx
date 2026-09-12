@@ -57,6 +57,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [group, setGroup] = useState("");
   const [inNames, setInNames] = useState(false);
   const [filter, setFilter] = useState<"todo" | "all">("todo");
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
   const run = useCallback(
     async (opts?: { product_group?: string; search_in_names?: boolean }) => {
@@ -239,7 +240,13 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         <div className="space-y-2">
           {visible.map(({ r, i }) => (
             <div key={i} className="rounded-xl border border-white/[0.08] p-3">
-              <div className="flex flex-wrap items-baseline gap-2">
+              <div
+                className={`flex flex-wrap items-baseline gap-2 ${
+                  r.match_status === "ambiguous"
+                    ? "sticky top-0 z-10 bg-card -mx-3 px-3 py-2 border-b border-white/[0.08]"
+                    : ""
+                }`}
+              >
                 <span className="font-mono text-sm">{r.article || "без артикула"}</span>
                 {r.article_guessed && (
                   <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
@@ -253,27 +260,49 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
               </div>
 
               {r.match_status === "ambiguous" && (
-                <div className="mt-3 space-y-1">
-                  <p className="text-xs text-muted-foreground">
-                    Несколько подходящих — выберите нужный:
+                <div className="mt-2">
+                  <p className="text-sm font-medium text-amber-400">
+                    Нужен выбор — несколько подходящих товаров
                   </p>
-                  {r.candidates.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => choose(i, c.id)}
-                      className="w-full text-left rounded-lg border border-white/[0.08] px-3 py-2 hover:bg-white/[0.04] transition"
-                    >
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <span className="font-mono text-xs">{c.article}</span>
-                        <span className="text-sm flex-1">{c.name}</span>
-                        {c.product_group && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {c.product_group}
+                  <div className="mt-2 space-y-1">
+                    {(expanded[i] ? r.candidates : r.candidates.slice(0, 5)).map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => choose(i, c.id)}
+                        className="w-full text-left rounded-lg border border-white/[0.08] px-3 py-2 hover:bg-white/[0.04] transition"
+                      >
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <span className="font-mono text-xs text-amber-300">
+                            {c.article}
                           </span>
-                        )}
-                      </div>
+                          <span className="text-sm flex-1">{c.name}</span>
+                          {c.product_group && (
+                            <span className="text-[11px] text-muted-foreground">
+                              {c.product_group}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+
+                    {r.candidates.length > 5 && !expanded[i] && (
+                      <button
+                        onClick={() => setExpanded((p) => ({ ...p, [i]: true }))}
+                        className="w-full text-center text-xs text-muted-foreground py-2 hover:text-foreground transition"
+                      >
+                        Показать ещё {r.candidates.length - 5}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => choose(i, null)}
+                      className="w-full text-left rounded-lg border border-dashed border-rose-400/40 px-3 py-2 hover:bg-rose-500/[0.06] transition"
+                    >
+                      <span className="text-sm text-rose-300">
+                        Ничего не подходит — создать новый товар
+                      </span>
                     </button>
-                  ))}
+                  </div>
                 </div>
               )}
 
