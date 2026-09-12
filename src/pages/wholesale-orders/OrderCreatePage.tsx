@@ -1803,19 +1803,9 @@ const OrderCreatePage = () => {
   const showDropdown = searchQuery.trim().length >= 2 && !showTempForm;
   const hasResults = searchResults.length > 0 || tempProductResults.length > 0;
 
-  /** Пересчёт нулевых цен в заявках прошлых дней доступен только владельцу. */
-  const canRecalcZero = (() => {
-    if (isOwner) return true;
-    if (!orderCreatedAt) return true;
-    const created = new Date(orderCreatedAt.replace(" ", "T"));
-    if (isNaN(created.getTime())) return true;
-    const today = new Date();
-    return (
-      created.getFullYear() === today.getFullYear() &&
-      created.getMonth() === today.getMonth() &&
-      created.getDate() === today.getDate()
-    );
-  })();
+  /** Менеджер обновляет нулевые цены, пока заявка новая или черновик. Дата роли не играет. */
+  const canRecalcZero =
+    isOwner || orderStatus === "new" || orderStatus === "draft";
 
   /** Без фирмы цены считать не по чему — объясняем, а не молчим. */
   const warnNoFirm = () => {

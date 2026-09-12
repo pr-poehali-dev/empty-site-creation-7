@@ -1021,7 +1021,7 @@ def handler(event: dict, context) -> dict:
                 started = _time.time()
                 try:
                     cur.execute(
-                        "SELECT wholesaler_id, created_at FROM wholesale_orders WHERE id = %s",
+                        "SELECT wholesaler_id, status FROM wholesale_orders WHERE id = %s",
                         (order_id,)
                     )
                     ord_row = cur.fetchone()
@@ -1029,11 +1029,11 @@ def handler(event: dict, context) -> dict:
                         return json_resp(404, {'error': 'Заявка не найдена'})
                     ord_wid = ord_row[0]
 
-                    # В заявках прошлых дней пересчёт доступен только владельцу.
-                    created_at = ord_row[1]
-                    if not is_owner and created_at and created_at.date() < datetime.now().date():
+                    # Менеджер обновляет нулевые цены, пока заявка новая или черновик.
+                    ord_status = ord_row[1]
+                    if not is_owner and ord_status not in ('new', 'draft'):
                         return json_resp(403, {
-                            'error': 'Пересчёт нулевых цен доступен только в заявках текущего дня'
+                            'error': 'Обновить нулевые цены можно, пока заявка новая или черновик'
                         })
 
                     # Поднимаем блокировку и проставляем heartbeat. Один коммит сразу,
