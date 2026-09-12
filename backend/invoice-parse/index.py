@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from parser import parse_invoice
+from matcher import match_rows, summarize
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -164,6 +165,79 @@ def drop_draft(draft_id):
         cur.execute(f"DELETE FROM invoice_drafts WHERE id = {int(draft_id)}")
 
 
+def match_draft(draft_id, product_group=None, search_in_names=False):
+    """Сопоставляет строки черновика с каталогом и сохраняет результат."""
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            f"SELECT rows_data FROM invoice_drafts WHERE id = {int(draft_id)}"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        rows = row[0] or []
+
+        prev = {}
+        for i, r in enumerate(rows):
+            if r.get('match_status') == 'manual' and r.get('product_id'):
+                prev[i] = r['product_id']
+
+        matched = match_rows(cur, rows, product_group, search_in_names)
+
+        for i, pid in prev.items():
+            if i < len(matched):
+                matched[i]['match_status'] = 'manual'
+                matched[i]['product_id'] = pid
+
+        from_names = sum(1 for r in rows if r.get('article_guessed'))
+
+        rows_json = _esc(json.dumps(matched, ensure_ascii=False))
+        cur.execute(
+            f"UPDATE invoice_drafts SET rows_data = '{rows_json}'::jsonb, "
+            f"stage = 'matched', updated_at = NOW(), "
+            f"expires_at = NOW() + INTERVAL '1 hour' WHERE id = {int(draft_id)}"
+        )
+
+    summary = summarize(matched)
+    summary['manual'] = len(prev)
+    summary['matched'] = sum(1 for r in matched if r.get('match_status') == 'matched')
+    return {
+        'rows': matched,
+        'summary': summary,
+        'article_from_name_count': from_names,
+        'search_in_names': search_in_names,
+        'product_group': product_group or '',
+    }
+
+
+def set_row_match(draft_id, row_index, product_id):
+    """Запоминает выбор владельца по одной строке."""
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            f"SELECT rows_data FROM invoice_drafts WHERE id = {int(draft_id)}"
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        rows = row[0] or []
+        if row_index < 0 or row_index >= len(rows):
+            return False
+
+        if product_id:
+            rows[row_index]['product_id'] = int(product_id)
+            rows[row_index]['match_status'] = 'manual'
+        else:
+            rows[row_index].pop('product_id', None)
+            rows[row_index]['match_status'] = 'not_found'
+
+        rows_json = _esc(json.dumps(rows, ensure_ascii=False))
+        cur.execute(
+            f"UPDATE invoice_drafts SET rows_data = '{rows_json}'::jsonb, "
+            f"updated_at = NOW(), expires_at = NOW() + INTERVAL '1 hour' "
+            f"WHERE id = {int(draft_id)}"
+        )
+    return True
+
+
 def handler(event, context):
     """Разбор счёта поставщика из Excel: поиск шапки, опознание колонок, цена = сумма / количество."""
     method = event.get('httpMethod', 'GET')
@@ -222,6 +296,29 @@ def handler(event, context):
             return _resp(400, {'error': 'Не указан черновик'})
         drop_draft(did)
         return _resp(200, {'dropped': True})
+
+    if action == 'match':
+        did = body.get('draft_id')
+        if not did:
+            return _resp(400, {'error': 'Не указан черновик'})
+        res = match_draft(
+            did,
+            product_group=body.get('product_group'),
+            search_in_names=bool(body.get('search_in_names')),
+        )
+        if res is None:
+            return _resp(404, {'error': 'Черновик не найден'})
+        return _resp(200, res)
+
+    if action == 'set_match':
+        did = body.get('draft_id')
+        idx = body.get('row_index')
+        if not did or idx is None:
+            return _resp(400, {'error': 'Не указана строка'})
+        ok = set_row_match(did, int(idx), body.get('product_id'))
+        if not ok:
+            return _resp(404, {'error': 'Строка не найдена'})
+        return _resp(200, {'saved': True})
 
     if action == 'parse':
         file_b64 = body.get('file')

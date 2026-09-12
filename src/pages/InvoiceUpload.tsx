@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import InvoiceMatch from "@/components/invoices/InvoiceMatch";
 
 const INVOICE_URL = "https://functions.poehali.dev/da75537b-bd2c-4bb3-b3ee-5cd90f17c9a2";
 
@@ -90,6 +91,7 @@ const InvoiceUpload = () => {
   const [fileData, setFileData] = useState<{ b64: string; name: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
+  const [matchId, setMatchId] = useState<number | null>(null);
 
   const loadSuppliers = useCallback(async () => {
     try {
@@ -297,6 +299,11 @@ const InvoiceUpload = () => {
   };
 
   const goBack = () => {
+    if (matchId !== null) {
+      setMatchId(null);
+      loadDrafts();
+      return;
+    }
     if (result) {
       reset();
       return;
@@ -343,7 +350,10 @@ const InvoiceUpload = () => {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        {showPicker && (
+        {matchId !== null && (
+          <InvoiceMatch draftId={matchId} onBack={() => setMatchId(null)} />
+        )}
+        {matchId === null && showPicker && (
           <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
             <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-card p-6">
               <h2 className="text-lg font-semibold mb-1">Чей счёт?</h2>
@@ -389,7 +399,7 @@ const InvoiceUpload = () => {
           </div>
         )}
 
-        {!showPicker && !result && drafts.length > 0 && (
+        {matchId === null && !showPicker && !result && drafts.length > 0 && (
           <div className="mb-6">
             <p className="text-sm font-medium mb-3">Незавершённые счета</p>
             <div className="space-y-2">
@@ -416,6 +426,9 @@ const InvoiceUpload = () => {
                   <Button size="sm" onClick={() => openDraft(d.id)}>
                     Продолжить
                   </Button>
+                  <Button size="sm" variant="outline" onClick={() => setMatchId(d.id)}>
+                    Сопоставить
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => removeDraft(d.id)}>
                     Убрать
                   </Button>
@@ -433,7 +446,7 @@ const InvoiceUpload = () => {
           </div>
         )}
 
-        {!showPicker && !result && drafts.length === 0 && !loading && (
+        {matchId === null && !showPicker && !result && drafts.length === 0 && !loading && (
           <div
             onClick={() => fileRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -462,7 +475,7 @@ const InvoiceUpload = () => {
           </div>
         )}
 
-        {result && st && (
+        {matchId === null && result && st && (
           <div className="space-y-4">
             <div className="rounded-xl border border-white/[0.08] bg-card p-4">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
@@ -580,9 +593,15 @@ const InvoiceUpload = () => {
                 {savedId ? "Сохранено" : saving ? "Сохраняю..." : "Всё верно, сохранить"}
               </Button>
               {savedId && (
-                <span className="text-sm text-emerald-400">
-                  Черновик зафиксирован, раскладка запомнена
-                </span>
+                <>
+                  <Button variant="outline" onClick={() => setMatchId(savedId)}>
+                    <Icon name="Search" size={16} />
+                    <span className="ml-2">Сопоставить с каталогом</span>
+                  </Button>
+                  <span className="text-sm text-emerald-400">
+                    Черновик зафиксирован, раскладка запомнена
+                  </span>
+                </>
               )}
             </div>
           </div>
