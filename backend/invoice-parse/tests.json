@@ -1,0 +1,29 @@
+{
+  "tests": [
+    {
+      "name": "Служба отвечает",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Список поставщиков",
+      "method": "GET",
+      "path": "/?action=suppliers",
+      "expectedStatus": 200,
+      "expectedBody": {"suppliers": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Разбор без файла отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "parse"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
