@@ -28,7 +28,7 @@ const JOURNAL_TABS = [
 
 const INVOICE_TABS = [
   { key: "overview", label: "Общее", content: invOverview },
-  { key: "parse", label: "1. Разбор счёта", content: invParse },
+  { key: "parse", label: "1. Разбор счёта ✓", content: invParse },
   { key: "match", label: "2. Сопоставление", content: invMatch },
   { key: "create", label: "3. Создание карточек", content: invCreate },
   { key: "prices", label: "4. Цены на сайте", content: invPrices },
