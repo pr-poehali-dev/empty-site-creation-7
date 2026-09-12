@@ -43,6 +43,16 @@ interface Item {
   price_mismatch: boolean;
 }
 
+interface Draft {
+  id: number;
+  file_name: string;
+  rows_count: number;
+  total_sum: number;
+  supplier_name: string | null;
+  supplier_id: number | null;
+  updated_at: string;
+}
+
 interface ParseResult {
   header_index: number;
   header_signature: string;
@@ -68,7 +78,10 @@ const InvoiceUpload = () => {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplier, setSupplier] = useState<Supplier | null>(null);
-  const [showPicker, setShowPicker] = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftId, setDraftId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -88,12 +101,29 @@ const InvoiceUpload = () => {
     }
   }, [toast]);
 
+  const loadDrafts = useCallback(async () => {
+    try {
+      const r = await fetch(`${INVOICE_URL}?action=drafts`);
+      const d = await r.json();
+      if (r.ok) {
+        const list: Draft[] = d.drafts || [];
+        setDrafts(list);
+        if (list.length === 0) setShowPicker(true);
+      }
+    } catch {
+      setShowPicker(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (user.role !== "owner") {
-      navigate("/admin");
+      navigate("/admin/dashboard");
       return;
     }
     loadSuppliers();
+    loadDrafts();
   }, []);
 
   if (user.role !== "owner") return null;
@@ -122,6 +152,56 @@ const InvoiceUpload = () => {
     }
   };
 
+  const openDraft = async (id: number) => {
+    try {
+      const r = await fetch(`${INVOICE_URL}?action=draft&id=${id}`);
+      const d = await r.json();
+      if (!r.ok) {
+        toast({ title: d.error || "Черновик недоступен", variant: "destructive" });
+        loadDrafts();
+        return;
+      }
+      const dr = d.draft;
+      const items: Item[] = dr.rows_data || [];
+      setSupplier(
+        dr.supplier_id
+          ? { id: dr.supplier_id, name: dr.supplier_name || "", layouts: 0 }
+          : null,
+      );
+      setDraftId(dr.id);
+      setResult({
+        header_index: 0,
+        header_signature: dr.header_signature || "",
+        mapping: dr.mapping || {},
+        columns: [],
+        items,
+        layout_used: false,
+        file_name: dr.file_name || "",
+        stats: {
+          total: items.length,
+          guessed_article: items.filter((i) => i.article_guessed).length,
+          no_article: items.filter((i) => !i.article).length,
+          price_mismatch: items.filter((i) => i.price_mismatch).length,
+          no_price: items.filter((i) => i.price === null).length,
+        },
+      });
+      setSavedId(dr.id);
+    } catch {
+      toast({ title: "Не удалось открыть черновик", variant: "destructive" });
+    }
+  };
+
+  const removeDraft = async (id: number) => {
+    await fetch(INVOICE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "drop_draft", draft_id: id }),
+    });
+    const rest = drafts.filter((d) => d.id !== id);
+    setDrafts(rest);
+    if (rest.length === 0) setShowPicker(true);
+  };
+
   const parseFile = async (b64: string, name: string, mapping?: Record<string, number>) => {
     setParsing(true);
     try {
@@ -143,6 +223,7 @@ const InvoiceUpload = () => {
       }
       setResult(d);
       setSavedId(null);
+      if (!mapping) setDraftId(null);
     } catch {
       toast({ title: "Ошибка разбора", variant: "destructive" });
     } finally {
@@ -189,6 +270,7 @@ const InvoiceUpload = () => {
           header_signature: result.header_signature,
           file_name: result.file_name,
           items: result.items,
+          draft_id: draftId,
         }),
       });
       const d = await r.json();
@@ -197,6 +279,7 @@ const InvoiceUpload = () => {
         return;
       }
       setSavedId(d.draft_id);
+      setDraftId(d.draft_id);
       toast({ title: `Счёт разобран: ${d.saved} строк` });
       loadSuppliers();
     } finally {
@@ -208,16 +291,41 @@ const InvoiceUpload = () => {
     setResult(null);
     setFileData(null);
     setSavedId(null);
+    setDraftId(null);
+    loadDrafts();
     setShowPicker(true);
   };
 
+  const goBack = () => {
+    if (result) {
+      reset();
+      return;
+    }
+    if (showPicker && drafts.length > 0) {
+      setShowPicker(false);
+      return;
+    }
+    navigate("/admin/dashboard");
+  };
+
   const st = result?.stats;
+  const sumOf = (items: Item[]) =>
+    items.reduce((acc, i) => acc + (i.total ?? 0), 0);
+  const money = (v: number) =>
+    v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const ago = (iso: string) => {
+    const m = Math.floor((Date.now() - new Date(iso + "Z").getTime()) / 60000);
+    if (m < 1) return "только что";
+    if (m < 60) return `${m} мин назад`;
+    return `${Math.floor(m / 60)} ч назад`;
+  };
 
   return (
     <div className="min-h-screen">
       <header className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
+          <Button variant="ghost" size="icon" onClick={goBack}>
             <Icon name="ArrowLeft" size={20} />
           </Button>
           <div className="flex-1">
@@ -281,7 +389,51 @@ const InvoiceUpload = () => {
           </div>
         )}
 
-        {!showPicker && !result && (
+        {!showPicker && !result && drafts.length > 0 && (
+          <div className="mb-6">
+            <p className="text-sm font-medium mb-3">Незавершённые счета</p>
+            <div className="space-y-2">
+              {drafts.map((d) => (
+                <div
+                  key={d.id}
+                  className="rounded-xl border border-white/[0.08] bg-card p-4 flex flex-wrap items-center gap-3"
+                >
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="font-medium">
+                      {d.supplier_name || "Без поставщика"}
+                      <span className="text-muted-foreground font-normal">
+                        {" "}· {d.file_name}
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {d.rows_count} строк · на сумму{" "}
+                      <span className="text-foreground font-medium">
+                        {money(d.total_sum)} ₽
+                      </span>{" "}
+                      · {ago(d.updated_at)}
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={() => openDraft(d.id)}>
+                    Продолжить
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => removeDraft(d.id)}>
+                    Убрать
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => setShowPicker(true)}
+            >
+              <Icon name="Plus" size={16} className="mr-1" />
+              Загрузить новый счёт
+            </Button>
+          </div>
+        )}
+
+        {!showPicker && !result && drafts.length === 0 && !loading && (
           <div
             onClick={() => fileRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -315,6 +467,10 @@ const InvoiceUpload = () => {
             <div className="rounded-xl border border-white/[0.08] bg-card p-4">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                 <span className="font-medium">Строк: {st.total}</span>
+                <span className="font-medium">
+                  Сумма счёта:{" "}
+                  <span className="text-cyan-400">{money(sumOf(result.items))} ₽</span>
+                </span>
                 {result.layout_used && (
                   <span className="text-emerald-400">Раскладка узнана</span>
                 )}
@@ -337,6 +493,7 @@ const InvoiceUpload = () => {
               </div>
             </div>
 
+            {result.columns.length > 0 && (
             <div className="rounded-xl border border-white/[0.08] bg-card p-4">
               <p className="text-sm font-medium mb-3">
                 Колонки — поправьте, если понял неверно
@@ -361,6 +518,7 @@ const InvoiceUpload = () => {
                 ))}
               </div>
             </div>
+            )}
 
             <div className="rounded-xl border border-white/[0.08] bg-card overflow-hidden">
               <div className="overflow-x-auto">

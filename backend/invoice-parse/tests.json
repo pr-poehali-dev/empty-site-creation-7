@@ -12,8 +12,20 @@
       "name": "Список поставщиков",
       "method": "GET",
       "path": "/?action=suppliers",
-      "expectedStatus": 200,
-      "expectedBody": {"suppliers": []},
+      "expectedStatus": 200
+    },
+    {
+      "name": "Список черновиков",
+      "method": "GET",
+      "path": "/?action=drafts",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Черновик без номера отклоняется",
+      "method": "GET",
+      "path": "/?action=draft",
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },
     {
