@@ -61,6 +61,14 @@ interface Product {
   category_name: string;
   images: ProductImage[];
   barcodes: string[];
+  nomenclature_kind?: string | null;
+  nomenclature_type?: string | null;
+  writeoff_method?: string | null;
+  unit?: string | null;
+  vat_rate?: string | null;
+  weight_gross?: number | null;
+  weight_net?: number | null;
+  tnved_code?: string | null;
 }
 
 interface PendingImage {
@@ -113,6 +121,10 @@ const Catalog = () => {
   const [formBrand, setFormBrand] = useState("");
   const [formSupplierCode, setFormSupplierCode] = useState("");
   const [formProductGroup, setFormProductGroup] = useState("");
+  const [formVatRate, setFormVatRate] = useState("");
+  const [formWeightGross, setFormWeightGross] = useState("");
+  const [formWeightNet, setFormWeightNet] = useState("");
+  const [formTnvedCode, setFormTnvedCode] = useState("");
   const [formCategoryId, setFormCategoryId] = useState("");
   const [formPriceBase, setFormPriceBase] = useState("");
   const [formPriceRetail, setFormPriceRetail] = useState("");
@@ -449,6 +461,10 @@ const Catalog = () => {
     setFormBrand("");
     setFormSupplierCode("");
     setFormProductGroup("");
+    setFormVatRate("");
+    setFormWeightGross("");
+    setFormWeightNet("");
+    setFormTnvedCode("");
     setFormCategoryId("");
     setFormPriceBase("");
     setFormPriceRetail("");
@@ -476,6 +492,10 @@ const Catalog = () => {
     setFormPriceRetail(product.price_retail != null ? String(product.price_retail) : "");
     setFormPriceWholesale(product.price_wholesale != null ? String(product.price_wholesale) : "");
     setFormPricePurchase(product.price_purchase != null ? String(product.price_purchase) : "");
+    setFormVatRate(product.vat_rate || "");
+    setFormWeightGross(product.weight_gross != null ? String(product.weight_gross) : "");
+    setFormWeightNet(product.weight_net != null ? String(product.weight_net) : "");
+    setFormTnvedCode(product.tnved_code || "");
     setFormBarcodes(Array.isArray(product.barcodes) ? [...product.barcodes] : []);
     setFormImages([]);
     setExistingImages([...product.images]);
@@ -584,6 +604,10 @@ const Catalog = () => {
         brand: formBrand.trim() || null,
         supplier_code: formSupplierCode.trim() || null,
         product_group: formProductGroup.trim() || null,
+        vat_rate: formVatRate || null,
+        weight_gross: formWeightGross ? Number(formWeightGross) : null,
+        weight_net: formWeightNet ? Number(formWeightNet) : null,
+        tnved_code: formTnvedCode.trim() || null,
         price_base: formPriceBase ? Number(formPriceBase) : null,
         price_retail: formPriceRetail ? Number(formPriceRetail) : null,
         price_wholesale: formPriceWholesale ? Number(formPriceWholesale) : null,
@@ -1093,6 +1117,65 @@ const Catalog = () => {
                   )}
                 </div>
               </div>
+            </div>
+            <div className="rounded-xl border border-white/[0.08] p-3 space-y-3">
+              <div className="text-sm font-medium text-muted-foreground">Реквизиты 1С</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">Ставка НДС</label>
+                  <select
+                    value={formVatRate}
+                    onChange={(e) => setFormVatRate(e.target.value)}
+                    disabled={isFieldDisabled("vat_rate")}
+                    className="w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-sm"
+                  >
+                    <option value="">Не указана</option>
+                    <option value="22">22</option>
+                    <option value="Без НДС">Без НДС</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">Код ТНВЭД</label>
+                  <Input
+                    value={formTnvedCode}
+                    onChange={(e) => setFormTnvedCode(e.target.value)}
+                    disabled={isFieldDisabled("tnved_code")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">Вес брутто, кг</label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    value={formWeightGross}
+                    onChange={(e) => setFormWeightGross(e.target.value)}
+                    disabled={isFieldDisabled("weight_gross")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">Вес нетто, кг</label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    value={formWeightNet}
+                    onChange={(e) => setFormWeightNet(e.target.value)}
+                    disabled={isFieldDisabled("weight_net")}
+                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
+                  />
+                </div>
+              </div>
+              {editingProduct && (
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground pt-1">
+                  <div>Вид: {editingProduct.nomenclature_kind || "Товары"}</div>
+                  <div>Тип: {editingProduct.nomenclature_type || "Запас"}</div>
+                  <div>Списание: {editingProduct.writeoff_method || "FIFO"}</div>
+                  <div>Единица: {editingProduct.unit || "шт"}</div>
+                </div>
+              )}
             </div>
             {editingProduct?.external_id && (
               <div className="space-y-2">
