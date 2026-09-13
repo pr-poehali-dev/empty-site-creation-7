@@ -4,6 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -745,7 +751,6 @@ const Catalog = () => {
               >
                 <Icon name="Plus" size={16} />
                 <span className="ml-1 hidden sm:inline">Добавить товар</span>
-                <span className="ml-1 sm:hidden">Добавить</span>
               </Button>
             )}
             {canEdit && (
@@ -759,14 +764,25 @@ const Catalog = () => {
                 <span className="ml-1 hidden sm:inline">{showArchive ? "Каталог" : "Архив"}</span>
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/catalog/new")} title="Новые товары в каталоге">
-              <Icon name="Sparkles" size={16} />
-            </Button>
-            {isOwner && (
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/catalog/upload")} title="Загрузить из каталога поставщика">
-                <Icon name="FileUp" size={16} />
-              </Button>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                  <Icon name="EllipsisVertical" size={18} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60 rounded-xl border-white/[0.08] bg-card">
+                <DropdownMenuItem onClick={() => navigate("/admin/catalog/new")} className="gap-2 cursor-pointer">
+                  <Icon name="Sparkles" size={16} />
+                  Новые товары
+                </DropdownMenuItem>
+                {isOwner && (
+                  <DropdownMenuItem onClick={() => navigate("/admin/catalog/upload")} className="gap-2 cursor-pointer">
+                    <Icon name="FileUp" size={16} />
+                    Загрузить из каталога поставщика
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
