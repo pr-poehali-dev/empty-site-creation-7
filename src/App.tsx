@@ -12,6 +12,7 @@ import AuthorizeManager from "./pages/AuthorizeManager";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import Catalog from "./pages/Catalog";
 import CatalogNewProducts from "./pages/CatalogNewProducts";
+import CatalogUpload from "./pages/CatalogUpload";
 import WholesaleOrders from "./pages/WholesaleOrders";
 import Receipts from "./pages/Receipts";
 import OrderPayments from "./pages/OrderPayments";
@@ -81,6 +82,7 @@ const App = () => (
           <Route path="/admin/manager" element={<NotForWholesaler><ManagerDashboard /></NotForWholesaler>} />
           <Route path="/admin/catalog" element={<NotForWholesaler><Catalog /></NotForWholesaler>} />
           <Route path="/admin/catalog/new" element={<NotForWholesaler><CatalogNewProducts /></NotForWholesaler>} />
+          <Route path="/admin/catalog/upload" element={<NotForWholesaler><CatalogUpload /></NotForWholesaler>} />
           <Route path="/admin/orders" element={<NotForWholesaler><WholesaleOrders /></NotForWholesaler>} />
           <Route path="/admin/receipts" element={<NotForWholesaler><Receipts /></NotForWholesaler>} />
           <Route path="/admin/orders/:orderId/payments" element={<NotForWholesaler><OrderPayments /></NotForWholesaler>} />

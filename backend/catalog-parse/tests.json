@@ -1,0 +1,31 @@
+{
+  "tests": [
+    {
+      "name": "Служба отвечает",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Поставщики без прав владельца отклоняются",
+      "method": "GET",
+      "path": "/?action=suppliers",
+      "expectedStatus": 403
+    },
+    {
+      "name": "Разбор без прав владельца отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "parse"},
+      "expectedStatus": 403
+    },
+    {
+      "name": "Неизвестный метод отклоняется",
+      "method": "PUT",
+      "path": "/",
+      "expectedStatus": 403
+    }
+  ]
+}

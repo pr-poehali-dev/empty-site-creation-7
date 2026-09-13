@@ -762,6 +762,11 @@ const Catalog = () => {
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/catalog/new")} title="Новые товары в каталоге">
               <Icon name="Sparkles" size={16} />
             </Button>
+            {isOwner && (
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate("/admin/catalog/upload")} title="Загрузить из каталога поставщика">
+                <Icon name="FileUp" size={16} />
+              </Button>
+            )}
           </div>
         </div>
       </header>
