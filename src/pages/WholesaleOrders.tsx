@@ -29,6 +29,7 @@ interface Order {
   payment_status: string;
   paid_amount: number;
   is_restored: boolean;
+  has_zero_price?: boolean;
 }
 
 const statusLabels: Record<string, { label: string; className: string }> = {
@@ -52,6 +53,7 @@ const WholesaleOrders = () => {
   const { toast } = useToast();
   const isOwner = user.role === "owner";
   const canCreate = true;
+  const canPriceList = isOwner || user.role_name === "Управляющий";
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -71,6 +73,21 @@ const WholesaleOrders = () => {
   };
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [drafts, setDrafts] = useState<Order[]>([]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const toggleSelected = (id: number) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+
+  const goPriceList = () => {
+    navigate("/admin/orders/price-list", {
+      state: { orderIds: Array.from(selected) },
+    });
+  };
 
   const fetchOrders = useCallback(async (archived = false) => {
     setLoading(true);
@@ -164,6 +181,26 @@ const WholesaleOrders = () => {
             <h1 className="text-lg font-semibold">Заявки</h1>
           </div>
           <div className="flex items-center gap-2">
+            {canPriceList && (
+              <button
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                  selectMode
+                    ? "bg-primary/20 text-primary"
+                    : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
+                }`}
+                onClick={() => {
+                  if (selectMode) {
+                    setSelectMode(false);
+                    setSelected(new Set());
+                  } else {
+                    setSelectMode(true);
+                  }
+                }}
+              >
+                <Icon name="FileText" size={14} className="inline mr-1" />
+                Прайс
+              </button>
+            )}
             <button
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
                 showArchive
@@ -189,6 +226,20 @@ const WholesaleOrders = () => {
       </header>
 
       <main className="max-w-4xl mx-auto w-full px-4 py-6 flex-1">
+        {selectMode && (
+          <div className="mb-4 p-3 rounded-xl border border-primary/30 bg-primary/10 flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-sm">
+              <span className="font-medium text-primary">Выбрано: {selected.size}</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Отметьте заявки или соберите прайс по периоду и фирмам
+              </p>
+            </div>
+            <Button className="h-9" onClick={goPriceList}>
+              <Icon name="ArrowRight" size={16} />
+              <span className="ml-1">Далее</span>
+            </Button>
+          </div>
+        )}
         {drafts.length > 0 && (
           <div className="mb-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
             <div className="text-sm font-medium text-yellow-400 mb-2">Незавершённые заявки</div>
@@ -232,9 +283,22 @@ const WholesaleOrders = () => {
                       ? "border bg-purple-500/5 border-purple-500/15"
                       : "border bg-card border-white/[0.08]"
                   }`}
-                  onClick={() => openOrder(`/admin/orders/${order.id}/edit`)}
+                  onClick={() =>
+                    selectMode
+                      ? toggleSelected(order.id)
+                      : openOrder(`/admin/orders/${order.id}/edit`)
+                  }
                 >
                   <div className="flex items-start justify-between gap-2">
+                    {selectMode && (
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5 mt-0.5 flex-shrink-0 accent-primary"
+                        checked={selected.has(order.id)}
+                        onChange={() => toggleSelected(order.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs text-muted-foreground font-mono flex-shrink-0">#{order.id}</span>

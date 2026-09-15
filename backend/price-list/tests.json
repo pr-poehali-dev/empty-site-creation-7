@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Без токена — отказ",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Сборка прайса без токена — отказ",
+      "method": "POST",
+      "path": "/",
+      "body": {"order_ids": [1]},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

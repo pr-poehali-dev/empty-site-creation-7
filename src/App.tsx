@@ -14,6 +14,7 @@ import Catalog from "./pages/Catalog";
 import CatalogNewProducts from "./pages/CatalogNewProducts";
 import CatalogUpload from "./pages/CatalogUpload";
 import WholesaleOrders from "./pages/WholesaleOrders";
+import PriceList from "./pages/PriceList";
 import Receipts from "./pages/Receipts";
 import OrderPayments from "./pages/OrderPayments";
 import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
@@ -86,6 +87,7 @@ const App = () => (
           <Route path="/admin/orders" element={<NotForWholesaler><WholesaleOrders /></NotForWholesaler>} />
           <Route path="/admin/receipts" element={<NotForWholesaler><Receipts /></NotForWholesaler>} />
           <Route path="/admin/orders/:orderId/payments" element={<NotForWholesaler><OrderPayments /></NotForWholesaler>} />
+          <Route path="/admin/orders/price-list" element={<NotForWholesaler><PriceList /></NotForWholesaler>} />
           <Route path="/admin/orders/create" element={<NotForWholesaler><OrderCreatePage /></NotForWholesaler>} />
           <Route path="/admin/orders/:id/edit" element={<NotForWholesaler><OrderCreatePage /></NotForWholesaler>} />
           <Route path="/admin/orders/unknown-barcode/:barcode" element={<NotForWholesaler><UnknownBarcodePage /></NotForWholesaler>} />
