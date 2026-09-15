@@ -89,6 +89,42 @@ def collect_order_ids(cur, params):
     return [r[0] for r in cur.fetchall()]
 
 
+def firms_of_orders(cur, order_ids):
+    if not order_ids:
+        return []
+    placeholders = ','.join(str(int(i)) for i in order_ids)
+    cur.execute(
+        f"""SELECT DISTINCT o.customer_name FROM wholesale_orders o
+            WHERE o.id IN ({placeholders})
+              AND o.customer_name IS NOT NULL AND o.customer_name <> ''
+            ORDER BY o.customer_name"""
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+def firms_title(firms, limit=3):
+    if not firms:
+        return ''
+    if len(firms) <= limit:
+        return ', '.join(firms)
+    return ', '.join(firms[:limit]) + f" и ещё {len(firms) - limit}"
+
+
+def safe_filename_part(firms, limit=3):
+    if not firms:
+        return ''
+    chosen = firms[:limit]
+    cleaned = []
+    for f in chosen:
+        part = ''.join(ch for ch in f if ch.isalnum() or ch in ' -_').strip().replace(' ', '-')
+        if part:
+            cleaned.append(part[:20])
+    if not cleaned:
+        return ''
+    tail = f"-и-ещё-{len(firms) - limit}" if len(firms) > limit else ''
+    return '_'.join(cleaned) + tail
+
+
 def build_price(cur, order_ids):
     if not order_ids:
         return [], []
@@ -161,7 +197,7 @@ def build_price(cur, order_ids):
     return priced, zero
 
 
-def make_excel(priced, zero):
+def make_excel(priced, zero, firms):
     wb = Workbook()
     ws = wb.active
     ws.title = "Прайс-лист"
@@ -177,8 +213,10 @@ def make_excel(priced, zero):
     ws.column_dimensions['D'].width = 50
     ws.column_dimensions['E'].width = 14
 
-    ws['A1'] = "Прайс-лист"
+    title = firms_title(firms)
+    ws['A1'] = f"Прайс-лист: {title}" if title else "Прайс-лист"
     ws['A1'].font = Font(bold=True, size=13)
+    ws.merge_cells('A1:E1')
     ws['A2'] = f"Сформирован {datetime.now().strftime('%d.%m.%Y')}"
     ws['A2'].font = Font(size=10, color='666666')
 
@@ -266,20 +304,22 @@ def handler(event: dict, context) -> dict:
 
     body = json.loads(event.get('body') or '{}')
     order_ids = collect_order_ids(cur, body)
+    used_firms = firms_of_orders(cur, order_ids)
     priced, zero = build_price(cur, order_ids)
 
     if body.get('format') == 'xlsx':
-        file_b64 = make_excel(priced, zero)
+        file_b64 = make_excel(priced, zero, used_firms)
         cur.close(); conn.close()
-        return json_resp(200, {
-            'file': file_b64,
-            'filename': f"Прайс-лист_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
-        })
+        date_part = datetime.now().strftime('%d-%m-%Y')
+        firm_part = safe_filename_part(used_firms)
+        name = f"Прайс-лист_{firm_part}_{date_part}.xlsx" if firm_part else f"Прайс-лист_{date_part}.xlsx"
+        return json_resp(200, {'file': file_b64, 'filename': name})
 
     cur.close(); conn.close()
     return json_resp(200, {
         'items': priced,
         'zero_items': zero,
         'orders_count': len(order_ids),
+        'firms_used': used_firms,
         'total': len(priced) + len(zero),
     })

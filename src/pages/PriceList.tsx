@@ -38,6 +38,7 @@ const PriceList = () => {
   const [items, setItems] = useState<PriceItem[]>([]);
   const [zeroItems, setZeroItems] = useState<PriceItem[]>([]);
   const [ordersCount, setOrdersCount] = useState(0);
+  const [firmsUsed, setFirmsUsed] = useState<string[]>([]);
   const [built, setBuilt] = useState(false);
 
   const authHeaders = {
@@ -78,6 +79,7 @@ const PriceList = () => {
         setItems(data.items || []);
         setZeroItems(data.zero_items || []);
         setOrdersCount(data.orders_count || 0);
+        setFirmsUsed(data.firms_used || []);
         setBuilt(true);
       } else {
         toast({ title: "Ошибка", description: data.error, variant: "destructive" });
@@ -247,9 +249,16 @@ const PriceList = () => {
         {built && (
           <div className="mt-6">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-              <p className="text-sm text-muted-foreground">
-                Товаров {items.length + zeroItems.length}, из заявок {ordersCount}
-              </p>
+              <div className="min-w-0">
+                {firmsUsed.length > 0 && (
+                  <p className="font-semibold text-sm mb-0.5">
+                    Прайс-лист: {firmsUsed.join(", ")}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Товаров {items.length + zeroItems.length}, из заявок {ordersCount}
+                </p>
+              </div>
               {items.length + zeroItems.length > 0 && (
                 <Button variant="outline" className="h-9" onClick={downloadExcel} disabled={downloading}>
                   {downloading ? (
