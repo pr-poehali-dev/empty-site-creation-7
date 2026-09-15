@@ -214,10 +214,12 @@ const WholesaleOrders = () => {
             </button>
             {canCreate && (
               <DebugBadge id="Orders:createBtn">
-                <Button className="h-9" onClick={() => navigate("/admin/orders/create")}>
+                <Button
+                  className="h-9 w-9 p-0 sm:w-auto sm:px-4"
+                  onClick={() => navigate("/admin/orders/create")}
+                >
                   <Icon name="Plus" size={16} />
                   <span className="ml-1 hidden sm:inline">Создать заявку</span>
-                  <span className="ml-1 sm:hidden">Создать</span>
                 </Button>
               </DebugBadge>
             )}
