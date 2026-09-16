@@ -1,0 +1,198 @@
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import Icon from "@/components/ui/icon";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+const FILES_URL = "https://functions.poehali.dev/fadb6c3a-c3a7-4774-8ca7-f5cc8f53b3e1";
+
+interface ConvertedFile {
+  id: number;
+  title: string;
+  description: string;
+  file_url: string;
+  file_name: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+const ConvertedFiles = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const token = localStorage.getItem("auth_token") || "";
+
+  const [files, setFiles] = useState<ConvertedFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<ConvertedFile | null>(null);
+
+  const authHeaders = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+
+  const fetchFiles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(FILES_URL, { headers: authHeaders });
+      const data = await resp.json();
+      if (resp.ok) setFiles(data.files || []);
+      else toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось загрузить список", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      const resp = await fetch(`${FILES_URL}?id=${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      if (resp.ok) {
+        toast({ title: "Файл удалён" });
+        setDeleteTarget(null);
+        fetchFiles();
+      } else {
+        const data = await resp.json();
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось удалить", variant: "destructive" });
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return "";
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  };
+
+  const formatDate = (s: string) => {
+    const d = new Date(s);
+    return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <header className="border-b border-white/[0.08] bg-card flex-shrink-0">
+        <div className="max-w-3xl mx-auto flex items-center gap-2 px-4 py-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={() => navigate("/admin/dashboard")}
+          >
+            <Icon name="ArrowLeft" size={18} />
+          </Button>
+          <h1 className="text-lg font-semibold">Конвертация файлов</h1>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto w-full px-4 py-6 flex-1">
+        <div className="mb-4 p-3 rounded-xl border border-white/[0.08] bg-white/[0.02]">
+          <p className="text-sm text-muted-foreground">
+            Пришлите файл в чат разработчику и опишите, что с ним сделать. Обработанный
+            файл появится в этом списке.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Icon name="Loader2" size={24} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : files.length === 0 ? (
+          <div className="text-center py-12">
+            <Icon name="FileSpreadsheet" size={48} className="text-muted-foreground mx-auto mb-3" />
+            <p className="text-muted-foreground">Пока нет обработанных файлов</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {files.map((f) => (
+              <div
+                key={f.id}
+                className="rounded-xl border border-white/[0.08] bg-card p-3 sm:p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Icon name="FileSpreadsheet" size={18} className="text-green-400 flex-shrink-0" />
+                      <p className="font-medium text-sm sm:text-base truncate">{f.title}</p>
+                    </div>
+                    {f.description && (
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                        {f.description}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatDate(f.created_at)}
+                      {f.size_bytes ? ` · ${formatSize(f.size_bytes)}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <a
+                      href={f.file_url}
+                      download={f.file_name}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+                    >
+                      <Icon name="Download" size={16} />
+                    </a>
+                    <button
+                      className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-destructive/20 transition-colors"
+                      onClick={() => setDeleteTarget(f)}
+                    >
+                      <Icon name="Trash2" size={16} className="text-destructive" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+      >
+        <AlertDialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить файл?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Файл «{deleteTarget?.title}» будет удалён безвозвратно. Это действие нельзя
+              отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+};
+
+export default ConvertedFiles;

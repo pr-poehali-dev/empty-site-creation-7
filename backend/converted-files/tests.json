@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Список без токена — отказ",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Удаление без токена — отказ",
+      "method": "DELETE",
+      "path": "/?id=1",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
