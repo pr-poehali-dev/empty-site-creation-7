@@ -7,7 +7,7 @@ import boto3
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Authorization',
     'Access-Control-Max-Age': '86400',
 }
@@ -113,6 +113,37 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         cur.close(); conn.close()
         return json_resp(200, {'id': new_id, 'file_url': url})
+
+    if method == 'PUT':
+        params = event.get('queryStringParameters') or {}
+        file_id = params.get('id')
+        if not file_id:
+            cur.close(); conn.close()
+            return json_resp(400, {'error': 'Не указан id файла'})
+
+        body = json.loads(event.get('body') or '{}')
+        cur.execute(f"SELECT title, file_name FROM converted_files WHERE id = {int(file_id)}")
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return json_resp(404, {'error': 'Файл не найден'})
+
+        old_title, old_name = row
+        title = (body.get('title') or '').strip() or old_title
+        file_name = (body.get('file_name') or '').strip() or old_name
+
+        old_ext = os.path.splitext(old_name)[1]
+        if old_ext and not file_name.lower().endswith(old_ext.lower()):
+            file_name = os.path.splitext(file_name)[0] + old_ext
+
+        cur.execute(
+            f"""UPDATE converted_files
+                SET title = '{esc(title)}', file_name = '{esc(file_name)}'
+                WHERE id = {int(file_id)}"""
+        )
+        conn.commit()
+        cur.close(); conn.close()
+        return json_resp(200, {'title': title, 'file_name': file_name})
 
     if method == 'DELETE':
         params = event.get('queryStringParameters') or {}

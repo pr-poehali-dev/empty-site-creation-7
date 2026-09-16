@@ -3,6 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -129,6 +137,10 @@ const ConvertedFiles = () => {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<ConvertedFile | null>(null);
   const [tab, setTab] = useState<"files" | "manual">("files");
+  const [editTarget, setEditTarget] = useState<ConvertedFile | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editName, setEditName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -177,6 +189,36 @@ const ConvertedFiles = () => {
       }
     } catch {
       toast({ title: "Ошибка", description: "Не удалось удалить", variant: "destructive" });
+    }
+  };
+
+  const openEdit = (f: ConvertedFile) => {
+    setEditTarget(f);
+    setEditTitle(f.title);
+    setEditName(f.file_name);
+  };
+
+  const saveEdit = async () => {
+    if (!editTarget) return;
+    setSaving(true);
+    try {
+      const resp = await fetch(`${FILES_URL}?id=${editTarget.id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({ title: editTitle, file_name: editName }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Название изменено" });
+        setEditTarget(null);
+        fetchFiles();
+      } else {
+        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось сохранить", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -286,6 +328,12 @@ const ConvertedFiles = () => {
                       <Icon name="Download" size={16} />
                     </a>
                     <button
+                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+                      onClick={() => openEdit(f)}
+                    >
+                      <Icon name="Pencil" size={16} />
+                    </button>
+                    <button
                       className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-destructive/20 transition-colors"
                       onClick={() => setDeleteTarget(f)}
                     >
@@ -300,6 +348,35 @@ const ConvertedFiles = () => {
           </>
         )}
       </main>
+
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null); }}>
+        <DialogContent className="rounded-2xl border-white/[0.08] bg-card">
+          <DialogHeader>
+            <DialogTitle>Переименовать</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Название в списке</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Имя файла при скачивании</label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <p className="text-xs text-muted-foreground mt-1">
+                Расширение подставится само, если его убрать
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setEditTarget(null)}>
+              Отмена
+            </Button>
+            <Button className="rounded-xl" onClick={saveEdit} disabled={saving}>
+              {saving ? <Icon name="Loader2" size={16} className="animate-spin" /> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={!!deleteTarget}
