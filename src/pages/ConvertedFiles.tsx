@@ -26,6 +26,95 @@ interface ConvertedFile {
   created_at: string;
 }
 
+const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div className="rounded-xl border border-white/[0.08] bg-card p-4">
+    <h2 className="font-semibold text-sm mb-2">{title}</h2>
+    <div className="text-sm text-muted-foreground space-y-2 leading-relaxed">{children}</div>
+  </div>
+);
+
+const Manual = () => (
+  <div className="space-y-3">
+    <div className="rounded-xl border border-primary/30 bg-primary/10 p-4">
+      <p className="text-sm">
+        Эта вкладка — памятка для Юры. Когда владелец пишет «зайди на страницу
+        Конвертация файлов и прочти инструкцию» — Юра читает текст ниже, затем просит
+        у владельца файл и спрашивает, что с ним нужно сделать.
+      </p>
+    </div>
+
+    <Section title="Зачем эта страница">
+      <p>
+        Владелец присылает файл в чат и словами описывает, что с ним сделать. Юра
+        обрабатывает файл и выкладывает результат в этот список. Владелец скачивает
+        готовый файл отсюда в любой момент и с любого устройства, а ненужное удаляет
+        сам.
+      </p>
+      <p>
+        Формат любой: таблицы Excel и CSV, документы Word и PDF, текстовые файлы,
+        картинки, архивы. Ограничение только одно — задача должна быть выполнима
+        обработкой файла, а не ручным трудом.
+      </p>
+    </Section>
+
+    <Section title="Что делать Юре">
+      <p>1. Прочитать эту инструкцию целиком, включая раздел с правилами.</p>
+      <p>2. Попросить у владельца файл и уточнить задачу, если она не описана.</p>
+      <p>
+        3. Если задача совпадает с готовым правилом ниже — применить его, не
+        переспрашивая условия заново.
+      </p>
+      <p>
+        4. Обработать файл через Bash, сохранить результат в папку{" "}
+        <code className="text-xs bg-white/[0.06] px-1 rounded">public/converted/</code>,
+        затем добавить запись в таблицу{" "}
+        <code className="text-xs bg-white/[0.06] px-1 rounded">converted_files</code>{" "}
+        миграцией. После этого файл появится в списке.
+      </p>
+      <p>
+        5. Если появилось новое повторяющееся правило обработки — дописать его в раздел
+        ниже, чтобы владельцу не пришлось объяснять дважды.
+      </p>
+    </Section>
+
+    <Section title="Где что лежит">
+      <p>
+        Страница:{" "}
+        <code className="text-xs bg-white/[0.06] px-1 rounded">src/pages/ConvertedFiles.tsx</code>
+      </p>
+      <p>
+        Функция:{" "}
+        <code className="text-xs bg-white/[0.06] px-1 rounded">backend/converted-files</code>{" "}
+        — список, загрузка, удаление. Доступ только для роли owner.
+      </p>
+      <p>
+        Таблица:{" "}
+        <code className="text-xs bg-white/[0.06] px-1 rounded">converted_files</code>{" "}
+        — название, описание, ссылка на файл, имя файла, ключ хранилища, размер, дата.
+      </p>
+      <p>
+        В поле описания стоит коротко указывать, что именно сделано с файлом — владелец
+        видит это в списке.
+      </p>
+    </Section>
+
+    <Section title="Готовые правила обработки">
+      <div className="rounded-lg border border-white/[0.08] p-3">
+        <p className="font-medium text-foreground text-sm mb-1">Наценка 10%</p>
+        <p>Исходник: таблица из четырёх колонок — артикул, наименование, серийный номер, цена.</p>
+        <p>Колонки 1, 2 и 3 не менять.</p>
+        <p>Цену умножить на 1.1 и округлить всегда вверх до целого рубля.</p>
+        <p>Служебные строки под таблицей товаров убрать полностью.</p>
+        <p>Внизу колонки цены — строка «ИТОГО» с суммой по новым ценам.</p>
+      </div>
+      <p className="text-xs pt-1">
+        Новые правила Юра дописывает сюда сам, как только задача повторяется во второй
+        раз.
+      </p>
+    </Section>
+  </div>
+);
+
 const ConvertedFiles = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -34,6 +123,14 @@ const ConvertedFiles = () => {
   const [files, setFiles] = useState<ConvertedFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<ConvertedFile | null>(null);
+  const [tab, setTab] = useState<"files" | "manual">("files");
+
+  const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
+  const isOwner = user.role === "owner";
+
+  useEffect(() => {
+    if (!isOwner) navigate("/admin/dashboard");
+  }, [isOwner, navigate]);
 
   const authHeaders = {
     "Content-Type": "application/json",
@@ -107,6 +204,35 @@ const ConvertedFiles = () => {
       </header>
 
       <main className="max-w-3xl mx-auto w-full px-4 py-6 flex-1">
+        <div className="flex gap-2 mb-4">
+          <button
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === "files"
+                ? "bg-primary/20 text-primary"
+                : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
+            }`}
+            onClick={() => setTab("files")}
+          >
+            <Icon name="Files" size={14} className="inline mr-1" />
+            Файлы
+          </button>
+          <button
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === "manual"
+                ? "bg-primary/20 text-primary"
+                : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]"
+            }`}
+            onClick={() => setTab("manual")}
+          >
+            <Icon name="BookOpen" size={14} className="inline mr-1" />
+            Инструкция
+          </button>
+        </div>
+
+        {tab === "manual" ? (
+          <Manual />
+        ) : (
+          <>
         <div className="mb-4 p-3 rounded-xl border border-white/[0.08] bg-white/[0.02]">
           <p className="text-sm text-muted-foreground">
             Пришлите файл в чат разработчику и опишите, что с ним сделать. Обработанный
@@ -165,6 +291,8 @@ const ConvertedFiles = () => {
               </div>
             ))}
           </div>
+        )}
+          </>
         )}
       </main>
 
