@@ -106,7 +106,15 @@ async function serveFile(url) {
   }
   if (target.protocol !== "https:") return forbidden();
 
-  const name = decodeURIComponent(url.pathname.replace("/file/", "")) || "file";
+  const nParam = url.searchParams.get("n") || "";
+  let name = decodeURIComponent(url.pathname.replace("/file/", "")) || "file";
+  if (nParam) {
+    try {
+      name = decodeURIComponent(escape(fromB64Url(nParam))) || name;
+    } catch (err) {
+      /* оставляем имя из адреса */
+    }
+  }
   const upstream = await fetch(target.toString(), {
     headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*" },
   });
