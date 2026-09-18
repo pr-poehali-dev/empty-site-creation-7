@@ -27,9 +27,68 @@ function forbidden() {
   return new Response("Forbidden", { status: 403 });
 }
 
+function fromB64Url(value) {
+  const pad = value.replace(/-/g, "+").replace(/_/g, "/");
+  return atob(pad + "=".repeat((4 - (pad.length % 4)) % 4));
+}
+
+async function signPart(data) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(PROXY_KEY),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, enc.encode(data));
+  return [...new Uint8Array(mac)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function serveFile(url) {
+  const u = url.searchParams.get("u") || "";
+  const e = url.searchParams.get("e") || "";
+  const s = url.searchParams.get("s") || "";
+  if (!u || !e || !s) return forbidden();
+  if (Number(e) * 1000 < Date.now()) return forbidden();
+  if ((await signPart(u + "." + e)) !== s) return forbidden();
+
+  let target;
+  try {
+    target = new URL(fromB64Url(u));
+  } catch (err) {
+    return forbidden();
+  }
+  if (target.protocol !== "https:") return forbidden();
+
+  const name = decodeURIComponent(url.pathname.replace("/file/", "")) || "file";
+  const upstream = await fetch(target.toString(), {
+    headers: { "User-Agent": "Mozilla/5.0", Accept: "*/*" },
+  });
+  if (!upstream.ok) {
+    return new Response("Upstream " + upstream.status, { status: 502 });
+  }
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      "Content-Type":
+        upstream.headers.get("content-type") || "application/octet-stream",
+      "Content-Disposition":
+        'attachment; filename*=UTF-8\\'\\'' + encodeURIComponent(name),
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 async function relay(request) {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204 });
+  }
+  const fileUrl = new URL(request.url);
+  if (fileUrl.pathname.startsWith("/file/")) {
+    return serveFile(fileUrl);
   }
   if (request.headers.get("x-proxy-key") !== PROXY_KEY) {
     return forbidden();

@@ -4,7 +4,8 @@ import os
 import base64
 import psycopg2
 import boto3
-from tg_transport import tg_call
+from tg_transport import tg_call, _settings
+from file_link import build_proxy_link
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -42,12 +43,28 @@ def esc(value):
 TG_LIMIT = 20 * 1024 * 1024
 
 
-def send_document(cur, chat_id, file_url, caption):
+def proxy_file_link(cur, file_url, file_name):
+    """Ссылка на файл через посредника — Telegram скачивает её напрямую."""
+    s = _settings(cur)
+    key = (s.get('tg_proxy_key') or '').strip()
+    raw = s.get('tg_proxies') or ''
+    bases = [p.strip() for p in raw.split(',') if p.strip()]
+    if not key or not bases:
+        return None
+    return build_proxy_link(bases[0], file_url, file_name, key)
+
+
+def send_document(cur, chat_id, file_url, caption, file_name=''):
     """Отправка файла в Telegram ссылкой — бот скачивает его сам."""
-    payload = {'chat_id': chat_id, 'document': file_url, 'caption': caption[:1000]}
-    result, why = tg_call(cur, 'sendDocument', payload, timeout=3)
-    if result:
-        return True, None
+    link = proxy_file_link(cur, file_url, file_name)
+    urls = [u for u in (link, file_url) if u]
+    why = None
+    for url in urls:
+        payload = {'chat_id': chat_id, 'document': url, 'caption': caption[:1000]}
+        result, err = tg_call(cur, 'sendDocument', payload, timeout=3)
+        if result:
+            return True, None
+        why = err
     return False, why
 
 
@@ -163,7 +180,7 @@ def handler(event: dict, context) -> dict:
             return json_resp(400, {'error': 'Telegram не привязан. Откройте бота и нажмите Старт'})
 
         caption = title or file_name
-        ok, err = send_document(cur, chat[0], file_url, caption)
+        ok, err = send_document(cur, chat[0], file_url, caption, file_name)
         conn.commit()
         cur.close(); conn.close()
         if ok:
