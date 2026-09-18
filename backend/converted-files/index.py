@@ -45,7 +45,7 @@ TG_LIMIT = 20 * 1024 * 1024
 def send_document(cur, chat_id, file_url, caption):
     """Отправка файла в Telegram ссылкой — бот скачивает его сам."""
     payload = {'chat_id': chat_id, 'document': file_url, 'caption': caption[:1000]}
-    result, why = tg_call(cur, 'sendDocument', payload, timeout=25)
+    result, why = tg_call(cur, 'sendDocument', payload, timeout=3)
     if result:
         return True, None
     return False, why
