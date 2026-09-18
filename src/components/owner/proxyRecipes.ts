@@ -21,7 +21,8 @@ export interface Recipe {
   urlHint: string;
 }
 
-const CORE = `const TELEGRAM = "https://api.telegram.org";
+const CORE = `const VERSION = 3;
+const TELEGRAM = "https://api.telegram.org";
 
 function forbidden() {
   return new Response("Forbidden", { status: 403 });
@@ -137,6 +138,11 @@ async function relay(request) {
     return new Response(null, { status: 204 });
   }
   const fileUrl = new URL(request.url);
+  if (fileUrl.pathname === "/version") {
+    return new Response(JSON.stringify({ ok: true, version: VERSION }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (fileUrl.pathname.startsWith("/file/")) {
     return serveFile(fileUrl);
   }
@@ -144,10 +150,13 @@ async function relay(request) {
     return forbidden();
   }
   const url = new URL(request.url);
+  const ct = request.headers.get("content-type") || "application/json";
+  const body =
+    request.method === "GET" ? undefined : await request.arrayBuffer();
   const upstream = await fetch(TELEGRAM + url.pathname + url.search, {
     method: request.method,
-    headers: { "Content-Type": "application/json" },
-    body: request.method === "GET" ? undefined : await request.text(),
+    headers: { "Content-Type": ct },
+    body,
   });
   return new Response(upstream.body, {
     status: upstream.status,
