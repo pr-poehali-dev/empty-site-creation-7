@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const FILES_URL = "https://functions.poehali.dev/fadb6c3a-c3a7-4774-8ca7-f5cc8f53b3e1";
+const TG_LIMIT = 20 * 1024 * 1024;
 
 interface ConvertedFile {
   id: number;
@@ -216,21 +217,20 @@ const ConvertedFiles = () => {
   };
 
   const sendToTelegram = async (f: ConvertedFile) => {
+    if (f.size_bytes > TG_LIMIT) {
+      toast({
+        title: "Файл слишком большой",
+        description: "Telegram не принимает файлы больше 20 МБ. Скачайте его кнопкой рядом.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSendingId(f.id);
     try {
-      const fileResp = await fetch(f.file_url, { cache: "no-store" });
-      const blob = await fileResp.blob();
-      const b64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
       const resp = await fetch(`${FILES_URL}?action=telegram`, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ id: f.id, file: b64 }),
+        body: JSON.stringify({ id: f.id, origin: window.location.origin }),
       });
       const data = await resp.json();
       if (resp.ok) {
@@ -386,9 +386,13 @@ const ConvertedFiles = () => {
                     </button>
                     <button
                       onClick={() => sendToTelegram(f)}
-                      disabled={sendingId === f.id}
-                      title="Отправить в Telegram"
-                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+                      disabled={sendingId === f.id || f.size_bytes > TG_LIMIT}
+                      title={
+                        f.size_bytes > TG_LIMIT
+                          ? "Слишком большой для Telegram — скачайте файл"
+                          : "Отправить в Telegram"
+                      }
+                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors disabled:opacity-30 disabled:hover:bg-white/[0.04]"
                     >
                       <Icon
                         name={sendingId === f.id ? "Loader2" : "Send"}
@@ -412,6 +416,9 @@ const ConvertedFiles = () => {
                 </div>
               </div>
             ))}
+            <p className="text-xs text-muted-foreground pt-1">
+              В Telegram уходят файлы до 20 МБ — более тяжёлые доступны только скачиванием.
+            </p>
           </div>
         )}
           </>

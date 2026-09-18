@@ -39,58 +39,16 @@ def esc(value):
     return str(value).replace("'", "''")
 
 
-def send_document(cur, chat_id, file_name, data, caption):
-    import urllib.request
-    import urllib.error
-    from tg_transport import _routes, DIRECT
+TG_LIMIT = 20 * 1024 * 1024
 
-    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-    if not token:
-        return False, 'Бот не настроен'
 
-    routes, settings = _routes(cur)
-    secret = (settings.get('tg_proxy_key') or '').strip()
-    boundary = '----poehali' + os.urandom(8).hex()
-    crlf = b'\r\n'
-
-    parts = []
-    for key, val in (('chat_id', str(chat_id)), ('caption', caption[:1000])):
-        parts.append(('--' + boundary).encode() + crlf)
-        parts.append(f'Content-Disposition: form-data; name="{key}"'.encode() + crlf + crlf)
-        parts.append(val.encode() + crlf)
-
-    parts.append(('--' + boundary).encode() + crlf)
-    parts.append(
-        f'Content-Disposition: form-data; name="document"; filename="{file_name}"'.encode()
-        + crlf
-    )
-    parts.append(b'Content-Type: application/octet-stream' + crlf + crlf)
-    parts.append(data + crlf)
-    parts.append(('--' + boundary + '--').encode() + crlf)
-    payload = b''.join(parts)
-
-    last_err = None
-    for route in routes[:3]:
-        if route != DIRECT and not secret:
-            continue
-        headers = {'Content-Type': f'multipart/form-data; boundary={boundary}'}
-        if route != DIRECT:
-            headers['X-Proxy-Key'] = secret
-        req = urllib.request.Request(
-            f'{route}/bot{token}/sendDocument', data=payload, headers=headers, method='POST'
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                result = json.loads(resp.read().decode('utf-8', 'replace'))
-            if result.get('ok'):
-                return True, None
-            last_err = str(result.get('description'))[:150]
-        except urllib.error.HTTPError as e:
-            last_err = f'HTTP {e.code}'
-        except Exception as e:
-            last_err = type(e).__name__
-
-    return False, last_err
+def send_document(cur, chat_id, file_url, caption):
+    """Отправка файла в Telegram ссылкой — бот скачивает его сам."""
+    payload = {'chat_id': chat_id, 'document': file_url, 'caption': caption[:1000]}
+    result, why = tg_call(cur, 'sendDocument', payload)
+    if result:
+        return True, None
+    return False, why
 
 
 def get_user_by_token(cur, token):
@@ -172,16 +130,31 @@ def handler(event: dict, context) -> dict:
     if method == 'POST' and (event.get('queryStringParameters') or {}).get('action') == 'telegram':
         body = json.loads(event.get('body') or '{}')
         file_id = body.get('id')
-        content_b64 = body.get('file') or ''
-        if not file_id or not content_b64:
+        if not file_id:
             cur.close(); conn.close()
-            return json_resp(400, {'error': 'Нужен файл'})
+            return json_resp(400, {'error': 'Не указан файл'})
 
-        cur.execute(f"SELECT title, file_name FROM converted_files WHERE id = {int(file_id)}")
+        cur.execute(
+            f"SELECT title, file_name, file_url, size_bytes, s3_key FROM converted_files WHERE id = {int(file_id)}"
+        )
         row = cur.fetchone()
         if not row:
             cur.close(); conn.close()
             return json_resp(404, {'error': 'Файл не найден'})
+
+        title, file_name, file_url, size_bytes, s3_key = row
+        if not file_url.startswith('http'):
+            origin = (body.get('origin') or '').rstrip('/')
+            if not origin.startswith('http'):
+                cur.close(); conn.close()
+                return json_resp(400, {'error': 'Не удалось определить адрес сайта'})
+            file_url = origin + '/' + file_url.lstrip('/')
+
+        if size_bytes and size_bytes > TG_LIMIT:
+            cur.close(); conn.close()
+            return json_resp(400, {
+                'error': 'Файл больше 20 МБ, Telegram такие не принимает. Скачайте его кнопкой рядом'
+            })
 
         cur.execute(f"SELECT telegram_chat_id FROM users WHERE id = {int(user[0])}")
         chat = cur.fetchone()
@@ -189,8 +162,8 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return json_resp(400, {'error': 'Telegram не привязан. Откройте бота и нажмите Старт'})
 
-        data = base64.b64decode(content_b64)
-        ok, err = send_document(cur, chat[0], row[1], data, row[0])
+        caption = title or file_name
+        ok, err = send_document(cur, chat[0], file_url, caption)
         conn.commit()
         cur.close(); conn.close()
         if ok:
