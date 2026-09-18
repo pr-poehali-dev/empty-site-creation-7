@@ -141,6 +141,7 @@ const ConvertedFiles = () => {
   const [editTitle, setEditTitle] = useState("");
   const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -189,6 +190,27 @@ const ConvertedFiles = () => {
       }
     } catch {
       toast({ title: "Ошибка", description: "Не удалось удалить", variant: "destructive" });
+    }
+  };
+
+  const downloadFile = async (f: ConvertedFile) => {
+    setDownloadingId(f.id);
+    try {
+      const resp = await fetch(f.file_url, { cache: "no-store" });
+      if (!resp.ok) throw new Error("bad response");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = f.file_name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch {
+      window.open(f.file_url, "_blank");
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -320,13 +342,17 @@ const ConvertedFiles = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <a
-                      href={f.file_url}
-                      download={f.file_name}
+                    <button
+                      onClick={() => downloadFile(f)}
+                      disabled={downloadingId === f.id}
                       className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
                     >
-                      <Icon name="Download" size={16} />
-                    </a>
+                      <Icon
+                        name={downloadingId === f.id ? "Loader2" : "Download"}
+                        size={16}
+                        className={downloadingId === f.id ? "animate-spin" : ""}
+                      />
+                    </button>
                     <button
                       className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
                       onClick={() => openEdit(f)}
