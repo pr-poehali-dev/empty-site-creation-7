@@ -32,6 +32,49 @@ function fromB64Url(value) {
   return atob(pad + "=".repeat((4 - (pad.length % 4)) % 4));
 }
 
+const TYPES = {
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  xlsm: "application/vnd.ms-excel.sheet.macroEnabled.12",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  csv: "text/csv",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  doc: "application/msword",
+  odt: "application/vnd.oasis.opendocument.text",
+  rtf: "application/rtf",
+  txt: "text/plain",
+  pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ppt: "application/vnd.ms-powerpoint",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+  heic: "image/heic",
+  zip: "application/zip",
+  rar: "application/vnd.rar",
+  "7z": "application/x-7z-compressed",
+  gz: "application/gzip",
+  tar: "application/x-tar",
+  json: "application/json",
+  xml: "application/xml",
+  html: "text/html",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  avi: "video/x-msvideo",
+};
+
+function typeByName(name, fallback) {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  return TYPES[ext] || fallback || "application/octet-stream";
+}
+
 async function signPart(data) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -73,8 +116,7 @@ async function serveFile(url) {
   return new Response(upstream.body, {
     status: 200,
     headers: {
-      "Content-Type":
-        upstream.headers.get("content-type") || "application/octet-stream",
+      "Content-Type": typeByName(name, upstream.headers.get("content-type")),
       "Content-Disposition":
         'attachment; filename*=UTF-8\\'\\'' + encodeURIComponent(name),
       "Cache-Control": "no-store",
