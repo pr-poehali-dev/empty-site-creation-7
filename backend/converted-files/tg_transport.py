@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import socket
@@ -123,12 +124,32 @@ def humanize(err):
     return HUMAN.get(err, err)
 
 
-def _call(route, token, method, payload, secret, timeout=None):
+def _multipart(fields, file_field, file_name, file_bytes, file_type):
+    boundary = '----tgform' + hashlib.md5(os.urandom(8)).hexdigest()
+    out = bytearray()
+    for k, v in fields.items():
+        out += f'--{boundary}\r\n'.encode()
+        out += f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode()
+        out += str(v).encode() + b'\r\n'
+    out += f'--{boundary}\r\n'.encode()
+    disp = f'Content-Disposition: form-data; name="{file_field}"; filename="{file_name}"\r\n'
+    out += disp.encode('utf-8')
+    out += f'Content-Type: {file_type}\r\n\r\n'.encode()
+    out += file_bytes + b'\r\n'
+    out += f'--{boundary}--\r\n'.encode()
+    return bytes(out), f'multipart/form-data; boundary={boundary}'
+
+
+def _call(route, token, method, payload, secret, timeout=None, upload=None):
     if route != DIRECT and not secret:
         raise NoProxyKey(NO_KEY_MSG)
     url = f'{route}/bot{token}/{method}'
-    data = json.dumps(payload).encode()
-    headers = {'Content-Type': 'application/json'}
+    if upload:
+        data, ctype = _multipart(payload, *upload)
+        headers = {'Content-Type': ctype}
+    else:
+        data = json.dumps(payload).encode()
+        headers = {'Content-Type': 'application/json'}
     if route != DIRECT:
         headers['X-Proxy-Key'] = secret
     req = urllib.request.Request(url, data=data, headers=headers, method='POST')
@@ -145,7 +166,7 @@ def _call(route, token, method, payload, secret, timeout=None):
             raise NotAProxy(BAD_ANSWER_MSG)
 
 
-def tg_call(cur, method, payload, token=None, timeout=None):
+def tg_call(cur, method, payload, token=None, timeout=None, upload=None):
     """Вызов Telegram API: перебирает пути, пока какой-нибудь не ответит.
 
     Возвращает (result, route) при успехе или (None, None) при полном отказе.
@@ -160,7 +181,7 @@ def tg_call(cur, method, payload, token=None, timeout=None):
 
     for route in routes[:MAX_TRIES]:
         try:
-            result = _call(route, token, method, payload, secret, timeout)
+            result = _call(route, token, method, payload, secret, timeout, upload)
             if result.get('ok'):
                 _mark(cur, route, True)
                 return result, route

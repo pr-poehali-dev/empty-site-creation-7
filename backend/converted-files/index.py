@@ -2,6 +2,7 @@
 import json
 import os
 import base64
+import urllib.request
 import psycopg2
 import boto3
 from tg_transport import tg_call, _settings
@@ -54,17 +55,75 @@ def proxy_file_link(cur, file_url, file_name):
     return build_proxy_link(bases[0], file_url, file_name, key)
 
 
-def send_document(cur, chat_id, file_url, caption, file_name=''):
-    """Отправка файла в Telegram ссылкой — бот скачивает его сам."""
-    link = proxy_file_link(cur, file_url, file_name)
-    urls = [u for u in (link, file_url) if u]
+MIME = {
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'xls': 'application/vnd.ms-excel',
+    'csv': 'text/csv',
+    'ods': 'application/vnd.oasis.opendocument.spreadsheet',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'doc': 'application/msword',
+    'odt': 'application/vnd.oasis.opendocument.text',
+    'rtf': 'application/rtf',
+    'txt': 'text/plain',
+    'pdf': 'application/pdf',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+    'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml',
+    'zip': 'application/zip', 'rar': 'application/vnd.rar',
+    '7z': 'application/x-7z-compressed',
+    'json': 'application/json', 'xml': 'application/xml',
+}
+
+
+def mime_of(name):
+    ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    return MIME.get(ext, 'application/octet-stream')
+
+
+def load_bytes(file_url, s3_key):
+    if s3_key:
+        try:
+            data = get_s3().get_object(Bucket='files', Key=s3_key)['Body'].read()
+            print(f'[tg] s3 ok key={s3_key} bytes={len(data)}')
+            return data
+        except Exception as e:
+            print(f'[tg] s3 fail key={s3_key} err={type(e).__name__}: {e}')
+    try:
+        req = urllib.request.Request(file_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = resp.read()
+        print(f'[tg] http ok url={file_url} bytes={len(data)}')
+        return data
+    except Exception as e:
+        print(f'[tg] http fail url={file_url} err={type(e).__name__}: {e}')
+    return None
+
+
+def send_document(cur, chat_id, file_url, caption, file_name='', s3_key=None):
+    """Отправка файла в Telegram: сами шлём байты, Telegram ничего не качает."""
     why = None
-    for url in urls:
-        payload = {'chat_id': chat_id, 'document': url, 'caption': caption[:1000]}
-        result, err = tg_call(cur, 'sendDocument', payload, timeout=3)
+    data = load_bytes(file_url, s3_key)
+
+    if data:
+        payload = {'chat_id': chat_id, 'caption': caption[:1000]}
+        upload = ('document', file_name or 'file', data, mime_of(file_name))
+        result, err = tg_call(cur, 'sendDocument', payload, timeout=20, upload=upload)
+        print(f'[tg] upload result={bool(result)} err={err}')
         if result:
             return True, None
         why = err
+    else:
+        why = 'Не удалось прочитать файл'
+
+    link = proxy_file_link(cur, file_url, file_name)
+    for url in [u for u in (link, file_url) if u]:
+        payload = {'chat_id': chat_id, 'document': url, 'caption': caption[:1000]}
+        result, err = tg_call(cur, 'sendDocument', payload, timeout=10)
+        print(f'[tg] bylink result={bool(result)} err={err} url={url[:120]}')
+        if result:
+            return True, None
+        why = err or why
     return False, why
 
 
@@ -180,7 +239,7 @@ def handler(event: dict, context) -> dict:
             return json_resp(400, {'error': 'Telegram не привязан. Откройте бота и нажмите Старт'})
 
         caption = title or file_name
-        ok, err = send_document(cur, chat[0], file_url, caption, file_name)
+        ok, err = send_document(cur, chat[0], file_url, caption, file_name, s3_key)
         conn.commit()
         cur.close(); conn.close()
         if ok:
