@@ -4,6 +4,7 @@ import os
 import base64
 import psycopg2
 import boto3
+from tg_transport import tg_call
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -36,6 +37,60 @@ def json_resp(status, body):
 
 def esc(value):
     return str(value).replace("'", "''")
+
+
+def send_document(cur, chat_id, file_name, data, caption):
+    import urllib.request
+    import urllib.error
+    from tg_transport import _routes, DIRECT
+
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not token:
+        return False, 'Бот не настроен'
+
+    routes, settings = _routes(cur)
+    secret = (settings.get('tg_proxy_key') or '').strip()
+    boundary = '----poehali' + os.urandom(8).hex()
+    crlf = b'\r\n'
+
+    parts = []
+    for key, val in (('chat_id', str(chat_id)), ('caption', caption[:1000])):
+        parts.append(('--' + boundary).encode() + crlf)
+        parts.append(f'Content-Disposition: form-data; name="{key}"'.encode() + crlf + crlf)
+        parts.append(val.encode() + crlf)
+
+    parts.append(('--' + boundary).encode() + crlf)
+    parts.append(
+        f'Content-Disposition: form-data; name="document"; filename="{file_name}"'.encode()
+        + crlf
+    )
+    parts.append(b'Content-Type: application/octet-stream' + crlf + crlf)
+    parts.append(data + crlf)
+    parts.append(('--' + boundary + '--').encode() + crlf)
+    payload = b''.join(parts)
+
+    last_err = None
+    for route in routes[:3]:
+        if route != DIRECT and not secret:
+            continue
+        headers = {'Content-Type': f'multipart/form-data; boundary={boundary}'}
+        if route != DIRECT:
+            headers['X-Proxy-Key'] = secret
+        req = urllib.request.Request(
+            f'{route}/bot{token}/sendDocument', data=payload, headers=headers, method='POST'
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                result = json.loads(resp.read().decode('utf-8', 'replace'))
+            if result.get('ok'):
+                return True, None
+            last_err = str(result.get('description'))[:150]
+        except urllib.error.HTTPError as e:
+            last_err = f'HTTP {e.code}'
+        except Exception as e:
+            last_err = type(e).__name__
+
+    return False, last_err
 
 
 def get_user_by_token(cur, token):
@@ -86,7 +141,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return json_resp(200, {'files': files})
 
-    if method == 'POST':
+    if method == 'POST' and (event.get('queryStringParameters') or {}).get('action') != 'telegram':
         body = json.loads(event.get('body') or '{}')
         title = (body.get('title') or '').strip()
         file_name = (body.get('file_name') or '').strip()
@@ -113,6 +168,34 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         cur.close(); conn.close()
         return json_resp(200, {'id': new_id, 'file_url': url})
+
+    if method == 'POST' and (event.get('queryStringParameters') or {}).get('action') == 'telegram':
+        body = json.loads(event.get('body') or '{}')
+        file_id = body.get('id')
+        content_b64 = body.get('file') or ''
+        if not file_id or not content_b64:
+            cur.close(); conn.close()
+            return json_resp(400, {'error': 'Нужен файл'})
+
+        cur.execute(f"SELECT title, file_name FROM converted_files WHERE id = {int(file_id)}")
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return json_resp(404, {'error': 'Файл не найден'})
+
+        cur.execute(f"SELECT telegram_chat_id FROM users WHERE id = {int(user[0])}")
+        chat = cur.fetchone()
+        if not chat or not chat[0]:
+            cur.close(); conn.close()
+            return json_resp(400, {'error': 'Telegram не привязан. Откройте бота и нажмите Старт'})
+
+        data = base64.b64decode(content_b64)
+        ok, err = send_document(cur, chat[0], row[1], data, row[0])
+        conn.commit()
+        cur.close(); conn.close()
+        if ok:
+            return json_resp(200, {'success': True})
+        return json_resp(500, {'error': err or 'Не удалось отправить'})
 
     if method == 'PUT':
         params = event.get('queryStringParameters') or {}

@@ -142,6 +142,7 @@ const ConvertedFiles = () => {
   const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [sendingId, setSendingId] = useState<number | null>(null);
 
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
@@ -211,6 +212,36 @@ const ConvertedFiles = () => {
       window.open(f.file_url, "_blank");
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const sendToTelegram = async (f: ConvertedFile) => {
+    setSendingId(f.id);
+    try {
+      const fileResp = await fetch(f.file_url, { cache: "no-store" });
+      const blob = await fileResp.blob();
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      const resp = await fetch(`${FILES_URL}?action=telegram`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ id: f.id, file: b64 }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        toast({ title: "Отправлено в Telegram" });
+      } else {
+        toast({ title: "Не отправилось", description: data.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Ошибка", description: "Не удалось отправить", variant: "destructive" });
+    } finally {
+      setSendingId(null);
     }
   };
 
@@ -351,6 +382,18 @@ const ConvertedFiles = () => {
                         name={downloadingId === f.id ? "Loader2" : "Download"}
                         size={16}
                         className={downloadingId === f.id ? "animate-spin" : ""}
+                      />
+                    </button>
+                    <button
+                      onClick={() => sendToTelegram(f)}
+                      disabled={sendingId === f.id}
+                      title="Отправить в Telegram"
+                      className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] transition-colors"
+                    >
+                      <Icon
+                        name={sendingId === f.id ? "Loader2" : "Send"}
+                        size={16}
+                        className={sendingId === f.id ? "animate-spin" : "text-sky-400"}
                       />
                     </button>
                     <button
