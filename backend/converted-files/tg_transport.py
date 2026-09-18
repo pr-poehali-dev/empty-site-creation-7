@@ -123,7 +123,7 @@ def humanize(err):
     return HUMAN.get(err, err)
 
 
-def _call(route, token, method, payload, secret):
+def _call(route, token, method, payload, secret, timeout=None):
     if route != DIRECT and not secret:
         raise NoProxyKey(NO_KEY_MSG)
     url = f'{route}/bot{token}/{method}'
@@ -132,7 +132,7 @@ def _call(route, token, method, payload, secret):
     if route != DIRECT:
         headers['X-Proxy-Key'] = secret
     req = urllib.request.Request(url, data=data, headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as resp:
         raw = resp.read().decode('utf-8', 'replace')
         try:
             return json.loads(raw)
@@ -145,7 +145,7 @@ def _call(route, token, method, payload, secret):
             raise NotAProxy(BAD_ANSWER_MSG)
 
 
-def tg_call(cur, method, payload, token=None):
+def tg_call(cur, method, payload, token=None, timeout=None):
     """Вызов Telegram API: перебирает пути, пока какой-нибудь не ответит.
 
     Возвращает (result, route) при успехе или (None, None) при полном отказе.
@@ -160,7 +160,7 @@ def tg_call(cur, method, payload, token=None):
 
     for route in routes[:MAX_TRIES]:
         try:
-            result = _call(route, token, method, payload, secret)
+            result = _call(route, token, method, payload, secret, timeout)
             if result.get('ok'):
                 _mark(cur, route, True)
                 return result, route
@@ -173,7 +173,13 @@ def tg_call(cur, method, payload, token=None):
             last_err = str(e)
             _mark(cur, route, False, last_err)
         except urllib.error.HTTPError as e:
-            last_err = f'HTTP {e.code}'
+            detail = ''
+            try:
+                raw = e.read().decode('utf-8', 'replace')
+                detail = str(json.loads(raw).get('description', ''))[:180]
+            except Exception:
+                detail = ''
+            last_err = f'HTTP {e.code}: {detail}' if detail else f'HTTP {e.code}'
             _mark(cur, route, False, last_err)
         except Exception as e:
             last_err = type(e).__name__
