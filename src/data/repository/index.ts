@@ -1,8 +1,5 @@
 import { RECIPE_TELEGRAM_AUTH, RECIPE_TELEGRAM_AUTH_TITLE } from "./telegram-auth";
 import { RECIPE_OWNER_DASHBOARD, RECIPE_OWNER_DASHBOARD_TITLE } from "./owner-dashboard";
-import { REPOSITORY_RULE_UPD_1C } from "./upd-1c";
-
-export { REPOSITORY_RULE_UPD_1C };
 
 export const REPOSITORY_RULE = `# Правило для Юры: Публикация рецепта (читать первым)
 

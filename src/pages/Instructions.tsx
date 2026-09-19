@@ -17,7 +17,7 @@ import invPrices from "@/data/invoices/04-prices.md?raw";
 import invExport from "@/data/invoices/05-export.md?raw";
 import invIds from "@/data/invoices/06-ids.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
-import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, REPOSITORY_RULE_UPD_1C, RECIPES, getRecipe } from "@/data/repository";
+import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
 const JOURNAL_TABS = [
   { key: "scanner", label: "Сканер штрихкодов", content: scannerJournal },
@@ -729,9 +729,6 @@ const Instructions = () => {
             </div>
             <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4 sm:p-6">
               <RecipeMarkdown text={REPOSITORY_RULE_CREATE} />
-            </div>
-            <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4 sm:p-6">
-              <RecipeMarkdown text={REPOSITORY_RULE_UPD_1C} />
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
               <h2 className="text-lg font-semibold mb-3">Рецепты</h2>
