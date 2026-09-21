@@ -73,6 +73,11 @@ const call = async (
   } catch {
     throw new Error(`Сервер вернул не JSON (код ${res.status}): ${text.slice(0, 300)}`);
   }
+  if (res.status === 504) {
+    throw new Error(
+      "1С не успела ответить за отведённое время. Документ мог частично создаться — проверьте в 1С перед повторной попыткой.",
+    );
+  }
   if (!res.ok) throw new Error(data.error || `Ошибка запроса, код ${res.status}`);
   return data;
 };

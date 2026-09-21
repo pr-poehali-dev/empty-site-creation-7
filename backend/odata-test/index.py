@@ -298,25 +298,52 @@ def pick(candidates, available, default=None):
     return default
 
 
+def prefetch_countries(cfg, names):
+    """Разом читает все нужные страны одним запросом вместо запроса на строку."""
+    uniq = sorted({(n or '').strip().upper() for n in names if (n or '').strip()})
+    cache = {}
+    chunk = 30
+    for i in range(0, len(uniq), chunk):
+        part = uniq[i:i + chunk]
+        cond = ' or '.join(
+            "toupper(Description) eq '{}'".format(p.replace("'", "''")) for p in part
+        )
+        r = call_odata(cfg, f"Catalog_СтраныМира?$format=json&$select=Ref_Key,Description&$filter={cond}")
+        if not r['ok']:
+            continue
+        for item in r['data'].get('value', []):
+            key = str(item.get('Description') or '').strip().upper()
+            if key:
+                cache[key] = item.get('Ref_Key')
+    return cache
+
+
+def prefetch_gtd(cfg, numbers):
+    """Разом читает все номера ГТД одним запросом."""
+    uniq = sorted({(n or '').strip() for n in numbers if (n or '').strip()})
+    cache = {}
+    chunk = 30
+    for i in range(0, len(uniq), chunk):
+        part = uniq[i:i + chunk]
+        cond = ' or '.join(
+            "Description eq '{}'".format(p.replace("'", "''")) for p in part
+        )
+        r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$select=Ref_Key,Description&$filter={cond}")
+        if not r['ok']:
+            continue
+        for item in r['data'].get('value', []):
+            key = str(item.get('Description') or '').strip()
+            if key:
+                cache[key] = item.get('Ref_Key')
+    return cache
+
+
 def find_country(cfg, name, cache):
     """Ищет страну в справочнике «Страны мира» по названию."""
     key = (name or '').strip().upper()
     if not key:
         return None
-    if key in cache:
-        return cache[key]
-    esc = key.replace("'", "''")
-    r = call_odata(
-        cfg,
-        f"Catalog_СтраныМира?$format=json&$top=1&$filter=toupper(Description) eq '{esc}'"
-    )
-    found = None
-    if r['ok']:
-        rows = r['data'].get('value') or []
-        if rows:
-            found = rows[0].get('Ref_Key')
-    cache[key] = found
-    return found
+    return cache.get(key)
 
 
 def find_or_create_gtd(cfg, number, cache):
@@ -324,18 +351,8 @@ def find_or_create_gtd(cfg, number, cache):
     key = (number or '').strip()
     if not key:
         return None, None
-    if key in cache:
+    if cache.get(key):
         return cache[key], None
-    esc = key.replace("'", "''")
-    r = call_odata(
-        cfg,
-        f"Catalog_НомераГТД?$format=json&$top=1&$filter=Description eq '{esc}'"
-    )
-    if r['ok']:
-        rows = r['data'].get('value') or []
-        if rows:
-            cache[key] = rows[0].get('Ref_Key')
-            return cache[key], None
 
     c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
                    payload={'Description': key})
@@ -377,8 +394,8 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     f_country = pick(COUNTRY_FIELD_NAMES, cols) if is_receipt else None
     f_gtd = pick(GTD_FIELD_NAMES, cols) if is_receipt else None
     f_rnpt = pick(RNPT_FIELD_NAMES, cols) if is_receipt else None
-    country_cache = {}
-    gtd_cache = {}
+    country_cache = prefetch_countries(cfg, [r.get('country') for r in rows]) if f_country else {}
+    gtd_cache = prefetch_gtd(cfg, [r.get('gtd') for r in rows]) if f_gtd else {}
     notes = []
 
     vat_key = str(payload.get('vat_rate') or 'none')
