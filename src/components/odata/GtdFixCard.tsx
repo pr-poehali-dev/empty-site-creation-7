@@ -13,9 +13,11 @@ interface Props {
   problems: ProblemRow[];
   fixes: Record<number, GtdFix>;
   onChange: (fixes: Record<number, GtdFix>) => void;
+  onApply: () => void;
+  busy?: boolean;
 }
 
-const GtdFixCard = ({ problems, fixes, onChange }: Props) => {
+const GtdFixCard = ({ problems, fixes, onChange, onApply, busy }: Props) => {
   const [open, setOpen] = useState(true);
   if (!problems.length) return null;
 
@@ -31,6 +33,10 @@ const GtdFixCard = ({ problems, fixes, onChange }: Props) => {
   };
 
   const done = problems.filter((p) => fixes[p.index]?.country).length;
+  const allDone = problems.every((p) => {
+    const f = fixes[p.index];
+    return f && f.country && (isRussia(f.country) || gtdKind(f.number));
+  });
 
   return (
     <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
@@ -128,6 +134,27 @@ const GtdFixCard = ({ problems, fixes, onChange }: Props) => {
               </div>
             );
           })}
+
+          <div className="pt-1">
+            <Button
+              onClick={onApply}
+              disabled={busy || !allDone}
+              size="sm"
+              className="w-full rounded-lg gap-2"
+            >
+              {busy ? (
+                <Icon name="Loader2" size={15} className="animate-spin" />
+              ) : (
+                <Icon name="Check" size={15} />
+              )}
+              Применить и перепроверить
+            </Button>
+            {!allDone && (
+              <div className="mt-1 text-xs opacity-60">
+                Укажите страну и номер во всех строках
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

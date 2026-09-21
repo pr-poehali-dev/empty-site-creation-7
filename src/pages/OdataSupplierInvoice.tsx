@@ -556,6 +556,8 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       problems={problems}
                       fixes={gtdFixes}
                       onChange={setGtdFixes}
+                      onApply={doMatch}
+                      busy={matchBusy}
                     />
                   </div>
                 )}
