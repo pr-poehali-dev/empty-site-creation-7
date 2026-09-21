@@ -341,7 +341,12 @@ const OdataSupplierInvoice = () => {
               </p>
             )}
             {created && !created.ok && (
-              <ResultBox ok={false} title="1С отказала" details={created.error} />
+              <ResultBox
+                ok={false}
+                title="1С отказала"
+                details={created.error}
+                sent={created.sent_line}
+              />
             )}
             {created?.ok && (
               <ResultBox
@@ -352,6 +357,9 @@ const OdataSupplierInvoice = () => {
                   `Дата: ${created.date?.replace("T", " ")}`,
                   `Строк: ${created.lines}`,
                   `Сумма: ${formatMoney(Number(created.amount))} ₽`,
+                  created.used?.table
+                    ? `Строки записаны в таблицу «${created.used.table}»`
+                    : null,
                   created.used?.number_field
                     ? `Номер поставщика записан в «${created.used.number_field}»`
                     : null,

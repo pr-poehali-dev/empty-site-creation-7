@@ -227,13 +227,60 @@ INCOMING_NUMBER_FIELDS = ['ВходящийНомер', 'НомерВходящ�
 INCOMING_DATE_FIELDS = ['ВходящаяДата', 'ДатаВходящегоДокумента', 'ДатаДокументаПоставщика', 'ВходящийДокументДата']
 
 
-def doc_field_names(cfg, entity):
-    """Читает один существующий документ, чтобы узнать реальные имена реквизитов."""
-    r = call_odata(cfg, f'{entity}?$top=1&$format=json')
+GOODS_TABLE_NAMES = ['Товары', 'ТоварыУслуги', 'Запасы', 'ТоварыИУслуги', 'Номенклатура', 'Состав']
+
+ITEM_FIELD_NAMES = ['Номенклатура_Key', 'Номенклатура']
+QTY_FIELD_NAMES = ['Количество', 'КоличествоУпаковок']
+PRICE_FIELD_NAMES = ['Цена']
+AMOUNT_FIELD_NAMES = ['Сумма']
+VAT_RATE_FIELD_NAMES = ['СтавкаНДС']
+VAT_AMOUNT_FIELD_NAMES = ['СуммаНДС']
+TOTAL_FIELD_NAMES = ['Всего', 'СуммаСНДС']
+
+
+def doc_schema(cfg, entity):
+    """Читает существующий документ вместе с табличными частями, чтобы узнать реальные имена."""
+    tables = [t for t in GOODS_TABLE_NAMES]
+    expand = ','.join(tables)
+    r = call_odata(cfg, f'{entity}?$top=1&$format=json&$expand={expand}')
     if not r['ok']:
-        return []
+        r = call_odata(cfg, f'{entity}?$top=1&$format=json')
+        if not r['ok']:
+            return {'fields': [], 'table': None, 'columns': []}
     rows = r['data'].get('value') or []
-    return list(rows[0].keys()) if rows else []
+    if not rows:
+        return {'fields': [], 'table': None, 'columns': []}
+    doc = rows[0]
+    fields = list(doc.keys())
+
+    table = None
+    columns = []
+    for name in GOODS_TABLE_NAMES:
+        val = doc.get(name)
+        if isinstance(val, list):
+            table = name
+            if val:
+                columns = list(val[0].keys())
+            break
+    if table is None:
+        for name, val in doc.items():
+            if isinstance(val, list) and val and isinstance(val[0], dict):
+                if any('Номенклатура' in k for k in val[0]):
+                    table = name
+                    columns = list(val[0].keys())
+                    break
+    return {'fields': fields, 'table': table, 'columns': columns}
+
+
+def doc_field_names(cfg, entity):
+    return doc_schema(cfg, entity)['fields']
+
+
+def pick(candidates, available, default=None):
+    for c in candidates:
+        if not available or c in available:
+            return c
+    return default
 
 
 def create_supplier_invoice(cfg, payload):
@@ -242,6 +289,27 @@ def create_supplier_invoice(cfg, payload):
     rows = payload.get('rows') or []
     if not rows:
         return {'ok': False, 'error': 'Нет строк товаров'}
+
+    entity = 'Document_СчетНаОплатуПоставщика'
+    schema = doc_schema(cfg, entity)
+    fields = schema['fields']
+    table = schema['table']
+    cols = schema['columns']
+
+    if not table:
+        return {
+            'ok': False,
+            'error': 'Не удалось определить, как называется таблица товаров в документе. '
+                     'Доступные реквизиты: ' + ', '.join(fields[:60]),
+        }
+
+    f_item = pick(ITEM_FIELD_NAMES, cols, 'Номенклатура_Key')
+    f_qty = pick(QTY_FIELD_NAMES, cols, 'Количество')
+    f_price = pick(PRICE_FIELD_NAMES, cols, 'Цена')
+    f_amount = pick(AMOUNT_FIELD_NAMES, cols, 'Сумма')
+    f_vat_rate = pick(VAT_RATE_FIELD_NAMES, cols)
+    f_vat_sum = pick(VAT_AMOUNT_FIELD_NAMES, cols)
+    f_total = pick(TOTAL_FIELD_NAMES, cols)
 
     goods = []
     line = 0
@@ -253,18 +321,21 @@ def create_supplier_invoice(cfg, payload):
         qty = float(r.get('quantity') or 0)
         price = float(r.get('price') or 0)
         amount = round(qty * price, 2)
-        goods.append({
+        row = {
             'LineNumber': str(line),
-            'Номенклатура_Key': key,
-            'Количество': qty,
-            'Цена': price,
-            'Сумма': amount,
-            'СтавкаНДС': 'БезНДС',
-            'СуммаНДС': 0,
-            'Всего': amount,
-        })
+            f_item: key,
+            f_qty: qty,
+            f_price: price,
+            f_amount: amount,
+        }
+        if f_vat_rate:
+            row[f_vat_rate] = 'БезНДС'
+        if f_vat_sum:
+            row[f_vat_sum] = 0
+        if f_total:
+            row[f_total] = amount
+        goods.append(row)
 
-    entity = 'Document_СчетНаОплатуПоставщика'
     doc_date = payload.get('date') or datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
 
     doc = {
@@ -272,14 +343,13 @@ def create_supplier_invoice(cfg, payload):
         'Posted': False,
         'Контрагент_Key': EMPTY_GUID,
         'ДоговорКонтрагента_Key': EMPTY_GUID,
-        'СуммаДокумента': round(sum(g['Всего'] for g in goods), 2),
-        'Запасы': goods,
+        'СуммаДокумента': round(sum(g[f_amount] for g in goods), 2),
+        table: goods,
     }
     if org_key:
         doc['Организация_Key'] = org_key
 
-    fields = doc_field_names(cfg, entity)
-    used = {}
+    used = {'table': table, 'columns': [f_item, f_qty, f_price, f_amount]}
 
     in_number = str(payload.get('incoming_number') or '').strip()
     if in_number:
@@ -304,16 +374,30 @@ def create_supplier_invoice(cfg, payload):
 
     r = call_odata(cfg, f'{entity}?$format=json', method='POST', payload=doc)
     if not r['ok']:
-        return {'ok': False, 'error': r['error'], 'sent_head': {k: v for k, v in doc.items() if k != 'Запасы'},
+        return {'ok': False, 'error': r['error'],
+                'sent_head': {k: v for k, v in doc.items() if k != table},
                 'sent_line': goods[0] if goods else None}
     d = r['data']
+    written = d.get(table)
+    written_count = len(written) if isinstance(written, list) else None
+
+    if written_count == 0:
+        return {
+            'ok': False,
+            'error': f'Документ создался, но строки не записались: 1С приняла таблицу «{table}», '
+                     f'однако вернула её пустой. Проверьте имена колонок: {", ".join(cols[:30]) or "неизвестны"}',
+            'key': d.get('Ref_Key'),
+            'number': d.get('Number'),
+            'sent_line': goods[0],
+        }
+
     return {
         'ok': True,
         'entity': entity,
         'key': d.get('Ref_Key'),
         'number': d.get('Number'),
         'date': d.get('Date'),
-        'lines': len(goods),
+        'lines': written_count if written_count is not None else len(goods),
         'amount': doc['СуммаДокумента'],
         'used': used,
     }
@@ -427,7 +511,7 @@ def handler(event: dict, context) -> dict:
         )})
 
     if action == 'doc_fields':
-        return resp(200, {'fields': doc_field_names(
+        return resp(200, {'schema': doc_schema(
             cfg, params.get('entity') or 'Document_СчетНаОплатуПоставщика'
         )})
 

@@ -29,7 +29,10 @@ export interface CreatedObject {
     number_field?: string;
     date_field?: string;
     fallback?: string;
+    table?: string;
+    columns?: string[];
   };
+  sent_line?: Record<string, unknown>;
 }
 
 const authHeaders = () => ({
