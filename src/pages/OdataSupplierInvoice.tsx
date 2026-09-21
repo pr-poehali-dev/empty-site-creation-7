@@ -166,6 +166,25 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doGtdSchema = async () => {
+    setGtdBusy(true);
+    setGtdError("");
+    try {
+      const r = await odataApi.gtdSchema(base);
+      const f = r.result.number_field;
+      setGtdProgress(
+        (f
+          ? `Номер пишется в реквизит «${f}»`
+          : "Реквизит номера не определён") +
+          `\nРеквизиты справочника: ${(r.result.fields || []).join(", ") || "не прочитаны"}`,
+      );
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doRepairGtd = async () => {
     setGtdBusy(true);
     setGtdError("");
@@ -486,6 +505,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                         Создать номера ГТД
                       </Button>
                       <Button
+                        onClick={doGtdSchema}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2"
+                      >
+                        <Icon name="Info" size={15} />
+                        Показать поля справочника
+                      </Button>
+                      <Button
                         onClick={doRepairGtd}
                         disabled={gtdBusy}
                         size="sm"
@@ -493,13 +522,15 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                         className="rounded-lg gap-2"
                       >
                         <Icon name="Wrench" size={15} />
-                        Починить пустые записи
+                        Убрать пустые записи
                       </Button>
                     </div>
                   </>
                 )}
                 {gtdProgress && (
-                  <div className="text-xs mt-2 opacity-80">{gtdProgress}</div>
+                  <div className="text-xs mt-2 opacity-80 whitespace-pre-wrap break-all">
+                    {gtdProgress}
+                  </div>
                 )}
               </div>
             )}

@@ -2,6 +2,7 @@
 import json
 import os
 import base64
+import re
 import time
 import urllib.request
 import urllib.parse
@@ -322,77 +323,90 @@ def prefetch_countries(cfg, names):
 GTD_NUMBER_FIELDS = ['Номер', 'НомерГТД', 'Code']
 
 
+def entity_fields_from_metadata(cfg, entity_type):
+    """Берёт список реквизитов из описания структуры базы. Работает и на пустом справочнике."""
+    r = call_odata(cfg, f'$metadata', raw=True)
+    if not r['ok']:
+        return []
+    xml = r.get('text') or ''
+    marker = f'EntityType Name="{entity_type}"'
+    start = xml.find(marker)
+    if start == -1:
+        return []
+    end = xml.find('</EntityType>', start)
+    block = xml[start:end if end != -1 else len(xml)]
+    return re.findall(r'<Property Name="([^"]+)"', block)
+
+
 def gtd_schema(cfg):
     """Узнаёт, в каком реквизите справочника «Номера ГТД» лежит сам номер."""
+    fields = []
+    source = 'data'
     r = call_odata(cfg, 'Catalog_НомераГТД?$top=1&$format=json')
-    if not r['ok']:
-        return {'fields': [], 'number_field': None}
-    rows = r['data'].get('value') or []
-    fields = list(rows[0].keys()) if rows else []
+    if r['ok']:
+        rows = r['data'].get('value') or []
+        if rows:
+            fields = list(rows[0].keys())
+
+    if not fields:
+        source = 'metadata'
+        fields = entity_fields_from_metadata(cfg, 'Catalog_НомераГТД')
+
     number_field = pick(GTD_NUMBER_FIELDS, fields)
-    return {'fields': fields, 'number_field': number_field}
+    if not number_field and fields:
+        number_field = next(
+            (f for f in fields if 'Номер' in f or f == 'Code' or f == 'Description'),
+            None,
+        )
+    return {'fields': fields, 'number_field': number_field, 'source': source}
 
 
 def gtd_payload(number, number_field):
-    body = {'Description': number}
-    if number_field and number_field != 'Description':
+    body = {}
+    if number_field:
         body[number_field] = number
     return body
 
 
 def repair_gtd(cfg, budget=18.0):
-    """Заполняет номер у пустых записей справочника, созданных по ошибке. Ничего не удаляет."""
+    """Ищет записи с пустым номером и помечает их на удаление. Ничего не создаёт."""
     started = time.time()
     sch = gtd_schema(cfg)
     f_number = sch['number_field']
-    if not f_number or f_number == 'Description':
-        return {'ok': False, 'error': 'Не найден отдельный реквизит номера — чинить нечего',
+    if not f_number:
+        return {'ok': False, 'error': 'Не найден реквизит номера',
                 'fields': sch['fields']}
 
     r = call_odata(
         cfg,
         f"Catalog_НомераГТД?$format=json&$top=200"
-        f"&$select=Ref_Key,Description,{f_number}"
-        f"&$filter={f_number} eq ''"
+        f"&$select=Ref_Key,{f_number}&$filter={f_number} eq ''"
     )
     if not r['ok']:
-        return {'ok': False, 'error': r['error']}
+        return {'ok': False, 'error': r['error'], 'number_field': f_number}
 
     rows = r['data'].get('value') or []
-    fixed = 0
     marked = 0
     errors = []
     for item in rows:
         if time.time() - started > budget:
             break
         key = item.get('Ref_Key')
-        name = str(item.get('Description') or '').strip()
         if not key:
             continue
-        if name:
-            u = call_odata(cfg, f"Catalog_НомераГТД(guid'{key}')?$format=json",
-                           method='PATCH', payload={f_number: name})
-            if u['ok']:
-                fixed += 1
-            else:
-                errors.append(f'{name}: {u["error"]}')
-                if len(errors) >= 3:
-                    break
+        u = call_odata(cfg, f"Catalog_НомераГТД(guid'{key}')?$format=json",
+                       method='PATCH', payload={'DeletionMark': True})
+        if u['ok']:
+            marked += 1
         else:
-            u = call_odata(cfg, f"Catalog_НомераГТД(guid'{key}')?$format=json",
-                           method='PATCH', payload={'DeletionMark': True})
-            if u['ok']:
-                marked += 1
-            else:
-                errors.append(f'пустая запись {key}: {u["error"]}')
-                if len(errors) >= 3:
-                    break
+            errors.append(u['error'])
+            break
 
     return {
         'ok': True,
         'number_field': f_number,
         'found': len(rows),
-        'fixed': fixed,
+        'fixed': 0,
         'marked': marked,
         'more': len(rows) >= 200,
         'errors': errors,
@@ -406,29 +420,22 @@ def prefetch_gtd(cfg, numbers, number_field=None):
     if not uniq:
         return cache
     f_num = number_field if number_field is not None else gtd_schema(cfg)['number_field']
-    sel = 'Ref_Key,Description'
-    if f_num and f_num != 'Description':
-        sel += f',{f_num}'
+    if not f_num:
+        return cache
+    sel = f'Ref_Key,{f_num}'
     chunk = 30
     for i in range(0, len(uniq), chunk):
         part = uniq[i:i + chunk]
-        conds = []
-        for pnum in part:
-            esc = pnum.replace("'", "''")
-            conds.append(f"Description eq '{esc}'")
-            if f_num and f_num != 'Description':
-                conds.append(f"{f_num} eq '{esc}'")
-        cond = ' or '.join(conds)
+        cond = ' or '.join(
+            "{} eq '{}'".format(f_num, pnum.replace("'", "''")) for pnum in part
+        )
         r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$filter={cond}")
         if not r['ok']:
             continue
         for item in r['data'].get('value', []):
-            for fld in ('Description', f_num):
-                if not fld:
-                    continue
-                key = str(item.get(fld) or '').strip()
-                if key and key not in cache:
-                    cache[key] = item.get('Ref_Key')
+            key = str(item.get(f_num) or '').strip()
+            if key and key not in cache:
+                cache[key] = item.get('Ref_Key')
     return cache
 
 
@@ -459,7 +466,14 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
     if not uniq:
         return {'ok': True, 'created': 0, 'remaining': [], 'errors': []}
 
-    f_number = gtd_schema(cfg)['number_field']
+    sch = gtd_schema(cfg)
+    f_number = sch['number_field']
+    if not f_number:
+        return {
+            'ok': False,
+            'error': 'Не удалось понять, в какой реквизит писать номер ГТД. '
+                     'Реквизиты справочника: ' + (', '.join(sch['fields'][:40]) or 'не прочитаны'),
+        }
     existing = prefetch_gtd(cfg, uniq, f_number)
     created = 0
     skipped = 0
