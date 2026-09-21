@@ -274,16 +274,18 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     try {
       while (queue.length) {
         setGtdProgress(`Создано ${done} из ${total}`);
-        const r = await odataApi.createGtd(base, queue);
+        const portion = queue.slice(0, 40);
+        const rest = queue.slice(40);
+        const r = await odataApi.createGtd(base, portion);
         done += r.result.created || 0;
-        const next: string[] = r.result.remaining || [];
+        const next: string[] = [...(r.result.remaining || []), ...rest];
         queue = next;
         setGtdMissing(next);
         if (!r.result.ok) {
           setGtdError(r.result.error || "1С отказала");
           break;
         }
-        if (next.length && !r.result.created) {
+        if ((r.result.remaining || []).length && !r.result.created) {
           setGtdError("1С не создаёт номера — остановился, чтобы не плодить записи");
           break;
         }
