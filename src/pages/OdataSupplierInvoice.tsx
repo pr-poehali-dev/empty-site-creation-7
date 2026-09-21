@@ -156,7 +156,8 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           const miss: string[] = [];
           const bad: string[] = [];
           let exist = 0;
-          const gStep = 300;
+          let readErr = "";
+          const gStep = 40;
           for (let i = 0; i < nums.length; i += gStep) {
             setMatchProgress(
               `Номера ГТД: ${Math.min(i + gStep, nums.length)} из ${nums.length}`,
@@ -165,7 +166,9 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             exist += g.result.existing || 0;
             miss.push(...(g.result.missing || []));
             bad.push(...(g.result.unknown || []));
+            if (g.result.error) readErr = g.result.error;
           }
+          setGtdError(readErr);
           setGtdExisting(exist);
           setGtdMissing(miss);
           setGtdUnknown(bad);

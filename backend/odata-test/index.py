@@ -489,8 +489,8 @@ def repair_gtd(cfg, budget=18.0):
     }
 
 
-def prefetch_gtd(cfg, numbers, number_field=None):
-    """Читает номера ГТД пачками. Ищет и по наименованию, и по реквизиту номера."""
+def prefetch_gtd(cfg, numbers, number_field=None, errors=None):
+    """Читает номера ГТД пачками. Ищет и по реквизиту номера, и по коду."""
     uniq = sorted({(n or '').strip() for n in numbers if (n or '').strip()})
     cache = {}
     if not uniq:
@@ -498,35 +498,45 @@ def prefetch_gtd(cfg, numbers, number_field=None):
     f_num = number_field if number_field is not None else gtd_schema(cfg)['number_field']
     if not f_num:
         return cache
-    sel = f'Ref_Key,{f_num}'
-    chunk = 30
+    sel = f'Ref_Key,Code,{f_num}'
+    chunk = 8
     for i in range(0, len(uniq), chunk):
         part = uniq[i:i + chunk]
         cond = ' or '.join(
-            "{} eq '{}'".format(f_num, pnum.replace("'", "''")) for pnum in part
+            "{} eq '{}' or Code eq '{}'".format(
+                f_num, pnum.replace("'", "''"), pnum.replace("'", "''")
+            )
+            for pnum in part
         )
         r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$filter={cond}")
         if not r['ok']:
+            if errors is not None and len(errors) < 3:
+                errors.append(r['error'])
             continue
         for item in r['data'].get('value', []):
-            key = str(item.get(f_num) or '').strip()
-            if key and key not in cache:
-                cache[key] = item.get('Ref_Key')
+            for key in (str(item.get(f_num) or '').strip(),
+                        str(item.get('Code') or '').strip()):
+                if key and key not in cache:
+                    cache[key] = item.get('Ref_Key')
     return cache
 
 
 def check_gtd(cfg, numbers):
     """Проверяет, какие номера ГТД уже есть в справочнике. Страница шлёт порциями."""
     uniq = sorted({str(n or '').strip() for n in numbers if str(n or '').strip()})
-    cache = prefetch_gtd(cfg, uniq)
+    read_errors = []
+    cache = prefetch_gtd(cfg, uniq, errors=read_errors)
     missing = [n for n in uniq if not cache.get(n) and gtd_kind(n) is not None]
     unknown = [n for n in uniq if gtd_kind(n) is None]
     return {
-        'ok': True,
+        'ok': not read_errors,
         'checked': len(uniq),
         'existing': len([n for n in uniq if cache.get(n)]),
         'missing': missing,
         'unknown': unknown,
+        'read_errors': read_errors,
+        'error': ('Часть справочника не прочиталась: ' + read_errors[0])
+                 if read_errors else None,
     }
 
 
