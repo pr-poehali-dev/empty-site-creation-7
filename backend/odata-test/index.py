@@ -2,6 +2,7 @@
 import json
 import os
 import base64
+import time
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -183,7 +184,7 @@ def find_product(cfg, article):
 
 
 def match_products(cfg, rows):
-    """Ищет товары по артикулу, затем по штрихкоду. Возвращает результат по каждой строке."""
+    """Ищет товары по артикулу. Страница передаёт строки порциями."""
     articles = [str(r.get('article') or '').strip() for r in rows]
     unique = sorted({a for a in articles if a})
 
@@ -338,29 +339,72 @@ def prefetch_gtd(cfg, numbers):
     return cache
 
 
+def check_gtd(cfg, numbers):
+    """Проверяет, какие номера ГТД уже есть в справочнике. Страница шлёт порциями."""
+    uniq = sorted({str(n or '').strip() for n in numbers if str(n or '').strip()})
+    cache = prefetch_gtd(cfg, uniq)
+    missing = [n for n in uniq if not cache.get(n)]
+    return {
+        'ok': True,
+        'checked': len(uniq),
+        'existing': len(uniq) - len(missing),
+        'missing': missing,
+    }
+
+
+def create_gtd_batch(cfg, numbers, budget=18.0):
+    """Создаёт недостающие номера ГТД, сколько успеет за отведённое время."""
+    started = time.time()
+    uniq = []
+    seen = set()
+    for n in numbers:
+        key = str(n or '').strip()
+        if key and key not in seen:
+            seen.add(key)
+            uniq.append(key)
+
+    if not uniq:
+        return {'ok': True, 'created': 0, 'remaining': [], 'errors': []}
+
+    existing = prefetch_gtd(cfg, uniq)
+    created = 0
+    skipped = 0
+    errors = []
+    remaining = []
+
+    for idx, key in enumerate(uniq):
+        if existing.get(key):
+            skipped += 1
+            continue
+        if time.time() - started > budget:
+            remaining = [k for k in uniq[idx:] if not existing.get(k)]
+            break
+        c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
+                       payload={'Description': key})
+        if c['ok']:
+            created += 1
+        else:
+            errors.append(f'{key}: {c["error"]}')
+            if len(errors) >= 5:
+                remaining = [k for k in uniq[idx + 1:] if not existing.get(k)]
+                break
+
+    return {
+        'ok': True,
+        'created': created,
+        'already': skipped,
+        'remaining': remaining,
+        'done': not remaining,
+        'errors': errors,
+    }
+
+
 def find_country(cfg, name, cache):
     """Ищет страну в справочнике «Страны мира» по названию."""
     key = (name or '').strip().upper()
     if not key:
         return None
     return cache.get(key)
-
-
-def find_or_create_gtd(cfg, number, cache):
-    """Ищет номер ГТД, при отсутствии — создаёт новый элемент справочника."""
-    key = (number or '').strip()
-    if not key:
-        return None, None
-    if cache.get(key):
-        return cache[key], None
-
-    c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
-                   payload={'Description': key})
-    if c['ok']:
-        cache[key] = c['data'].get('Ref_Key')
-        return cache[key], 'created'
-    cache[key] = None
-    return None, c['error']
 
 
 def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОплатуПоставщика'):
@@ -397,6 +441,8 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     country_cache = prefetch_countries(cfg, [r.get('country') for r in rows]) if f_country else {}
     gtd_cache = prefetch_gtd(cfg, [r.get('gtd') for r in rows]) if f_gtd else {}
     notes = []
+    missing_gtd = set()
+    missing_country = set()
 
     vat_key = str(payload.get('vat_rate') or 'none')
     vat = VAT_RATES.get(vat_key) or VAT_RATES['none']
@@ -435,15 +481,13 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
                 if ck:
                     row[f_country] = ck
                 else:
-                    notes.append(f"Страна «{r['country']}» не найдена в справочнике")
+                    missing_country.add(str(r['country']).strip())
             if f_gtd and r.get('gtd'):
-                gk, info = find_or_create_gtd(cfg, r['gtd'], gtd_cache)
+                gk = gtd_cache.get(str(r['gtd']).strip())
                 if gk:
                     row[f_gtd] = gk
-                    if info == 'created':
-                        notes.append(f"Номер ГТД {r['gtd']} создан в справочнике")
-                elif info:
-                    notes.append(f"Номер ГТД {r['gtd']} не записан: {info}")
+                else:
+                    missing_gtd.add(str(r['gtd']).strip())
             if f_rnpt and r.get('rnpt'):
                 row[f_rnpt] = str(r['rnpt']).strip()
 
@@ -470,6 +514,14 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
             'vat_rate': vat['name'], 'vat_amount': round(total_vat, 2)}
 
     if is_receipt:
+        if missing_gtd:
+            sample = ', '.join(sorted(missing_gtd)[:5])
+            notes.append(
+                f'Нет в справочнике номеров ГТД: {len(missing_gtd)} шт ({sample}...). '
+                'Строки записаны без них'
+            )
+        if missing_country:
+            notes.append('Не найдены страны: ' + ', '.join(sorted(missing_country)[:10]))
         missing = [n for n, f in (('страна', f_country), ('ГТД', f_gtd), ('РНПТ', f_rnpt)) if not f]
         if missing:
             notes.append('Нет колонок в документе: ' + ', '.join(missing))
@@ -662,6 +714,12 @@ def handler(event: dict, context) -> dict:
 
     if action == 'match_products':
         return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
+
+    if action == 'check_gtd':
+        return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})
+
+    if action == 'create_gtd':
+        return resp(200, {'result': create_gtd_batch(cfg, body.get('numbers') or [])})
 
     if action == 'create_goods_receipt':
         return resp(200, {'configured': True, 'result': create_supplier_invoice(

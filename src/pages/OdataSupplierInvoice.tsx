@@ -44,6 +44,13 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [matchBusy, setMatchBusy] = useState(false);
   const [matchError, setMatchError] = useState("");
 
+  const [matchProgress, setMatchProgress] = useState("");
+  const [gtdMissing, setGtdMissing] = useState<string[] | null>(null);
+  const [gtdExisting, setGtdExisting] = useState(0);
+  const [gtdBusy, setGtdBusy] = useState(false);
+  const [gtdProgress, setGtdProgress] = useState("");
+  const [gtdError, setGtdError] = useState("");
+
   const [created, setCreated] = useState<CreatedObject | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
 
@@ -110,17 +117,83 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     setMatchBusy(true);
     setMatchError("");
     setMatches(null);
+    setGtdMissing(null);
+    setGtdError("");
+    setMatchProgress("");
     try {
-      const r = await odataApi.matchProducts(
-        base,
-        parsed.rows.map((x) => ({ article: x.article })),
-      );
-      if (r.result.ok) setMatches(r.result.items);
-      else setMatchError(r.result.error);
+      const all = parsed.rows.map((x) => ({ article: x.article }));
+      const step = 300;
+      const acc: MatchItem[] = [];
+      for (let i = 0; i < all.length; i += step) {
+        setMatchProgress(`Товары: ${Math.min(i + step, all.length)} из ${all.length}`);
+        const r = await odataApi.matchProducts(base, all.slice(i, i + step));
+        if (!r.result.ok) {
+          setMatchError(r.result.error);
+          setMatchBusy(false);
+          setMatchProgress("");
+          return;
+        }
+        acc.push(...r.result.items);
+      }
+      setMatches(acc);
+
+      if (isReceipt) {
+        const nums = [...new Set(parsed.rows.map((x) => x.gtd).filter(Boolean))];
+        if (nums.length) {
+          const miss: string[] = [];
+          let exist = 0;
+          const gStep = 300;
+          for (let i = 0; i < nums.length; i += gStep) {
+            setMatchProgress(
+              `Номера ГТД: ${Math.min(i + gStep, nums.length)} из ${nums.length}`,
+            );
+            const g = await odataApi.checkGtd(base, nums.slice(i, i + gStep));
+            exist += g.result.existing || 0;
+            miss.push(...(g.result.missing || []));
+          }
+          setGtdExisting(exist);
+          setGtdMissing(miss);
+        } else {
+          setGtdExisting(0);
+          setGtdMissing([]);
+        }
+      }
+      setMatchProgress("");
     } catch (e) {
       setMatchError(e instanceof Error ? e.message : "Ошибка");
     } finally {
       setMatchBusy(false);
+    }
+  };
+
+  const doCreateGtd = async () => {
+    if (!gtdMissing?.length) return;
+    setGtdBusy(true);
+    setGtdError("");
+    let queue = [...gtdMissing];
+    const total = queue.length;
+    let done = 0;
+    try {
+      while (queue.length) {
+        setGtdProgress(`Создано ${done} из ${total}`);
+        const r = await odataApi.createGtd(base, queue);
+        done += r.result.created || 0;
+        if (r.result.errors?.length) {
+          setGtdError(r.result.errors.join("\n"));
+        }
+        const next: string[] = r.result.remaining || [];
+        if (next.length === queue.length && !r.result.created) {
+          setGtdError((p) => p || "1С не создаёт номера — проверьте права доступа");
+          break;
+        }
+        queue = next;
+        setGtdMissing(next);
+      }
+      setGtdProgress(`Создано ${done} из ${total}`);
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
     }
   };
 
@@ -167,7 +240,9 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   };
 
   const foundCount = matches?.filter((m) => m.found).length ?? 0;
-  const allFound = matches !== null && foundCount === matches.length;
+  const productsOk = matches !== null && foundCount === matches.length;
+  const gtdOk = !isReceipt || (gtdMissing !== null && gtdMissing.length === 0);
+  const allFound = productsOk && gtdOk;
 
   return (
     <div className="min-h-screen">
@@ -326,6 +401,10 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
               Проверить в 1С
             </Button>
 
+            {matchProgress && (
+              <p className="text-xs text-muted-foreground mt-2">{matchProgress}</p>
+            )}
+
             {matchError && <ResultBox ok={false} title="Ошибка проверки" details={matchError} />}
 
             {matches && (
@@ -336,9 +415,52 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                     : "border-amber-500/30 bg-amber-500/[0.07] text-amber-200"
                 }`}
               >
-                Найдено {foundCount} из {matches.length}
-                {!allFound && " — документ создать нельзя, пока есть ненайденные"}
+                Товары: найдено {foundCount} из {matches.length}
+                {!productsOk && " — документ создать нельзя, пока есть ненайденные"}
               </div>
+            )}
+
+            {isReceipt && gtdMissing !== null && (
+              <div
+                className={`mt-2 rounded-lg border px-3 py-2 text-sm ${
+                  gtdMissing.length === 0
+                    ? "border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-200"
+                    : "border-amber-500/30 bg-amber-500/[0.07] text-amber-200"
+                }`}
+              >
+                <div>
+                  Номера ГТД: есть в базе {gtdExisting}
+                  {gtdMissing.length > 0 && `, новых ${gtdMissing.length}`}
+                </div>
+                {gtdMissing.length > 0 && (
+                  <>
+                    <div className="text-xs mt-1 font-mono opacity-80 break-all">
+                      {gtdMissing.slice(0, 3).join(", ")}
+                      {gtdMissing.length > 3 && ` и ещё ${gtdMissing.length - 3}`}
+                    </div>
+                    <Button
+                      onClick={doCreateGtd}
+                      disabled={gtdBusy}
+                      size="sm"
+                      className="rounded-lg gap-2 mt-2"
+                    >
+                      {gtdBusy ? (
+                        <Icon name="Loader2" size={15} className="animate-spin" />
+                      ) : (
+                        <Icon name="Plus" size={15} />
+                      )}
+                      Создать номера ГТД
+                    </Button>
+                  </>
+                )}
+                {gtdProgress && (
+                  <div className="text-xs mt-2 opacity-80">{gtdProgress}</div>
+                )}
+              </div>
+            )}
+
+            {gtdError && (
+              <ResultBox ok={false} title="Номера ГТД" details={gtdError} />
             )}
 
             <div className="mt-3 rounded-lg border border-white/[0.08] overflow-hidden">
@@ -399,7 +521,9 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             </Button>
             {!allFound && (
               <p className="text-xs text-muted-foreground mt-2">
-                Сначала проверьте товары — кнопка включится, когда найдутся все
+                {!productsOk
+                  ? "Сначала проверьте товары — кнопка включится, когда найдутся все"
+                  : "Создайте недостающие номера ГТД — после этого кнопка включится"}
               </p>
             )}
             {created && !created.ok && (

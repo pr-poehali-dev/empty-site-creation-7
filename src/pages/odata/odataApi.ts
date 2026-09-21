@@ -107,6 +107,10 @@ export const odataApi = {
     ),
   matchProducts: (base: string, rows: { article: string }[]) =>
     call("match_products", "POST", { rows }, undefined, base),
+  checkGtd: (base: string, numbers: string[]) =>
+    call("check_gtd", "POST", { numbers }, undefined, base),
+  createGtd: (base: string, numbers: string[]) =>
+    call("create_gtd", "POST", { numbers }, undefined, base),
   createSupplierInvoice: (base: string, payload: DocPayload) =>
     call("create_supplier_invoice", "POST", payload, undefined, base),
   createGoodsReceipt: (base: string, payload: DocPayload) =>
