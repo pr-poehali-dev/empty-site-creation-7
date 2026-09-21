@@ -12,6 +12,10 @@ import ResultBox from "@/components/odata/ResultBox";
 import { odataApi, RefItem, CreatedObject, VAT_RATES } from "./odata/odataApi";
 import { findBase } from "./odata/bases";
 import { parseOdataFile, ParsedFile, formatMoney } from "./odata/parseOdataFile";
+import GtdFixCard from "@/components/odata/GtdFixCard";
+import {
+  findProblemRows, applyFixes, GtdFix, isRussia, gtdKind,
+} from "./odata/gtdFix";
 
 interface MatchItem {
   article: string;
@@ -51,6 +55,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [gtdProgress, setGtdProgress] = useState("");
   const [gtdError, setGtdError] = useState("");
   const [gtdUnknown, setGtdUnknown] = useState<string[]>([]);
+  const [gtdFixes, setGtdFixes] = useState<Record<number, GtdFix>>({});
 
   const [created, setCreated] = useState<CreatedObject | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
@@ -139,9 +144,10 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
       setMatches(acc);
 
       if (isReceipt) {
+        const fixedRows = applyFixes(parsed.rows, gtdFixes);
         const nums = [
           ...new Set(
-            parsed.rows
+            fixedRows
               .flatMap((x) => [x.gtd, x.rnpt])
               .filter(Boolean) as string[],
           ),
@@ -271,7 +277,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     setCreateBusy(true);
     setCreated(null);
     try {
-      const rows = parsed.rows.map((r, i) => ({
+      const rows = applyFixes(parsed.rows, gtdFixes).map((r, i) => ({
         key: matches[i]?.key || "",
         article: r.article,
         quantity: r.quantity,
@@ -303,7 +309,14 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
 
   const foundCount = matches?.filter((m) => m.found).length ?? 0;
   const productsOk = matches !== null && foundCount === matches.length;
-  const gtdOk = !isReceipt || (gtdMissing !== null && gtdMissing.length === 0);
+  const problems = isReceipt && parsed ? findProblemRows(parsed.rows) : [];
+  const problemsResolved = problems.every((p) => {
+    const f = gtdFixes[p.index];
+    return f && f.country && (isRussia(f.country) || gtdKind(f.number));
+  });
+  const gtdOk =
+    !isReceipt ||
+    (gtdMissing !== null && gtdMissing.length === 0 && problemsResolved);
   const allFound = productsOk && gtdOk;
 
   return (
@@ -536,6 +549,15 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       </Button>
                     </div>
                   </>
+                )}
+                {problems.length > 0 && (
+                  <div className="mt-3">
+                    <GtdFixCard
+                      problems={problems}
+                      fixes={gtdFixes}
+                      onChange={setGtdFixes}
+                    />
+                  </div>
                 )}
                 {gtdUnknown.length > 0 && (
                   <div className="text-xs mt-2 text-red-300 break-all">
