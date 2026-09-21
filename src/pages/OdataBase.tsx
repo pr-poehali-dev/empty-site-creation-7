@@ -17,6 +17,12 @@ const SECTIONS = [
     hint: "Загрузить файл OData и создать документ",
     icon: "FileInput",
   },
+  {
+    path: "goods-receipt",
+    title: "Поступление товаров и услуг",
+    hint: "Со страной, ГТД и РНПТ из файла",
+    icon: "PackagePlus",
+  },
 ];
 
 const OdataBase = () => {

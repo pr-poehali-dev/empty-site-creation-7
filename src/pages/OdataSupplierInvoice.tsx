@@ -20,7 +20,8 @@ interface MatchItem {
   name_1c: string | null;
 }
 
-const OdataSupplierInvoice = () => {
+const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receipt" }) => {
+  const isReceipt = mode === "receipt";
   const navigate = useNavigate();
   const { base = "trade-resurs" } = useParams();
   const baseInfo = findBase(base);
@@ -33,6 +34,8 @@ const OdataSupplierInvoice = () => {
 
   const [orgs, setOrgs] = useState<RefItem[]>([]);
   const [orgKey, setOrgKey] = useState("");
+  const [warehouses, setWarehouses] = useState<RefItem[]>([]);
+  const [whKey, setWhKey] = useState("");
   const [vatRate, setVatRate] = useState("22");
   const [docNumber, setDocNumber] = useState("");
   const [docDate, setDocDate] = useState("");
@@ -54,6 +57,11 @@ const OdataSupplierInvoice = () => {
       .then((r) => {
         const list = r.result?.organizations || [];
         setOrgs(list);
+        const whList = r.result?.warehouses || [];
+        setWarehouses(whList);
+        const savedWh = localStorage.getItem(`odata_wh_${base}`);
+        if (savedWh && whList.some((w: RefItem) => w.key === savedWh)) setWhKey(savedWh);
+        else if (whList.length) setWhKey(whList[0].key);
         const savedVat = localStorage.getItem(`odata_vat_${base}`);
         if (savedVat) setVatRate(savedVat);
         const saved = localStorage.getItem(`odata_org_${base}`);
@@ -66,6 +74,11 @@ const OdataSupplierInvoice = () => {
   const pickOrg = (key: string) => {
     setOrgKey(key);
     localStorage.setItem(`odata_org_${base}`, key);
+  };
+
+  const pickWh = (key: string) => {
+    setWhKey(key);
+    localStorage.setItem(`odata_wh_${base}`, key);
   };
 
   const pickVat = (v: string) => {
@@ -128,16 +141,23 @@ const OdataSupplierInvoice = () => {
         article: r.article,
         quantity: r.quantity,
         price: r.price,
+        ...(isReceipt
+          ? { country: r.country, gtd: r.gtd, rnpt: r.rnpt }
+          : {}),
       }));
       const iso = toIso(docDate);
-      const r = await odataApi.createSupplierInvoice(base, {
+      const payload = {
         organization_key: orgKey,
+        ...(isReceipt ? { warehouse_key: whKey } : {}),
         date: iso,
         incoming_number: docNumber || undefined,
         incoming_date: iso,
         vat_rate: vatRate,
         rows,
-      });
+      };
+      const r = isReceipt
+        ? await odataApi.createGoodsReceipt(base, payload)
+        : await odataApi.createSupplierInvoice(base, payload);
       setCreated(r.result);
     } catch (e) {
       setCreated({ ok: false, error: e instanceof Error ? e.message : "Ошибка" });
@@ -163,7 +183,7 @@ const OdataSupplierInvoice = () => {
           </Button>
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-semibold leading-tight">
-              Счёт на оплату поставщику
+              {isReceipt ? "Поступление товаров и услуг" : "Счёт на оплату поставщику"}
             </h1>
             <p className="text-xs text-muted-foreground truncate">
               {baseInfo?.title || base}
@@ -225,9 +245,24 @@ const OdataSupplierInvoice = () => {
                   </SelectContent>
                 </Select>
               </div>
+              {isReceipt && (
+                <div className="sm:col-span-2">
+                  <Label className="text-xs text-muted-foreground">Склад</Label>
+                  <Select value={whKey} onValueChange={pickWh}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="не найдено" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.key} value={w.key}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label className="text-xs text-muted-foreground">
-                  Номер счёта поставщика
+                  Номер {isReceipt ? "документа" : "счёта"} поставщика
                 </Label>
                 <Input
                   value={docNumber}
@@ -237,7 +272,7 @@ const OdataSupplierInvoice = () => {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
-                  Дата счёта поставщика
+                  Дата {isReceipt ? "документа" : "счёта"} поставщика
                 </Label>
                 <Input
                   value={docDate}
@@ -331,6 +366,11 @@ const OdataSupplierInvoice = () => {
                         <div className="text-xs text-muted-foreground font-mono mt-0.5">
                           {r.article} · {r.quantity} шт × {formatMoney(r.price)}
                         </div>
+                        {isReceipt && (r.country || r.gtd || r.rnpt) && (
+                          <div className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">
+                            {[r.country, r.gtd, r.rnpt].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground shrink-0 tabular-nums">
                         {formatMoney(r.quantity * r.price)}
@@ -355,7 +395,7 @@ const OdataSupplierInvoice = () => {
               ) : (
                 <Icon name="Plus" size={16} />
               )}
-              Создать счёт в 1С
+              {isReceipt ? "Создать поступление в 1С" : "Создать счёт в 1С"}
             </Button>
             {!allFound && (
               <p className="text-xs text-muted-foreground mt-2">
@@ -373,7 +413,7 @@ const OdataSupplierInvoice = () => {
             {created?.ok && (
               <ResultBox
                 ok
-                title="Счёт создан"
+                title={isReceipt ? "Поступление создано" : "Счёт создан"}
                 details={[
                   `Номер: ${created.number}`,
                   `Дата: ${created.date?.replace("T", " ")}`,
@@ -393,6 +433,7 @@ const OdataSupplierInvoice = () => {
                     ? `Номер поставщика записан в «${created.used.number_field}»`
                     : null,
                   created.used?.fallback || null,
+                  ...(created.used?.notes || []),
                   `Идентификатор: ${created.key}`,
                 ]
                   .filter(Boolean)

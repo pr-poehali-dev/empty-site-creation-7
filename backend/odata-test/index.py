@@ -239,6 +239,10 @@ TOTAL_FIELD_NAMES = ['Всего', 'СуммаСНДС']
 
 VAT_IN_SUM_FIELDS = ['СуммаВключаетНДС', 'ЦенаВключаетНДС', 'НДСВключенВСтоимость', 'УчитыватьНДС']
 
+COUNTRY_FIELD_NAMES = ['СтранаПроисхождения_Key', 'СтранаПроисхождения']
+GTD_FIELD_NAMES = ['НомерГТД_Key', 'НомерГТД', 'ТаможеннаяДекларация_Key']
+RNPT_FIELD_NAMES = ['НомерРНПТ', 'РНПТ', 'РегистрационныйНомерПартииТовара']
+
 VAT_RATES = {
     '22': {'name': 'НДС22', 'percent': 22},
     '20': {'name': 'НДС20', 'percent': 20},
@@ -294,14 +298,62 @@ def pick(candidates, available, default=None):
     return default
 
 
-def create_supplier_invoice(cfg, payload):
-    """Создаёт счёт на оплату поставщика со строками товаров. Без НДС, без контрагента."""
+def find_country(cfg, name, cache):
+    """Ищет страну в справочнике «Страны мира» по названию."""
+    key = (name or '').strip().upper()
+    if not key:
+        return None
+    if key in cache:
+        return cache[key]
+    esc = key.replace("'", "''")
+    r = call_odata(
+        cfg,
+        f"Catalog_СтраныМира?$format=json&$top=1&$filter=toupper(Description) eq '{esc}'"
+    )
+    found = None
+    if r['ok']:
+        rows = r['data'].get('value') or []
+        if rows:
+            found = rows[0].get('Ref_Key')
+    cache[key] = found
+    return found
+
+
+def find_or_create_gtd(cfg, number, cache):
+    """Ищет номер ГТД, при отсутствии — создаёт новый элемент справочника."""
+    key = (number or '').strip()
+    if not key:
+        return None, None
+    if key in cache:
+        return cache[key], None
+    esc = key.replace("'", "''")
+    r = call_odata(
+        cfg,
+        f"Catalog_НомераГТД?$format=json&$top=1&$filter=Description eq '{esc}'"
+    )
+    if r['ok']:
+        rows = r['data'].get('value') or []
+        if rows:
+            cache[key] = rows[0].get('Ref_Key')
+            return cache[key], None
+
+    c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
+                   payload={'Description': key})
+    if c['ok']:
+        cache[key] = c['data'].get('Ref_Key')
+        return cache[key], 'created'
+    cache[key] = None
+    return None, c['error']
+
+
+def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОплатуПоставщика'):
+    """Создаёт счёт поставщика или поступление товаров со строками. Без контрагента, непроведённый."""
     org_key = payload.get('organization_key')
     rows = payload.get('rows') or []
     if not rows:
         return {'ok': False, 'error': 'Нет строк товаров'}
 
-    entity = 'Document_СчетНаОплатуПоставщика'
+    is_receipt = entity == 'Document_ПоступлениеТоваровУслуг'
     schema = doc_schema(cfg, entity)
     fields = schema['fields']
     table = schema['table']
@@ -321,6 +373,13 @@ def create_supplier_invoice(cfg, payload):
     f_vat_rate = pick(VAT_RATE_FIELD_NAMES, cols)
     f_vat_sum = pick(VAT_AMOUNT_FIELD_NAMES, cols)
     f_total = pick(TOTAL_FIELD_NAMES, cols)
+
+    f_country = pick(COUNTRY_FIELD_NAMES, cols) if is_receipt else None
+    f_gtd = pick(GTD_FIELD_NAMES, cols) if is_receipt else None
+    f_rnpt = pick(RNPT_FIELD_NAMES, cols) if is_receipt else None
+    country_cache = {}
+    gtd_cache = {}
+    notes = []
 
     vat_key = str(payload.get('vat_rate') or 'none')
     vat = VAT_RATES.get(vat_key) or VAT_RATES['none']
@@ -352,6 +411,25 @@ def create_supplier_invoice(cfg, payload):
             row[f_vat_sum] = vat_sum
         if f_total:
             row[f_total] = amount
+
+        if is_receipt:
+            if f_country and r.get('country'):
+                ck = find_country(cfg, r['country'], country_cache)
+                if ck:
+                    row[f_country] = ck
+                else:
+                    notes.append(f"Страна «{r['country']}» не найдена в справочнике")
+            if f_gtd and r.get('gtd'):
+                gk, info = find_or_create_gtd(cfg, r['gtd'], gtd_cache)
+                if gk:
+                    row[f_gtd] = gk
+                    if info == 'created':
+                        notes.append(f"Номер ГТД {r['gtd']} создан в справочнике")
+                elif info:
+                    notes.append(f"Номер ГТД {r['gtd']} не записан: {info}")
+            if f_rnpt and r.get('rnpt'):
+                row[f_rnpt] = str(r['rnpt']).strip()
+
         goods.append(row)
 
     doc_date = payload.get('date') or datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
@@ -367,8 +445,19 @@ def create_supplier_invoice(cfg, payload):
     if org_key:
         doc['Организация_Key'] = org_key
 
+    wh_key = payload.get('warehouse_key')
+    if is_receipt and wh_key and 'Склад_Key' in fields:
+        doc['Склад_Key'] = wh_key
+
     used = {'table': table, 'columns': [f_item, f_qty, f_price, f_amount],
             'vat_rate': vat['name'], 'vat_amount': round(total_vat, 2)}
+
+    if is_receipt:
+        missing = [n for n, f in (('страна', f_country), ('ГТД', f_gtd), ('РНПТ', f_rnpt)) if not f]
+        if missing:
+            notes.append('Нет колонок в документе: ' + ', '.join(missing))
+        if wh_key and 'Склад_Key' not in fields:
+            notes.append('В документе нет реквизита «Склад» — товар не привязан к складу')
 
     f_vat_in_sum = pick(VAT_IN_SUM_FIELDS, fields)
     if f_vat_in_sum:
@@ -394,8 +483,11 @@ def create_supplier_invoice(cfg, payload):
             doc[target] = in_date
             used['date_field'] = target
 
+    if notes:
+        used['notes'] = notes
+
     if in_number and 'number_field' not in used:
-        doc['Комментарий'] = f'Счёт поставщика № {in_number}'
+        doc['Комментарий'] = f'Документ поставщика № {in_number}'
         used['fallback'] = 'Номер поставщика записан в комментарий: подходящего реквизита в документе нет'
 
     if payload.get('comment') and 'Комментарий' not in doc:
@@ -553,6 +645,11 @@ def handler(event: dict, context) -> dict:
 
     if action == 'match_products':
         return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
+
+    if action == 'create_goods_receipt':
+        return resp(200, {'configured': True, 'result': create_supplier_invoice(
+            cfg, body, entity='Document_ПоступлениеТоваровУслуг'
+        )})
 
     if action == 'create_supplier_invoice':
         return resp(200, {'result': create_supplier_invoice(cfg, body)})

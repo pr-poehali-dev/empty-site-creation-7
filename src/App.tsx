@@ -124,6 +124,7 @@ const App = () => (
           <Route path="/admin/odata/:base" element={<NotForWholesaler><OdataBase /></NotForWholesaler>} />
           <Route path="/admin/odata/:base/tests" element={<NotForWholesaler><OdataTests /></NotForWholesaler>} />
           <Route path="/admin/odata/:base/supplier-invoice" element={<NotForWholesaler><OdataSupplierInvoice /></NotForWholesaler>} />
+          <Route path="/admin/odata/:base/goods-receipt" element={<NotForWholesaler><OdataSupplierInvoice mode="receipt" /></NotForWholesaler>} />
           <Route path="/admin/scheduler" element={<NotForWholesaler><OwnerScheduler /></NotForWholesaler>} />
           <Route path="/admin/message-server" element={<NotForWholesaler><OwnerMessageServer /></NotForWholesaler>} />
           <Route path="/admin/inventories" element={<NotForWholesaler><InventoriesListPage /></NotForWholesaler>} />

@@ -36,6 +36,7 @@ export interface CreatedObject {
     vat_in_sum_field?: string;
     vat_in_sum_warning?: string;
     amount_warning?: string;
+    notes?: string[];
   };
   sent_line?: Record<string, unknown>;
 }
@@ -101,23 +102,34 @@ export const odataApi = {
     ),
   matchProducts: (base: string, rows: { article: string }[]) =>
     call("match_products", "POST", { rows }, undefined, base),
-  createSupplierInvoice: (
-    base: string,
-    payload: {
-      organization_key?: string;
-      date?: string;
-      incoming_number?: string;
-      incoming_date?: string;
-      vat_rate?: string;
-      comment?: string;
-      rows: { key: string; article: string; quantity: number; price: number }[];
-    },
-  ) => call("create_supplier_invoice", "POST", payload, undefined, base),
+  createSupplierInvoice: (base: string, payload: DocPayload) =>
+    call("create_supplier_invoice", "POST", payload, undefined, base),
+  createGoodsReceipt: (base: string, payload: DocPayload) =>
+    call("create_goods_receipt", "POST", payload, undefined, base),
   createProduct: (base: string) =>
     call("create_product", "POST", undefined, undefined, base),
   remove: (base: string, entity: string, key: string, hard: boolean) =>
     call("delete", "POST", { entity, key, hard }, undefined, base),
 };
+
+export interface DocPayload {
+  organization_key?: string;
+  warehouse_key?: string;
+  date?: string;
+  incoming_number?: string;
+  incoming_date?: string;
+  vat_rate?: string;
+  comment?: string;
+  rows: {
+    key: string;
+    article: string;
+    quantity: number;
+    price: number;
+    country?: string;
+    gtd?: string;
+    rnpt?: string;
+  }[];
+}
 
 export const VAT_RATES = [
   { value: "22", label: "22%" },
