@@ -51,6 +51,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [matchProgress, setMatchProgress] = useState("");
   const [gtdMissing, setGtdMissing] = useState<string[] | null>(null);
   const [gtdExisting, setGtdExisting] = useState(0);
+  const [gtdScanned, setGtdScanned] = useState(0);
   const [gtdBusy, setGtdBusy] = useState(false);
   const [gtdProgress, setGtdProgress] = useState("");
   const [gtdError, setGtdError] = useState("");
@@ -157,6 +158,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           const bad: string[] = [];
           let exist = 0;
           let readErr = "";
+          let scanned = 0;
           const gStep = 900;
           for (let i = 0; i < nums.length; i += gStep) {
             setMatchProgress(
@@ -167,8 +169,10 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             miss.push(...(g.result.missing || []));
             bad.push(...(g.result.unknown || []));
             if (g.result.error) readErr = g.result.error;
+            scanned = Math.max(scanned, g.result.scanned || 0);
           }
           setGtdError(readErr);
+          setGtdScanned(scanned);
           setGtdExisting(exist);
           setGtdMissing(miss);
           setGtdUnknown(bad);
@@ -540,6 +544,11 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                   Номера ГТД: есть в базе {gtdExisting}
                   {gtdMissing.length > 0 && `, новых ${gtdMissing.length}`}
                 </div>
+                {gtdScanned > 0 && (
+                  <div className="text-xs mt-1 opacity-70">
+                    Просмотрено записей справочника: {gtdScanned}
+                  </div>
+                )}
                 {gtdMissing.length > 0 && (
                   <>
                     <div className="text-xs mt-1 font-mono opacity-80 break-all">
