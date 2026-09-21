@@ -50,6 +50,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [gtdBusy, setGtdBusy] = useState(false);
   const [gtdProgress, setGtdProgress] = useState("");
   const [gtdError, setGtdError] = useState("");
+  const [gtdUnknown, setGtdUnknown] = useState<string[]>([]);
 
   const [created, setCreated] = useState<CreatedObject | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
@@ -141,6 +142,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
         const nums = [...new Set(parsed.rows.map((x) => x.gtd).filter(Boolean))];
         if (nums.length) {
           const miss: string[] = [];
+          const bad: string[] = [];
           let exist = 0;
           const gStep = 300;
           for (let i = 0; i < nums.length; i += gStep) {
@@ -150,9 +152,11 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             const g = await odataApi.checkGtd(base, nums.slice(i, i + gStep));
             exist += g.result.existing || 0;
             miss.push(...(g.result.missing || []));
+            bad.push(...(g.result.unknown || []));
           }
           setGtdExisting(exist);
           setGtdMissing(miss);
+          setGtdUnknown(bad);
         } else {
           setGtdExisting(0);
           setGtdMissing([]);
@@ -526,6 +530,12 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       </Button>
                     </div>
                   </>
+                )}
+                {gtdUnknown.length > 0 && (
+                  <div className="text-xs mt-2 text-red-300 break-all">
+                    Не похожи на ГТД или РНПТ ({gtdUnknown.length}):{" "}
+                    {gtdUnknown.slice(0, 5).join(", ")}
+                  </div>
                 )}
                 {gtdProgress && (
                   <div className="text-xs mt-2 opacity-80 whitespace-pre-wrap break-all">

@@ -320,7 +320,19 @@ def prefetch_countries(cfg, names):
     return cache
 
 
-GTD_NUMBER_FIELDS = ['Номер', 'НомерГТД', 'Code']
+GTD_NUMBER_FIELDS = ['РегистрационныйНомер', 'Номер', 'НомерГТД']
+GTD_FLAG_TD = 'ЭтоНомерТД'
+GTD_FLAG_RNPT = 'ЭтоРНПТ'
+
+
+def gtd_kind(number):
+    """Различает номер декларации и РНПТ по числу частей: три — ГТД, четыре — РНПТ."""
+    parts = [p for p in str(number or '').strip().split('/') if p != '']
+    if len(parts) == 3:
+        return 'td'
+    if len(parts) == 4:
+        return 'rnpt'
+    return None
 
 
 def entity_fields_from_metadata(cfg, entity_type):
@@ -361,10 +373,16 @@ def gtd_schema(cfg):
     return {'fields': fields, 'number_field': number_field, 'source': source}
 
 
-def gtd_payload(number, number_field):
+def gtd_payload(number, number_field, fields=None):
     body = {}
     if number_field:
         body[number_field] = number
+    kind = gtd_kind(number)
+    available = fields or []
+    if kind == 'td' and (not available or GTD_FLAG_TD in available):
+        body[GTD_FLAG_TD] = True
+    elif kind == 'rnpt' and (not available or GTD_FLAG_RNPT in available):
+        body[GTD_FLAG_RNPT] = True
     return body
 
 
@@ -443,12 +461,14 @@ def check_gtd(cfg, numbers):
     """Проверяет, какие номера ГТД уже есть в справочнике. Страница шлёт порциями."""
     uniq = sorted({str(n or '').strip() for n in numbers if str(n or '').strip()})
     cache = prefetch_gtd(cfg, uniq)
-    missing = [n for n in uniq if not cache.get(n)]
+    missing = [n for n in uniq if not cache.get(n) and gtd_kind(n) is not None]
+    unknown = [n for n in uniq if gtd_kind(n) is None]
     return {
         'ok': True,
         'checked': len(uniq),
-        'existing': len(uniq) - len(missing),
+        'existing': len([n for n in uniq if cache.get(n)]),
         'missing': missing,
+        'unknown': unknown,
     }
 
 
@@ -479,6 +499,8 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
     skipped = 0
     errors = []
     remaining = []
+    unknown = [n for n in uniq if gtd_kind(n) is None]
+    uniq = [n for n in uniq if gtd_kind(n) is not None]
 
     for idx, key in enumerate(uniq):
         if existing.get(key):
@@ -488,7 +510,7 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
             remaining = [k for k in uniq[idx:] if not existing.get(k)]
             break
         c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
-                       payload=gtd_payload(key, f_number))
+                       payload=gtd_payload(key, f_number, sch['fields']))
         if c['ok']:
             created += 1
         else:
@@ -511,6 +533,7 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
         'already': skipped,
         'remaining': remaining,
         'done': not remaining,
+        'unknown': unknown,
         'errors': errors,
     }
 
