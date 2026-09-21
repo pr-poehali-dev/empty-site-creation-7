@@ -139,7 +139,13 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
       setMatches(acc);
 
       if (isReceipt) {
-        const nums = [...new Set(parsed.rows.map((x) => x.gtd).filter(Boolean))];
+        const nums = [
+          ...new Set(
+            parsed.rows
+              .flatMap((x) => [x.gtd, x.rnpt])
+              .filter(Boolean) as string[],
+          ),
+        ];
         if (nums.length) {
           const miss: string[] = [];
           const bad: string[] = [];

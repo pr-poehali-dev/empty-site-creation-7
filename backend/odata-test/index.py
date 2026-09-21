@@ -243,7 +243,8 @@ VAT_IN_SUM_FIELDS = ['СуммаВключаетНДС', 'ЦенаВключае
 
 COUNTRY_FIELD_NAMES = ['СтранаПроисхождения_Key', 'СтранаПроисхождения']
 GTD_FIELD_NAMES = ['НомерГТД_Key', 'НомерГТД', 'ТаможеннаяДекларация_Key']
-RNPT_FIELD_NAMES = ['НомерРНПТ', 'РНПТ', 'РегистрационныйНомерПартииТовара']
+RNPT_FIELD_NAMES = ['НомерРНПТ_Key', 'РНПТ_Key', 'РегистрационныйНомерПартииТовара_Key',
+                    'НомерРНПТ', 'РНПТ', 'РегистрационныйНомерПартииТовара']
 
 VAT_RATES = {
     '22': {'name': 'НДС22', 'percent': 22},
@@ -578,10 +579,16 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     f_gtd = pick(GTD_FIELD_NAMES, cols) if is_receipt else None
     f_rnpt = pick(RNPT_FIELD_NAMES, cols) if is_receipt else None
     country_cache = prefetch_countries(cfg, [r.get('country') for r in rows]) if f_country else {}
-    gtd_cache = prefetch_gtd(cfg, [r.get('gtd') for r in rows]) if f_gtd else {}
+    ref_numbers = []
+    if f_gtd:
+        ref_numbers += [r.get('gtd') for r in rows]
+    if f_rnpt and f_rnpt.endswith('_Key'):
+        ref_numbers += [r.get('rnpt') for r in rows]
+    gtd_cache = prefetch_gtd(cfg, ref_numbers) if ref_numbers else {}
     notes = []
     missing_gtd = set()
     missing_country = set()
+    missing_rnpt = set()
 
     vat_key = str(payload.get('vat_rate') or 'none')
     vat = VAT_RATES.get(vat_key) or VAT_RATES['none']
@@ -628,7 +635,15 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
                 else:
                     missing_gtd.add(str(r['gtd']).strip())
             if f_rnpt and r.get('rnpt'):
-                row[f_rnpt] = str(r['rnpt']).strip()
+                rn = str(r['rnpt']).strip()
+                if f_rnpt.endswith('_Key'):
+                    rk = gtd_cache.get(rn)
+                    if rk:
+                        row[f_rnpt] = rk
+                    else:
+                        missing_rnpt.add(rn)
+                else:
+                    row[f_rnpt] = rn
 
         goods.append(row)
 
@@ -657,6 +672,12 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
             sample = ', '.join(sorted(missing_gtd)[:5])
             notes.append(
                 f'Нет в справочнике номеров ГТД: {len(missing_gtd)} шт ({sample}...). '
+                'Строки записаны без них'
+            )
+        if missing_rnpt:
+            sample = ', '.join(sorted(missing_rnpt)[:5])
+            notes.append(
+                f'Нет в справочнике номеров РНПТ: {len(missing_rnpt)} шт ({sample}...). '
                 'Строки записаны без них'
             )
         if missing_country:
