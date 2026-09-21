@@ -247,6 +247,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Обмен с 1С</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.odata" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/odata")}
+            >
+              <Icon name="Network" size={20} />
+              <span className="font-medium">Обмен с 1С OData</span>
+            </Button>
+          </DebugBadge>
           <DebugBadge id="Admin:nav.wholesalers" className="flex-1">
             <Button
               variant="outline"

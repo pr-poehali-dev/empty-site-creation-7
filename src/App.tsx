@@ -48,6 +48,7 @@ import ProxyGuide from "./pages/ProxyGuide";
 import OwnerAuctionSettings from "./pages/OwnerAuctionSettings";
 import OwnerAuctions from "./pages/OwnerAuctions";
 import OwnerBackup from "./pages/OwnerBackup";
+import OdataExchange from "./pages/OdataExchange";
 import OwnerScheduler from "./pages/OwnerScheduler";
 import OwnerMessageServer from "./pages/OwnerMessageServer";
 import { NotForWholesaler, OnlyWholesaler, WholesalerRoute } from "./components/WholesalerRoute";
@@ -116,6 +117,7 @@ const App = () => (
           <Route path="/admin/settings" element={<NotForWholesaler><OwnerSettings /></NotForWholesaler>} />
           <Route path="/admin/settings/proxy/:platform" element={<NotForWholesaler><ProxyGuide /></NotForWholesaler>} />
           <Route path="/admin/backup" element={<NotForWholesaler><OwnerBackup /></NotForWholesaler>} />
+          <Route path="/admin/odata" element={<NotForWholesaler><OdataExchange /></NotForWholesaler>} />
           <Route path="/admin/scheduler" element={<NotForWholesaler><OwnerScheduler /></NotForWholesaler>} />
           <Route path="/admin/message-server" element={<NotForWholesaler><OwnerMessageServer /></NotForWholesaler>} />
           <Route path="/admin/inventories" element={<NotForWholesaler><InventoriesListPage /></NotForWholesaler>} />

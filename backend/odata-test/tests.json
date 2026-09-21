@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Отказ без авторизации владельца",
+      "method": "GET",
+      "path": "/?action=ping",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Создание документа без токена запрещено",
+      "method": "POST",
+      "path": "/?action=create_doc",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
