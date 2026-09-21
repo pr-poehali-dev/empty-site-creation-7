@@ -157,7 +157,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           const bad: string[] = [];
           let exist = 0;
           let readErr = "";
-          const gStep = 40;
+          const gStep = 900;
           for (let i = 0; i < nums.length; i += gStep) {
             setMatchProgress(
               `Номера ГТД: ${Math.min(i + gStep, nums.length)} из ${nums.length}`,
@@ -274,8 +274,8 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     try {
       while (queue.length) {
         setGtdProgress(`Создано ${done} из ${total}`);
-        const portion = queue.slice(0, 40);
-        const rest = queue.slice(40);
+        const portion = queue.slice(0, 120);
+        const rest = queue.slice(120);
         const r = await odataApi.createGtd(base, portion);
         done += r.result.created || 0;
         const next: string[] = [...(r.result.remaining || []), ...rest];

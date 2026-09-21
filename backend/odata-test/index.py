@@ -303,21 +303,27 @@ def pick(candidates, available, default=None):
 
 def prefetch_countries(cfg, names):
     """Разом читает все нужные страны одним запросом вместо запроса на строку."""
-    uniq = sorted({(n or '').strip().upper() for n in names if (n or '').strip()})
+    uniq = {(n or '').strip().upper() for n in names if (n or '').strip()}
     cache = {}
-    chunk = 30
-    for i in range(0, len(uniq), chunk):
-        part = uniq[i:i + chunk]
-        cond = ' or '.join(
-            "toupper(Description) eq '{}'".format(p.replace("'", "''")) for p in part
+    if not uniq:
+        return cache
+    skip = 0
+    while skip < 5000:
+        r = call_odata(
+            cfg,
+            'Catalog_СтраныМира?$format=json&$select=Ref_Key,Description'
+            f'&$top=1000&$skip={skip}'
         )
-        r = call_odata(cfg, f"Catalog_СтраныМира?$format=json&$select=Ref_Key,Description&$filter={cond}")
         if not r['ok']:
-            continue
-        for item in r['data'].get('value', []):
+            break
+        items = r['data'].get('value', []) or []
+        for item in items:
             key = str(item.get('Description') or '').strip().upper()
-            if key:
+            if key and key in uniq and key not in cache:
                 cache[key] = item.get('Ref_Key')
+        if len(items) < 1000:
+            break
+        skip += 1000
     return cache
 
 
@@ -498,26 +504,26 @@ def prefetch_gtd(cfg, numbers, number_field=None, errors=None):
     f_num = number_field if number_field is not None else gtd_schema(cfg)['number_field']
     if not f_num:
         return cache
+    wanted = set(uniq)
     sel = f'Ref_Key,Code,{f_num}'
-    chunk = 8
-    for i in range(0, len(uniq), chunk):
-        part = uniq[i:i + chunk]
-        cond = ' or '.join(
-            "{} eq '{}' or Code eq '{}'".format(
-                f_num, pnum.replace("'", "''"), pnum.replace("'", "''")
-            )
-            for pnum in part
+    skip = 0
+    while skip < 60000:
+        r = call_odata(
+            cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$top=1000&$skip={skip}"
         )
-        r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$filter={cond}")
         if not r['ok']:
             if errors is not None and len(errors) < 3:
                 errors.append(r['error'])
-            continue
-        for item in r['data'].get('value', []):
+            break
+        items = r['data'].get('value', []) or []
+        for item in items:
             for key in (str(item.get(f_num) or '').strip(),
                         str(item.get('Code') or '').strip()):
-                if key and key not in cache:
+                if key and key in wanted and key not in cache:
                     cache[key] = item.get('Ref_Key')
+        if len(items) < 1000:
+            break
+        skip += 1000
     return cache
 
 
