@@ -223,6 +223,19 @@ def match_products(cfg, rows):
     return {'ok': True, 'items': result, 'found': sum(1 for x in result if x['found']), 'total': len(result)}
 
 
+INCOMING_NUMBER_FIELDS = ['ВходящийНомер', 'НомерВходящегоДокумента', 'НомерДокументаПоставщика', 'ВходящийДокументНомер']
+INCOMING_DATE_FIELDS = ['ВходящаяДата', 'ДатаВходящегоДокумента', 'ДатаДокументаПоставщика', 'ВходящийДокументДата']
+
+
+def doc_field_names(cfg, entity):
+    """Читает один существующий документ, чтобы узнать реальные имена реквизитов."""
+    r = call_odata(cfg, f'{entity}?$top=1&$format=json')
+    if not r['ok']:
+        return []
+    rows = r['data'].get('value') or []
+    return list(rows[0].keys()) if rows else []
+
+
 def create_supplier_invoice(cfg, payload):
     """Создаёт счёт на оплату поставщика со строками товаров. Без НДС, без контрагента."""
     org_key = payload.get('organization_key')
@@ -251,8 +264,11 @@ def create_supplier_invoice(cfg, payload):
             'Всего': amount,
         })
 
+    entity = 'Document_СчетНаОплатуПоставщика'
+    doc_date = payload.get('date') or datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+
     doc = {
-        'Date': payload.get('date') or datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'Date': doc_date,
         'Posted': False,
         'Контрагент_Key': EMPTY_GUID,
         'ДоговорКонтрагента_Key': EMPTY_GUID,
@@ -261,22 +277,45 @@ def create_supplier_invoice(cfg, payload):
     }
     if org_key:
         doc['Организация_Key'] = org_key
-    if payload.get('comment'):
+
+    fields = doc_field_names(cfg, entity)
+    used = {}
+
+    in_number = str(payload.get('incoming_number') or '').strip()
+    if in_number:
+        target = next((f for f in INCOMING_NUMBER_FIELDS if f in fields), None)
+        if target:
+            doc[target] = in_number
+            used['number_field'] = target
+
+    in_date = payload.get('incoming_date')
+    if in_date:
+        target = next((f for f in INCOMING_DATE_FIELDS if f in fields), None)
+        if target:
+            doc[target] = in_date
+            used['date_field'] = target
+
+    if in_number and 'number_field' not in used:
+        doc['Комментарий'] = f'Счёт поставщика № {in_number}'
+        used['fallback'] = 'Номер поставщика записан в комментарий: подходящего реквизита в документе нет'
+
+    if payload.get('comment') and 'Комментарий' not in doc:
         doc['Комментарий'] = payload['comment']
 
-    r = call_odata(cfg, 'Document_СчетНаОплатуПоставщика?$format=json', method='POST', payload=doc)
+    r = call_odata(cfg, f'{entity}?$format=json', method='POST', payload=doc)
     if not r['ok']:
         return {'ok': False, 'error': r['error'], 'sent_head': {k: v for k, v in doc.items() if k != 'Запасы'},
                 'sent_line': goods[0] if goods else None}
     d = r['data']
     return {
         'ok': True,
-        'entity': 'Document_СчетНаОплатуПоставщика',
+        'entity': entity,
         'key': d.get('Ref_Key'),
         'number': d.get('Number'),
         'date': d.get('Date'),
         'lines': len(goods),
         'amount': doc['СуммаДокумента'],
+        'used': used,
     }
 
 
@@ -385,6 +424,11 @@ def handler(event: dict, context) -> dict:
     if action == 'create_doc':
         return resp(200, {'result': create_doc(
             cfg, body.get('kind'), body.get('organization_key'), body.get('warehouse_key')
+        )})
+
+    if action == 'doc_fields':
+        return resp(200, {'fields': doc_field_names(
+            cfg, params.get('entity') or 'Document_СчетНаОплатуПоставщика'
         )})
 
     if action == 'match_products':

@@ -121,10 +121,12 @@ const OdataSupplierInvoice = () => {
         quantity: r.quantity,
         price: r.price,
       }));
+      const iso = toIso(docDate);
       const r = await odataApi.createSupplierInvoice(base, {
         organization_key: orgKey,
-        date: toIso(docDate),
-        comment: docNumber ? `Счёт поставщика № ${docNumber} от ${docDate}` : undefined,
+        date: iso,
+        incoming_number: docNumber || undefined,
+        incoming_date: iso,
         rows,
       });
       setCreated(r.result);
@@ -215,7 +217,9 @@ const OdataSupplierInvoice = () => {
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground">Номер поставщика</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Номер счёта поставщика
+                </Label>
                 <Input
                   value={docNumber}
                   onChange={(e) => setDocNumber(e.target.value)}
@@ -223,7 +227,9 @@ const OdataSupplierInvoice = () => {
                 />
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground">Дата</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Дата счёта поставщика
+                </Label>
                 <Input
                   value={docDate}
                   onChange={(e) => setDocDate(e.target.value)}
@@ -233,6 +239,10 @@ const OdataSupplierInvoice = () => {
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-3">
+              Этой же датой будет создан наш документ. Свой номер 1С присвоит сама, по
+              порядку.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
               Контрагент не заполняется, ставка НДС — «Без НДС». Документ создаётся
               непроведённым.
             </p>
@@ -342,8 +352,14 @@ const OdataSupplierInvoice = () => {
                   `Дата: ${created.date?.replace("T", " ")}`,
                   `Строк: ${created.lines}`,
                   `Сумма: ${formatMoney(Number(created.amount))} ₽`,
+                  created.used?.number_field
+                    ? `Номер поставщика записан в «${created.used.number_field}»`
+                    : null,
+                  created.used?.fallback || null,
                   `Идентификатор: ${created.key}`,
-                ].join("\n")}
+                ]
+                  .filter(Boolean)
+                  .join("\n")}
               />
             )}
           </TestCard>

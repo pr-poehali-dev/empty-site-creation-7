@@ -25,6 +25,11 @@ export interface CreatedObject {
   sent?: Record<string, unknown>;
   lines?: number;
   amount?: number;
+  used?: {
+    number_field?: string;
+    date_field?: string;
+    fallback?: string;
+  };
 }
 
 const authHeaders = () => ({
@@ -93,6 +98,8 @@ export const odataApi = {
     payload: {
       organization_key?: string;
       date?: string;
+      incoming_number?: string;
+      incoming_date?: string;
       comment?: string;
       rows: { key: string; article: string; quantity: number; price: number }[];
     },
