@@ -166,6 +166,38 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doRepairGtd = async () => {
+    setGtdBusy(true);
+    setGtdError("");
+    let fixed = 0;
+    let marked = 0;
+    try {
+      for (let pass = 0; pass < 40; pass++) {
+        setGtdProgress(`Исправлено ${fixed}, помечено пустых ${marked}`);
+        const r = await odataApi.repairGtd(base);
+        if (!r.result.ok) {
+          setGtdError(r.result.error || "Не удалось исправить");
+          break;
+        }
+        fixed += r.result.fixed || 0;
+        marked += r.result.marked || 0;
+        if (r.result.errors?.length) {
+          setGtdError(r.result.errors.join("\n"));
+          break;
+        }
+        if (!r.result.found) break;
+      }
+      setGtdProgress(
+        `Готово. Заполнено номеров: ${fixed}` +
+          (marked ? `, помечено на удаление пустых: ${marked}` : ""),
+      );
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doCreateGtd = async () => {
     if (!gtdMissing?.length) return;
     setGtdBusy(true);
@@ -178,16 +210,17 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
         setGtdProgress(`Создано ${done} из ${total}`);
         const r = await odataApi.createGtd(base, queue);
         done += r.result.created || 0;
-        if (r.result.errors?.length) {
-          setGtdError(r.result.errors.join("\n"));
-        }
         const next: string[] = r.result.remaining || [];
-        if (next.length === queue.length && !r.result.created) {
-          setGtdError((p) => p || "1С не создаёт номера — проверьте права доступа");
-          break;
-        }
         queue = next;
         setGtdMissing(next);
+        if (!r.result.ok) {
+          setGtdError(r.result.error || "1С отказала");
+          break;
+        }
+        if (next.length && !r.result.created) {
+          setGtdError("1С не создаёт номера — остановился, чтобы не плодить записи");
+          break;
+        }
       }
       setGtdProgress(`Создано ${done} из ${total}`);
     } catch (e) {
@@ -438,19 +471,31 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       {gtdMissing.slice(0, 3).join(", ")}
                       {gtdMissing.length > 3 && ` и ещё ${gtdMissing.length - 3}`}
                     </div>
-                    <Button
-                      onClick={doCreateGtd}
-                      disabled={gtdBusy}
-                      size="sm"
-                      className="rounded-lg gap-2 mt-2"
-                    >
-                      {gtdBusy ? (
-                        <Icon name="Loader2" size={15} className="animate-spin" />
-                      ) : (
-                        <Icon name="Plus" size={15} />
-                      )}
-                      Создать номера ГТД
-                    </Button>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <Button
+                        onClick={doCreateGtd}
+                        disabled={gtdBusy}
+                        size="sm"
+                        className="rounded-lg gap-2"
+                      >
+                        {gtdBusy ? (
+                          <Icon name="Loader2" size={15} className="animate-spin" />
+                        ) : (
+                          <Icon name="Plus" size={15} />
+                        )}
+                        Создать номера ГТД
+                      </Button>
+                      <Button
+                        onClick={doRepairGtd}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2"
+                      >
+                        <Icon name="Wrench" size={15} />
+                        Починить пустые записи
+                      </Button>
+                    </div>
                   </>
                 )}
                 {gtdProgress && (

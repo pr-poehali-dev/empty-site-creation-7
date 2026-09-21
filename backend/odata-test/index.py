@@ -319,23 +319,116 @@ def prefetch_countries(cfg, names):
     return cache
 
 
-def prefetch_gtd(cfg, numbers):
-    """Разом читает все номера ГТД одним запросом."""
+GTD_NUMBER_FIELDS = ['Номер', 'НомерГТД', 'Code']
+
+
+def gtd_schema(cfg):
+    """Узнаёт, в каком реквизите справочника «Номера ГТД» лежит сам номер."""
+    r = call_odata(cfg, 'Catalog_НомераГТД?$top=1&$format=json')
+    if not r['ok']:
+        return {'fields': [], 'number_field': None}
+    rows = r['data'].get('value') or []
+    fields = list(rows[0].keys()) if rows else []
+    number_field = pick(GTD_NUMBER_FIELDS, fields)
+    return {'fields': fields, 'number_field': number_field}
+
+
+def gtd_payload(number, number_field):
+    body = {'Description': number}
+    if number_field and number_field != 'Description':
+        body[number_field] = number
+    return body
+
+
+def repair_gtd(cfg, budget=18.0):
+    """Заполняет номер у пустых записей справочника, созданных по ошибке. Ничего не удаляет."""
+    started = time.time()
+    sch = gtd_schema(cfg)
+    f_number = sch['number_field']
+    if not f_number or f_number == 'Description':
+        return {'ok': False, 'error': 'Не найден отдельный реквизит номера — чинить нечего',
+                'fields': sch['fields']}
+
+    r = call_odata(
+        cfg,
+        f"Catalog_НомераГТД?$format=json&$top=200"
+        f"&$select=Ref_Key,Description,{f_number}"
+        f"&$filter={f_number} eq ''"
+    )
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+
+    rows = r['data'].get('value') or []
+    fixed = 0
+    marked = 0
+    errors = []
+    for item in rows:
+        if time.time() - started > budget:
+            break
+        key = item.get('Ref_Key')
+        name = str(item.get('Description') or '').strip()
+        if not key:
+            continue
+        if name:
+            u = call_odata(cfg, f"Catalog_НомераГТД(guid'{key}')?$format=json",
+                           method='PATCH', payload={f_number: name})
+            if u['ok']:
+                fixed += 1
+            else:
+                errors.append(f'{name}: {u["error"]}')
+                if len(errors) >= 3:
+                    break
+        else:
+            u = call_odata(cfg, f"Catalog_НомераГТД(guid'{key}')?$format=json",
+                           method='PATCH', payload={'DeletionMark': True})
+            if u['ok']:
+                marked += 1
+            else:
+                errors.append(f'пустая запись {key}: {u["error"]}')
+                if len(errors) >= 3:
+                    break
+
+    return {
+        'ok': True,
+        'number_field': f_number,
+        'found': len(rows),
+        'fixed': fixed,
+        'marked': marked,
+        'more': len(rows) >= 200,
+        'errors': errors,
+    }
+
+
+def prefetch_gtd(cfg, numbers, number_field=None):
+    """Читает номера ГТД пачками. Ищет и по наименованию, и по реквизиту номера."""
     uniq = sorted({(n or '').strip() for n in numbers if (n or '').strip()})
     cache = {}
+    if not uniq:
+        return cache
+    f_num = number_field if number_field is not None else gtd_schema(cfg)['number_field']
+    sel = 'Ref_Key,Description'
+    if f_num and f_num != 'Description':
+        sel += f',{f_num}'
     chunk = 30
     for i in range(0, len(uniq), chunk):
         part = uniq[i:i + chunk]
-        cond = ' or '.join(
-            "Description eq '{}'".format(p.replace("'", "''")) for p in part
-        )
-        r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$select=Ref_Key,Description&$filter={cond}")
+        conds = []
+        for pnum in part:
+            esc = pnum.replace("'", "''")
+            conds.append(f"Description eq '{esc}'")
+            if f_num and f_num != 'Description':
+                conds.append(f"{f_num} eq '{esc}'")
+        cond = ' or '.join(conds)
+        r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$filter={cond}")
         if not r['ok']:
             continue
         for item in r['data'].get('value', []):
-            key = str(item.get('Description') or '').strip()
-            if key:
-                cache[key] = item.get('Ref_Key')
+            for fld in ('Description', f_num):
+                if not fld:
+                    continue
+                key = str(item.get(fld) or '').strip()
+                if key and key not in cache:
+                    cache[key] = item.get('Ref_Key')
     return cache
 
 
@@ -366,7 +459,8 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
     if not uniq:
         return {'ok': True, 'created': 0, 'remaining': [], 'errors': []}
 
-    existing = prefetch_gtd(cfg, uniq)
+    f_number = gtd_schema(cfg)['number_field']
+    existing = prefetch_gtd(cfg, uniq, f_number)
     created = 0
     skipped = 0
     errors = []
@@ -380,14 +474,22 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
             remaining = [k for k in uniq[idx:] if not existing.get(k)]
             break
         c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
-                       payload={'Description': key})
+                       payload=gtd_payload(key, f_number))
         if c['ok']:
             created += 1
         else:
             errors.append(f'{key}: {c["error"]}')
-            if len(errors) >= 5:
-                remaining = [k for k in uniq[idx + 1:] if not existing.get(k)]
-                break
+            remaining = [k for k in uniq[idx + 1:] if not existing.get(k)]
+            return {
+                'ok': False,
+                'error': 'Создание остановлено на первой ошибке, чтобы не плодить записи: '
+                         + c['error'],
+                'created': created,
+                'already': skipped,
+                'remaining': remaining,
+                'done': False,
+                'errors': errors,
+            }
 
     return {
         'ok': True,
@@ -714,6 +816,12 @@ def handler(event: dict, context) -> dict:
 
     if action == 'match_products':
         return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
+
+    if action == 'gtd_schema':
+        return resp(200, {'result': gtd_schema(cfg)})
+
+    if action == 'repair_gtd':
+        return resp(200, {'result': repair_gtd(cfg)})
 
     if action == 'check_gtd':
         return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})

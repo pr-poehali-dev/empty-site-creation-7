@@ -107,6 +107,8 @@ export const odataApi = {
     ),
   matchProducts: (base: string, rows: { article: string }[]) =>
     call("match_products", "POST", { rows }, undefined, base),
+  gtdSchema: (base: string) => call("gtd_schema", "POST", {}, undefined, base),
+  repairGtd: (base: string) => call("repair_gtd", "POST", {}, undefined, base),
   checkGtd: (base: string, numbers: string[]) =>
     call("check_gtd", "POST", { numbers }, undefined, base),
   createGtd: (base: string, numbers: string[]) =>
