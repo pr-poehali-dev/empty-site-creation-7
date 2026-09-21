@@ -512,9 +512,11 @@ const ConvertedFiles = () => {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Icon name="FileSpreadsheet" size={18} className="text-green-400 flex-shrink-0" />
-                      <p className="font-medium text-sm sm:text-base truncate">{f.title}</p>
+                    <div className="flex items-start gap-2">
+                      <Icon name="FileSpreadsheet" size={18} className="text-green-400 flex-shrink-0 mt-0.5" />
+                      <p className="font-medium text-sm sm:text-base break-words leading-snug">
+                        {f.title}
+                      </p>
                     </div>
                     {f.description && (
                       <p className="text-xs sm:text-sm text-muted-foreground mt-1">
@@ -526,7 +528,7 @@ const ConvertedFiles = () => {
                       {f.size_bytes ? ` · ${formatSize(f.size_bytes)}` : ""}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="grid grid-cols-2 gap-1 flex-shrink-0 sm:flex sm:items-center">
                     <button
                       onClick={() => downloadFile(f)}
                       disabled={downloadingId === f.id}
