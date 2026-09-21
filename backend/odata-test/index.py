@@ -568,7 +568,7 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
             remaining = [k for k in uniq[idx:] if not existing.get(k)]
             break
         c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
-                       payload=gtd_payload(key, f_number, sch['fields']))
+                       payload=gtd_payload_full(key, f_number, sch['fields']))
         if c['ok']:
             created += 1
         else:
