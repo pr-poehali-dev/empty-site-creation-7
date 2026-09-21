@@ -201,6 +201,34 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doTryOneGtd = async () => {
+    if (!gtdMissing?.length) return;
+    setGtdBusy(true);
+    setGtdError("");
+    setGtdProgress("");
+    try {
+      const r = await odataApi.tryCreateOneGtd(base, gtdMissing);
+      const res = r.result;
+      const sent = Object.entries(res.sent || {})
+        .map(([k, v]) => `  ${k} = ${JSON.stringify(v)}`)
+        .join("\n");
+      if (res.ok && !res.skipped) {
+        setGtdProgress(
+          `Запись создана: ${res.number}\n` +
+            `Код в 1С: ${res.code || "пусто"}\n\nОтправлено:\n${sent}`,
+        );
+      } else {
+        setGtdError(
+          `Не вышло: ${res.error}\n\nОтправляли:\n${sent}`,
+        );
+      }
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doRepairGtd = async () => {
     setGtdBusy(true);
     setGtdError("");
@@ -526,6 +554,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                           <Icon name="Plus" size={15} />
                         )}
                         Создать номера ГТД
+                      </Button>
+                      <Button
+                        onClick={doTryOneGtd}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2 border-amber-500/50 text-amber-200"
+                      >
+                        <Icon name="FlaskConical" size={15} />
+                        Создать одну запись (проба)
                       </Button>
                       <Button
                         onClick={doGtdSchema}

@@ -113,6 +113,8 @@ export const odataApi = {
     call("check_gtd", "POST", { numbers }, undefined, base),
   createGtd: (base: string, numbers: string[]) =>
     call("create_gtd", "POST", { numbers }, undefined, base),
+  tryCreateOneGtd: (base: string, numbers: string[]) =>
+    call("try_create_one_gtd", "POST", { numbers }, undefined, base),
   createSupplierInvoice: (base: string, payload: DocPayload) =>
     call("create_supplier_invoice", "POST", payload, undefined, base),
   createGoodsReceipt: (base: string, payload: DocPayload) =>

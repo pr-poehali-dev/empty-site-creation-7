@@ -387,6 +387,63 @@ def gtd_payload(number, number_field, fields=None):
     return body
 
 
+def gtd_payload_full(number, number_field, fields):
+    """Полный набор реквизитов: номер, код, признаки папки/удаления и вид номера."""
+    body = {}
+    if number_field:
+        body[number_field] = number
+    if 'Code' in fields:
+        body['Code'] = number
+    if 'IsFolder' in fields:
+        body['IsFolder'] = False
+    if 'DeletionMark' in fields:
+        body['DeletionMark'] = False
+    kind = gtd_kind(number)
+    if kind == 'td' and GTD_FLAG_TD in fields:
+        body[GTD_FLAG_TD] = True
+    elif kind == 'rnpt' and GTD_FLAG_RNPT in fields:
+        body[GTD_FLAG_RNPT] = True
+    return body
+
+
+def try_create_one_gtd(cfg, numbers):
+    """Пробует создать ОДНУ запись номера ГТД с полным набором реквизитов."""
+    sch = gtd_schema(cfg)
+    f_number = sch['number_field']
+    fields = sch['fields']
+
+    candidates = [str(n or '').strip() for n in numbers]
+    candidates = [n for n in candidates if n and gtd_kind(n) is not None]
+    if not candidates:
+        return {'ok': False, 'error': 'Не передан ни один подходящий номер',
+                'fields': fields}
+
+    existing = prefetch_gtd(cfg, candidates, f_number)
+    number = next((n for n in candidates if not existing.get(n)), None)
+    if not number:
+        return {'ok': True, 'skipped': True,
+                'error': 'Все переданные номера уже есть в справочнике',
+                'fields': fields}
+
+    payload = gtd_payload_full(number, f_number, fields)
+    c = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
+                   payload=payload)
+    result = {
+        'ok': c['ok'],
+        'number': number,
+        'number_field': f_number,
+        'sent': payload,
+        'fields': fields,
+    }
+    if c['ok']:
+        data = c.get('data') or {}
+        result['ref_key'] = data.get('Ref_Key')
+        result['code'] = data.get('Code')
+    else:
+        result['error'] = c['error']
+    return result
+
+
 def repair_gtd(cfg, budget=18.0):
     """Ищет записи с пустым номером и помечает их на удаление. Ничего не создаёт."""
     started = time.time()
@@ -883,6 +940,9 @@ def handler(event: dict, context) -> dict:
 
     if action == 'check_gtd':
         return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})
+
+    if action == 'try_create_one_gtd':
+        return resp(200, {'result': try_create_one_gtd(cfg, body.get('numbers') or [])})
 
     if action == 'create_gtd':
         return resp(200, {'result': create_gtd_batch(cfg, body.get('numbers') or [])})
