@@ -6,6 +6,7 @@ import ResultBox from "./ResultBox";
 import { odataApi, CreatedObject } from "@/pages/odata/odataApi";
 
 interface DocTestProps {
+  base: string;
   kind: string;
   title: string;
   icon: string;
@@ -15,6 +16,7 @@ interface DocTestProps {
 }
 
 const DocTest = ({
+  base,
   kind,
   title,
   icon,
@@ -33,8 +35,8 @@ const DocTest = ({
     setConfirmHard(false);
     try {
       const r = isProduct
-        ? await odataApi.createProduct()
-        : await odataApi.createDoc(kind, organizationKey, warehouseKey);
+        ? await odataApi.createProduct(base)
+        : await odataApi.createDoc(base, kind, organizationKey, warehouseKey);
       setResult(r.result);
     } catch (e) {
       setResult({ ok: false, error: e instanceof Error ? e.message : "Ошибка" });
@@ -47,7 +49,7 @@ const DocTest = ({
     if (!result?.entity || !result?.key) return;
     setBusy(true);
     try {
-      const r = await odataApi.remove(result.entity, result.key, hard);
+      const r = await odataApi.remove(base, result.entity, result.key, hard);
       if (r.result.ok) {
         setRemoved(hard ? "Удалён из базы полностью" : "Помечен на удаление");
         if (hard) setResult(null);

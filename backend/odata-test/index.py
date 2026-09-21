@@ -54,10 +54,20 @@ def check_owner(token):
         conn.close()
 
 
-def odata_config():
-    url = (os.environ.get('ODATA_URL') or '').strip()
-    user = (os.environ.get('ODATA_USER') or '').strip()
-    password = os.environ.get('ODATA_PASSWORD') or ''
+BASES = {
+    'trade-resurs': '',
+    'fomkin': '_FOMKIN',
+    'mirtehniki': '_MIRTEH',
+}
+
+
+def odata_config(base='trade-resurs'):
+    suffix = BASES.get(base)
+    if suffix is None:
+        return None
+    url = (os.environ.get(f'ODATA_URL{suffix}') or '').strip()
+    user = (os.environ.get(f'ODATA_USER{suffix}') or '').strip()
+    password = os.environ.get(f'ODATA_PASSWORD{suffix}') or ''
     if not url or not user or not password:
         return None
     if not url.endswith('/'):
@@ -172,6 +182,104 @@ def find_product(cfg, article):
     return {'ok': True, 'items': items, 'count': len(items)}
 
 
+def match_products(cfg, rows):
+    """Ищет товары по артикулу, затем по штрихкоду. Возвращает результат по каждой строке."""
+    articles = [str(r.get('article') or '').strip() for r in rows]
+    unique = sorted({a for a in articles if a})
+
+    found = {}
+    chunk = 40
+    for i in range(0, len(unique), chunk):
+        part = unique[i:i + chunk]
+        cond = ' or '.join(f"Артикул eq '{a}'" for a in part)
+        q = (
+            "Catalog_Номенклатура?$format=json"
+            "&$select=Ref_Key,Code,Description,Артикул"
+            f"&$filter=({cond}) and IsFolder eq false and DeletionMark eq false"
+        )
+        r = call_odata(cfg, q)
+        if not r['ok']:
+            return {'ok': False, 'error': r['error']}
+        for item in r['data'].get('value', []):
+            art = str(item.get('Артикул') or '').strip()
+            if art and art not in found:
+                found[art] = {
+                    'key': item.get('Ref_Key'),
+                    'code': item.get('Code'),
+                    'name': item.get('Description'),
+                }
+
+    result = []
+    for r in rows:
+        art = str(r.get('article') or '').strip()
+        hit = found.get(art)
+        result.append({
+            'article': art,
+            'found': bool(hit),
+            'key': hit['key'] if hit else None,
+            'name_1c': hit['name'] if hit else None,
+            'code': hit['code'] if hit else None,
+        })
+    return {'ok': True, 'items': result, 'found': sum(1 for x in result if x['found']), 'total': len(result)}
+
+
+def create_supplier_invoice(cfg, payload):
+    """Создаёт счёт на оплату поставщика со строками товаров. Без НДС, без контрагента."""
+    org_key = payload.get('organization_key')
+    rows = payload.get('rows') or []
+    if not rows:
+        return {'ok': False, 'error': 'Нет строк товаров'}
+
+    goods = []
+    line = 0
+    for r in rows:
+        key = r.get('key')
+        if not key:
+            return {'ok': False, 'error': f"Не найден товар с артикулом {r.get('article')}"}
+        line += 1
+        qty = float(r.get('quantity') or 0)
+        price = float(r.get('price') or 0)
+        amount = round(qty * price, 2)
+        goods.append({
+            'LineNumber': str(line),
+            'Номенклатура_Key': key,
+            'Количество': qty,
+            'Цена': price,
+            'Сумма': amount,
+            'СтавкаНДС': 'БезНДС',
+            'СуммаНДС': 0,
+            'Всего': amount,
+        })
+
+    doc = {
+        'Date': payload.get('date') or datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'Posted': False,
+        'Контрагент_Key': EMPTY_GUID,
+        'ДоговорКонтрагента_Key': EMPTY_GUID,
+        'СуммаДокумента': round(sum(g['Всего'] for g in goods), 2),
+        'Запасы': goods,
+    }
+    if org_key:
+        doc['Организация_Key'] = org_key
+    if payload.get('comment'):
+        doc['Комментарий'] = payload['comment']
+
+    r = call_odata(cfg, 'Document_СчетНаОплатуПоставщика?$format=json', method='POST', payload=doc)
+    if not r['ok']:
+        return {'ok': False, 'error': r['error'], 'sent_head': {k: v for k, v in doc.items() if k != 'Запасы'},
+                'sent_line': goods[0] if goods else None}
+    d = r['data']
+    return {
+        'ok': True,
+        'entity': 'Document_СчетНаОплатуПоставщика',
+        'key': d.get('Ref_Key'),
+        'number': d.get('Number'),
+        'date': d.get('Date'),
+        'lines': len(goods),
+        'amount': doc['СуммаДокумента'],
+    }
+
+
 def create_doc(cfg, doc_kind, org_key, warehouse_key):
     entity = DOC_TYPES.get(doc_kind)
     if not entity:
@@ -254,9 +362,16 @@ def handler(event: dict, context) -> dict:
     if not check_owner(get_token(event)):
         return resp(401, {'error': 'Доступ только для владельца'})
 
-    cfg = odata_config()
+    base = params.get('base') or body.get('base') or 'trade-resurs'
+
+    if action == 'bases':
+        return resp(200, {'bases': {
+            key: bool(odata_config(key)) for key in BASES
+        }})
+
+    cfg = odata_config(base)
     if not cfg:
-        return resp(200, {'configured': False, 'error': 'Не заданы адрес, логин или пароль доступа к 1С'})
+        return resp(200, {'configured': False, 'error': 'Не заданы адрес, логин или пароль доступа к этой базе 1С'})
 
     if action == 'ping':
         return resp(200, {'configured': True, 'result': ping(cfg)})
@@ -271,6 +386,12 @@ def handler(event: dict, context) -> dict:
         return resp(200, {'result': create_doc(
             cfg, body.get('kind'), body.get('organization_key'), body.get('warehouse_key')
         )})
+
+    if action == 'match_products':
+        return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
+
+    if action == 'create_supplier_invoice':
+        return resp(200, {'result': create_supplier_invoice(cfg, body)})
 
     if action == 'create_product':
         return resp(200, {'result': create_product(cfg)})
