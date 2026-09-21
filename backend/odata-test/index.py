@@ -65,8 +65,12 @@ def odata_config():
     return {'url': url, 'user': user, 'password': password}
 
 
+def encode_path(path):
+    return urllib.parse.quote(path, safe="/?&=$',()[]:*+.~-_")
+
+
 def call_odata(cfg, path, method='GET', payload=None, raw=False):
-    full = cfg['url'] + path
+    full = cfg['url'] + encode_path(path)
     data = None
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
@@ -77,7 +81,7 @@ def call_odata(cfg, path, method='GET', payload=None, raw=False):
     if data is not None:
         req.add_header('Content-Type', 'application/json')
     try:
-        with urllib.request.urlopen(req, timeout=25) as r:
+        with urllib.request.urlopen(req, timeout=20) as r:
             body = r.read().decode('utf-8', errors='replace')
             if raw or not body:
                 return {'ok': True, 'status': r.status, 'text': body}
@@ -109,11 +113,15 @@ def parse_1c_error(body, code):
 
 
 def ping(cfg):
-    r = call_odata(cfg, '$metadata', raw=True)
+    r = call_odata(cfg, '?$format=json')
     if not r['ok']:
         return {'ok': False, 'error': r['error'], 'status': r['status']}
-    text = r.get('text') or ''
-    sets = sorted(set(part.split('"')[0] for part in text.split('EntitySet Name="')[1:]))
+    data = r.get('data') or {}
+    sets = sorted(
+        item.get('name') or item.get('url') or ''
+        for item in data.get('value', [])
+    )
+    sets = [s for s in sets if s]
     return {'ok': True, 'entity_count': len(sets), 'entities': sets[:400]}
 
 
@@ -146,7 +154,7 @@ def find_product(cfg, article):
     query = (
         "Catalog_Номенклатура?$format=json&$top=20"
         "&$select=Ref_Key,Code,Description,Артикул,DeletionMark,IsFolder"
-        f"&$filter=Артикул eq '{urllib.parse.quote(safe)}' and IsFolder eq false"
+        f"&$filter=Артикул eq '{safe}' and IsFolder eq false"
     )
     r = call_odata(cfg, query)
     if not r['ok']:

@@ -47,8 +47,14 @@ const call = async (
     headers: authHeaders(),
     body: method === "POST" ? JSON.stringify({ action, ...payload }) : undefined,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Ошибка запроса");
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Сервер вернул не JSON (код ${res.status}): ${text.slice(0, 300)}`);
+  }
+  if (!res.ok) throw new Error(data.error || `Ошибка запроса, код ${res.status}`);
   return data;
 };
 
