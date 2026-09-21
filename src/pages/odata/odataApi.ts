@@ -31,6 +31,11 @@ export interface CreatedObject {
     fallback?: string;
     table?: string;
     columns?: string[];
+    vat_rate?: string;
+    vat_amount?: number;
+    vat_in_sum_field?: string;
+    vat_in_sum_warning?: string;
+    amount_warning?: string;
   };
   sent_line?: Record<string, unknown>;
 }
@@ -103,6 +108,7 @@ export const odataApi = {
       date?: string;
       incoming_number?: string;
       incoming_date?: string;
+      vat_rate?: string;
       comment?: string;
       rows: { key: string; article: string; quantity: number; price: number }[];
     },
@@ -112,6 +118,14 @@ export const odataApi = {
   remove: (base: string, entity: string, key: string, hard: boolean) =>
     call("delete", "POST", { entity, key, hard }, undefined, base),
 };
+
+export const VAT_RATES = [
+  { value: "22", label: "22%" },
+  { value: "10", label: "10%" },
+  { value: "5", label: "5%" },
+  { value: "0", label: "0%" },
+  { value: "none", label: "Без НДС" },
+];
 
 export const DOC_KINDS = [
   { kind: "supplier_invoice", title: "Счёт на оплату поставщику", icon: "FileInput" },

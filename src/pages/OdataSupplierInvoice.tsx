@@ -9,7 +9,7 @@ import {
 import Icon from "@/components/ui/icon";
 import TestCard from "@/components/odata/TestCard";
 import ResultBox from "@/components/odata/ResultBox";
-import { odataApi, RefItem, CreatedObject } from "./odata/odataApi";
+import { odataApi, RefItem, CreatedObject, VAT_RATES } from "./odata/odataApi";
 import { findBase } from "./odata/bases";
 import { parseOdataFile, ParsedFile, formatMoney } from "./odata/parseOdataFile";
 
@@ -33,6 +33,7 @@ const OdataSupplierInvoice = () => {
 
   const [orgs, setOrgs] = useState<RefItem[]>([]);
   const [orgKey, setOrgKey] = useState("");
+  const [vatRate, setVatRate] = useState("22");
   const [docNumber, setDocNumber] = useState("");
   const [docDate, setDocDate] = useState("");
 
@@ -53,6 +54,8 @@ const OdataSupplierInvoice = () => {
       .then((r) => {
         const list = r.result?.organizations || [];
         setOrgs(list);
+        const savedVat = localStorage.getItem(`odata_vat_${base}`);
+        if (savedVat) setVatRate(savedVat);
         const saved = localStorage.getItem(`odata_org_${base}`);
         if (saved && list.some((o: RefItem) => o.key === saved)) setOrgKey(saved);
         else if (list.length) setOrgKey(list[0].key);
@@ -63,6 +66,11 @@ const OdataSupplierInvoice = () => {
   const pickOrg = (key: string) => {
     setOrgKey(key);
     localStorage.setItem(`odata_org_${base}`, key);
+  };
+
+  const pickVat = (v: string) => {
+    setVatRate(v);
+    localStorage.setItem(`odata_vat_${base}`, v);
   };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -127,6 +135,7 @@ const OdataSupplierInvoice = () => {
         date: iso,
         incoming_number: docNumber || undefined,
         incoming_date: iso,
+        vat_rate: vatRate,
         rows,
       });
       setCreated(r.result);
@@ -237,14 +246,27 @@ const OdataSupplierInvoice = () => {
                   className="mt-1"
                 />
               </div>
+              <div className="sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">Ставка НДС</Label>
+                <Select value={vatRate} onValueChange={pickVat}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VAT_RATES.map((v) => (
+                      <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground mt-3">
               Этой же датой будет создан наш документ. Свой номер 1С присвоит сама, по
               порядку.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Контрагент не заполняется, ставка НДС — «Без НДС». Документ создаётся
-              непроведённым.
+              Налог считается в сумме: цены из файла остаются как есть, НДС выделяется
+              изнутри. Контрагент не заполняется, документ создаётся непроведённым.
             </p>
           </TestCard>
         )}
@@ -357,9 +379,16 @@ const OdataSupplierInvoice = () => {
                   `Дата: ${created.date?.replace("T", " ")}`,
                   `Строк: ${created.lines}`,
                   `Сумма: ${formatMoney(Number(created.amount))} ₽`,
+                  created.used?.vat_amount !== undefined
+                    ? `В том числе НДС (${created.used.vat_rate}): ${formatMoney(
+                        Number(created.used.vat_amount),
+                      )} ₽`
+                    : null,
                   created.used?.table
                     ? `Строки записаны в таблицу «${created.used.table}»`
                     : null,
+                  created.used?.vat_in_sum_warning || null,
+                  created.used?.amount_warning || null,
                   created.used?.number_field
                     ? `Номер поставщика записан в «${created.used.number_field}»`
                     : null,

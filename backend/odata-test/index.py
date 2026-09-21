@@ -237,6 +237,17 @@ VAT_RATE_FIELD_NAMES = ['СтавкаНДС']
 VAT_AMOUNT_FIELD_NAMES = ['СуммаНДС']
 TOTAL_FIELD_NAMES = ['Всего', 'СуммаСНДС']
 
+VAT_IN_SUM_FIELDS = ['СуммаВключаетНДС', 'ЦенаВключаетНДС', 'НДСВключенВСтоимость', 'УчитыватьНДС']
+
+VAT_RATES = {
+    '22': {'name': 'НДС22', 'percent': 22},
+    '20': {'name': 'НДС20', 'percent': 20},
+    '10': {'name': 'НДС10', 'percent': 10},
+    '5': {'name': 'НДС5', 'percent': 5},
+    '0': {'name': 'НДС0', 'percent': 0},
+    'none': {'name': 'БезНДС', 'percent': 0},
+}
+
 
 def doc_schema(cfg, entity):
     """Читает существующий документ вместе с табличными частями, чтобы узнать реальные имена."""
@@ -311,8 +322,13 @@ def create_supplier_invoice(cfg, payload):
     f_vat_sum = pick(VAT_AMOUNT_FIELD_NAMES, cols)
     f_total = pick(TOTAL_FIELD_NAMES, cols)
 
+    vat_key = str(payload.get('vat_rate') or 'none')
+    vat = VAT_RATES.get(vat_key) or VAT_RATES['none']
+    percent = vat['percent']
+
     goods = []
     line = 0
+    total_vat = 0.0
     for r in rows:
         key = r.get('key')
         if not key:
@@ -321,6 +337,8 @@ def create_supplier_invoice(cfg, payload):
         qty = float(r.get('quantity') or 0)
         price = float(r.get('price') or 0)
         amount = round(qty * price, 2)
+        vat_sum = round(amount * percent / (100 + percent), 2) if percent else 0
+        total_vat += vat_sum
         row = {
             'LineNumber': str(line),
             f_item: key,
@@ -329,9 +347,9 @@ def create_supplier_invoice(cfg, payload):
             f_amount: amount,
         }
         if f_vat_rate:
-            row[f_vat_rate] = 'БезНДС'
+            row[f_vat_rate] = vat['name']
         if f_vat_sum:
-            row[f_vat_sum] = 0
+            row[f_vat_sum] = vat_sum
         if f_total:
             row[f_total] = amount
         goods.append(row)
@@ -349,7 +367,18 @@ def create_supplier_invoice(cfg, payload):
     if org_key:
         doc['Организация_Key'] = org_key
 
-    used = {'table': table, 'columns': [f_item, f_qty, f_price, f_amount]}
+    used = {'table': table, 'columns': [f_item, f_qty, f_price, f_amount],
+            'vat_rate': vat['name'], 'vat_amount': round(total_vat, 2)}
+
+    f_vat_in_sum = pick(VAT_IN_SUM_FIELDS, fields)
+    if f_vat_in_sum:
+        doc[f_vat_in_sum] = True
+        used['vat_in_sum_field'] = f_vat_in_sum
+    elif percent:
+        used['vat_in_sum_warning'] = (
+            'В документе нет признака «НДС в сумме» — 1С может посчитать налог сверху. '
+            'Доступные реквизиты: ' + ', '.join(fields[:40])
+        )
 
     in_number = str(payload.get('incoming_number') or '').strip()
     if in_number:
@@ -391,6 +420,13 @@ def create_supplier_invoice(cfg, payload):
             'sent_line': goods[0],
         }
 
+    sent_amount = doc['СуммаДокумента']
+    got_amount = d.get('СуммаДокумента')
+    if got_amount is not None and abs(float(got_amount) - sent_amount) > 1:
+        used['amount_warning'] = (
+            f'Сумма в 1С ({got_amount}) отличается от отправленной ({sent_amount})'
+        )
+
     return {
         'ok': True,
         'entity': entity,
@@ -398,7 +434,7 @@ def create_supplier_invoice(cfg, payload):
         'number': d.get('Number'),
         'date': d.get('Date'),
         'lines': written_count if written_count is not None else len(goods),
-        'amount': doc['СуммаДокумента'],
+        'amount': sent_amount,
         'used': used,
     }
 
