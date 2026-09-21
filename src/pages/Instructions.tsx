@@ -16,6 +16,7 @@ import invCreate from "@/data/invoices/03-create.md?raw";
 import invPrices from "@/data/invoices/04-prices.md?raw";
 import invExport from "@/data/invoices/05-export.md?raw";
 import invIds from "@/data/invoices/06-ids.md?raw";
+import odataGuide from "@/data/1c/odata.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
 import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
@@ -563,6 +564,7 @@ const Instructions = () => {
     { key: "creation", label: "Создание обработки" },
     { key: "code", label: "Текст модуля" },
     { key: "usage", label: "Инструкция пользования" },
+    { key: "odata", label: "OData" },
   ];
 
   const handleCopyCode = () => {
@@ -812,6 +814,7 @@ const Instructions = () => {
                 </div>
               )}
               {activeTab === "usage" && renderMarkdown(TAB_USAGE)}
+              {activeTab === "odata" && renderMarkdown(odataGuide)}
             </div>
           </>
         )}
