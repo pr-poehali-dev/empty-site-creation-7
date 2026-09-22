@@ -495,56 +495,60 @@ def repair_gtd(cfg, budget=18.0):
     }
 
 
-def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
-    """Читает номера ГТД пачками. Ищет и по реквизиту номера, и по коду."""
-    uniq = sorted({(n or '').strip() for n in numbers if (n or '').strip()})
+GTD_NUM_FIELD = 'РегистрационныйНомер'
+
+
+def lookup_gtd(cfg, numbers, errors=None, stats=None, chunk=25, budget=None):
+    """Точечный поиск номеров ГТД пачками. Возвращает {номер: Ref_Key}."""
+    uniq = sorted({str(n or '').strip() for n in numbers if str(n or '').strip()})
     cache = {}
     if not uniq:
         return cache
-    wanted = set(uniq)
-    f_num = 'РегистрационныйНомер'
-    sel = f'Ref_Key,{f_num}'
-    skip = 0
-    scanned = 0
+    f_num = GTD_NUM_FIELD
+    started = time.time()
     pages = []
     stop = ''
-    while skip < 60000:
+    for i in range(0, len(uniq), chunk):
+        if budget and time.time() - started > budget:
+            stop = 'не хватило времени'
+            break
+        part = uniq[i:i + chunk]
+        cond = ' or '.join(f"{f_num} eq '{n}'" for n in part)
         t0 = time.time()
         r = call_odata(
-            cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$top=1000&$skip={skip}"
+            cfg,
+            f"Catalog_НомераГТД?$format=json&$select=Ref_Key,{f_num}"
+            f"&$filter={cond}&$top={chunk * 3}",
         )
         took = round(time.time() - t0, 2)
         if not r['ok']:
-            pages.append({'skip': skip, 'got': 0, 'sec': took,
-                          'hits': 0, 'error': str(r['error'])[:200]})
-            stop = 'отказ 1С'
+            pages.append({'part': len(part), 'sec': took, 'hits': 0,
+                          'error': str(r['error'])[:200]})
             if errors is not None and len(errors) < 3:
-                errors.append(f'Реквизит {f_num} не читается: ' + str(r['error']))
+                errors.append('Поиск номеров не прошёл: ' + str(r['error']))
+            stop = 'отказ 1С'
             break
         items = r['data'].get('value', []) or []
-        scanned += len(items)
         hits = 0
         for item in items:
             key = str(item.get(f_num) or '').strip()
-            if key and key in wanted and key not in cache:
+            if key and key not in cache:
                 cache[key] = item.get('Ref_Key')
                 hits += 1
-        pages.append({'skip': skip, 'got': len(items), 'sec': took,
-                      'hits': hits, 'total_hits': len(cache)})
-        print(f'[GTD] skip={skip} got={len(items)} sec={took} '
-              f'hits={hits} total={len(cache)}')
-        if len(items) < 1000:
-            stop = 'страница короче 1000 — конец справочника'
-            break
-        skip += 1000
-    else:
-        stop = 'достигнут предел 60000'
+        pages.append({'part': len(part), 'sec': took, 'hits': hits,
+                      'total_hits': len(cache)})
+        print(f'[GTD] part={len(part)} sec={took} hits={hits} total={len(cache)}')
     if stats is not None:
-        stats['scanned'] = scanned
+        stats['scanned'] = len(uniq)
         stats['pages'] = pages
-        stats['stop'] = stop
+        stats['stop'] = stop or 'проверены все номера'
         stats['field'] = f_num
     return cache
+
+
+def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
+    """Совместимость: точечный поиск номеров ГТД."""
+    return lookup_gtd(cfg, numbers, errors=errors, stats=stats)
 
 
 def check_gtd(cfg, numbers):
@@ -608,6 +612,99 @@ def gtd_debug(cfg, numbers):
     out['existing'] = chk.get('existing', 0)
     out['checked'] = chk.get('checked', 0)
     return out
+
+
+def gtd_fix_payload(number):
+    """Реквизиты как в настоящей записи 1С."""
+    kind = gtd_kind(number)
+    return {
+        'Code': number[:25],
+        GTD_NUM_FIELD: number,
+        'СтранаВвозаНеРФ': False,
+        'ЭтоНомерТД': kind == 'td',
+        'ЭтоРНПТ': kind == 'rnpt',
+        'DeletionMark': False,
+    }
+
+
+def gtd_update_one(cfg, number, ref):
+    """Перезаписывает реквизиты одной записи и перечитывает её."""
+    before = call_odata(cfg, f"Catalog_НомераГТД(guid'{ref}')?$format=json")
+    u = call_odata(cfg, f"Catalog_НомераГТД(guid'{ref}')?$format=json",
+                   method='PATCH', payload=gtd_fix_payload(number))
+    after = call_odata(cfg, f"Catalog_НомераГТД(guid'{ref}')?$format=json")
+    got = str((after.get('data') or {}).get(GTD_NUM_FIELD) or '').strip() if after['ok'] else ''
+    return {
+        'number': number,
+        'ref': ref,
+        'before': before.get('data') if before['ok'] else str(before.get('error'))[:200],
+        'after': after.get('data') if after['ok'] else str(after.get('error'))[:200],
+        'ok': u['ok'] and got == number,
+        'error': None if u['ok'] else str(u.get('error'))[:300],
+    }
+
+
+def gtd_probe(cfg, numbers):
+    """Проба: обновляет реквизиты трёх номеров и показывает результат по каждому."""
+    want = [str(n or '').strip() for n in (numbers or []) if str(n or '').strip()][:3]
+    if not want:
+        return {'error': 'Не передан ни один номер'}
+    found = lookup_gtd(cfg, want)
+    out = []
+    for n in want:
+        ref = found.get(n)
+        if not ref:
+            out.append({'number': n, 'ok': False, 'error': 'Запись в 1С не найдена'})
+            continue
+        out.append(gtd_update_one(cfg, n, ref))
+    return {'results': out}
+
+
+def gtd_fix_all(cfg, numbers, budget=18.0):
+    """Обновляет реквизиты всех переданных номеров. Ненайденные создаёт заново."""
+    started = time.time()
+    uniq = []
+    seen = set()
+    for n in numbers or []:
+        key = str(n or '').strip()
+        if key and key not in seen and gtd_kind(key) is not None:
+            seen.add(key)
+            uniq.append(key)
+    if not uniq:
+        return {'ok': True, 'updated': 0, 'created': 0, 'remaining': [], 'errors': []}
+
+    found = lookup_gtd(cfg, uniq, budget=budget / 2)
+    updated = 0
+    created = 0
+    errors = []
+    remaining = []
+    for idx, n in enumerate(uniq):
+        if time.time() - started > budget:
+            remaining = uniq[idx:]
+            break
+        ref = found.get(n)
+        if ref:
+            r = call_odata(cfg, f"Catalog_НомераГТД(guid'{ref}')?$format=json",
+                           method='PATCH', payload=gtd_fix_payload(n))
+            if r['ok']:
+                updated += 1
+            elif len(errors) < 5:
+                errors.append(f'{n}: {str(r["error"])[:200]}')
+        else:
+            r = call_odata(cfg, 'Catalog_НомераГТД?$format=json', method='POST',
+                           payload=gtd_fix_payload(n))
+            if r['ok']:
+                created += 1
+            elif len(errors) < 5:
+                errors.append(f'{n}: {str(r["error"])[:200]}')
+    return {
+        'ok': True,
+        'updated': updated,
+        'created': created,
+        'remaining': remaining,
+        'done': not remaining,
+        'errors': errors,
+    }
 
 
 def gtd_foreign(cfg, numbers):
@@ -1056,6 +1153,12 @@ def handler(event: dict, context) -> dict:
 
     if action == 'check_gtd':
         return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})
+
+    if action == 'gtd_probe':
+        return resp(200, {'result': gtd_probe(cfg, body.get('numbers') or [])})
+
+    if action == 'gtd_fix_all':
+        return resp(200, {'result': gtd_fix_all(cfg, body.get('numbers') or [])})
 
     if action == 'gtd_foreign':
         return resp(200, {'result': gtd_foreign(cfg, body.get('numbers') or [])})

@@ -111,6 +111,10 @@ export const odataApi = {
   repairGtd: (base: string) => call("repair_gtd", "POST", {}, undefined, base),
   checkGtd: (base: string, numbers: string[]) =>
     call("check_gtd", "POST", { numbers }, undefined, base),
+  gtdProbe: (base: string, numbers: string[]) =>
+    call("gtd_probe", "POST", { numbers }, undefined, base),
+  gtdFixAll: (base: string, numbers: string[]) =>
+    call("gtd_fix_all", "POST", { numbers }, undefined, base),
   gtdForeign: (base: string, numbers: string[]) =>
     call("gtd_foreign", "POST", { numbers }, undefined, base),
   gtdDebug: (base: string, numbers: string[]) =>

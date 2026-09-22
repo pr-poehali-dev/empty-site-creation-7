@@ -50,6 +50,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
 
   const [matchProgress, setMatchProgress] = useState("");
   const [gtdMissing, setGtdMissing] = useState<string[] | null>(null);
+  const [gtdAll, setGtdAll] = useState<string[]>([]);
   const [gtdExisting, setGtdExisting] = useState(0);
   const [gtdScanned, setGtdScanned] = useState(0);
   const [gtdBusy, setGtdBusy] = useState(false);
@@ -153,6 +154,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
               .filter(Boolean) as string[],
           ),
         ];
+        setGtdAll(nums);
         if (nums.length) {
           const miss: string[] = [];
           const bad: string[] = [];
@@ -201,6 +203,73 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           : "Реквизит номера не определён") +
           `\nРеквизиты справочника: ${(r.result.fields || []).join(", ") || "не прочитаны"}`,
       );
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
+  const doGtdProbe = async () => {
+    const nums = gtdAll.length ? gtdAll : gtdMissing || [];
+    if (!nums.length) return;
+    setGtdBusy(true);
+    setGtdError("");
+    try {
+      const r = await odataApi.gtdProbe(base, nums.slice(0, 3));
+      const d = r.result;
+      if (d.error) {
+        setGtdError(d.error);
+        return;
+      }
+      const text = (d.results || [])
+        .map((x: Record<string, unknown>, i: number) => {
+          if (x.error && !x.ref)
+            return `--- номер ${i + 1}: ${x.number} ---\n${x.error}`;
+          return (
+            `--- номер ${i + 1}: ${x.number} ---\n` +
+            `итог: ${x.ok ? "записан" : "НЕ записан"}` +
+            (x.error ? `\nошибка: ${x.error}` : "") +
+            `\nбыло:\n${JSON.stringify(x.before, null, 1)}` +
+            `\nстало:\n${JSON.stringify(x.after, null, 1)}`
+          );
+        })
+        .join("\n\n");
+      setGtdProgress(text);
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
+  const doGtdFixAll = async () => {
+    const nums = gtdAll.length ? gtdAll : gtdMissing || [];
+    if (!nums.length) return;
+    setGtdBusy(true);
+    setGtdError("");
+    let queue = [...nums];
+    const total = queue.length;
+    let upd = 0;
+    let cre = 0;
+    try {
+      while (queue.length) {
+        setGtdProgress(`Обработано ${upd + cre} из ${total}`);
+        const r = await odataApi.gtdFixAll(base, queue);
+        upd += r.result.updated || 0;
+        cre += r.result.created || 0;
+        const rest: string[] = r.result.remaining || [];
+        if (r.result.errors?.length) setGtdError(r.result.errors.join("\n"));
+        if (rest.length === queue.length) {
+          setGtdError("1С не принимает изменения — остановился");
+          break;
+        }
+        queue = rest;
+      }
+      setGtdProgress(
+        `Готово. Обновлено ${upd}, создано ${cre}, всего ${total}`,
+      );
+      setGtdMissing([]);
     } catch (e) {
       setGtdError(e instanceof Error ? e.message : "Ошибка");
     } finally {
@@ -619,11 +688,14 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                     Просмотрено записей справочника: {gtdScanned}
                   </div>
                 )}
-                {gtdMissing.length > 0 && (
+                {(gtdMissing.length > 0 || gtdAll.length > 0) && (
                   <>
                     <div className="text-xs mt-1 font-mono opacity-80 break-all">
-                      {gtdMissing.slice(0, 3).join(", ")}
-                      {gtdMissing.length > 3 && ` и ещё ${gtdMissing.length - 3}`}
+                      {(gtdMissing.length ? gtdMissing : gtdAll)
+                        .slice(0, 3)
+                        .join(", ")}
+                      {(gtdMissing.length || gtdAll.length) > 3 &&
+                        ` и ещё ${(gtdMissing.length || gtdAll.length) - 3}`}
                     </div>
                     <div className="flex flex-wrap gap-2 mt-2">
                       <Button
@@ -688,6 +760,25 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       >
                         <Icon name="Search" size={15} />
                         Показать чужие записи
+                      </Button>
+                      <Button
+                        onClick={doGtdProbe}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2 border-amber-500/50 text-amber-200"
+                      >
+                        <Icon name="FlaskConical" size={15} />
+                        Проба: 3 номера
+                      </Button>
+                      <Button
+                        onClick={doGtdFixAll}
+                        disabled={gtdBusy}
+                        size="sm"
+                        className="rounded-lg gap-2 bg-emerald-600 hover:bg-emerald-500"
+                      >
+                        <Icon name="Wrench" size={15} />
+                        Обновить все номера
                       </Button>
                     </div>
                   </>
