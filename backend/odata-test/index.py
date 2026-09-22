@@ -8,6 +8,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
 
 CORS = {
@@ -498,51 +499,51 @@ def repair_gtd(cfg, budget=18.0):
 GTD_NUM_FIELD = 'РегистрационныйНомер'
 
 
-def lookup_gtd(cfg, numbers, errors=None, stats=None, chunk=25, budget=None):
-    """Точечный поиск номеров ГТД пачками. Возвращает {номер: Ref_Key}."""
+def find_one_gtd(cfg, number):
+    """Ищет ОДИН номер ГТД. Возвращает (Ref_Key | None, текст ошибки | None)."""
+    n = str(number or '').strip()
+    if not n:
+        return None, None
+    r = call_odata(
+        cfg,
+        f"Catalog_НомераГТД?$format=json&$filter={GTD_NUM_FIELD} eq '{n}'&$top=1",
+    )
+    if not r['ok']:
+        return None, str(r['error'])[:200]
+    items = r['data'].get('value', []) or []
+    if not items:
+        return None, None
+    return items[0].get('Ref_Key'), None
+
+
+def lookup_gtd(cfg, numbers, errors=None, stats=None, budget=None, workers=8):
+    """Ищет номера ГТД по одному, параллельно. Возвращает {номер: Ref_Key}."""
     uniq = sorted({str(n or '').strip() for n in numbers if str(n or '').strip()})
     cache = {}
     if not uniq:
         return cache
-    f_num = GTD_NUM_FIELD
     started = time.time()
-    pages = []
-    stop = ''
-    for i in range(0, len(uniq), chunk):
-        if budget and time.time() - started > budget:
-            stop = 'не хватило времени'
-            break
-        part = uniq[i:i + chunk]
-        cond = ' or '.join(f"{f_num} eq '{n}'" for n in part)
-        t0 = time.time()
-        r = call_odata(
-            cfg,
-            f"Catalog_НомераГТД?$format=json&$select=Ref_Key,{f_num}"
-            f"&$filter={cond}&$top={chunk * 3}",
-        )
-        took = round(time.time() - t0, 2)
-        if not r['ok']:
-            pages.append({'part': len(part), 'sec': took, 'hits': 0,
-                          'error': str(r['error'])[:200]})
-            if errors is not None and len(errors) < 3:
-                errors.append('Поиск номеров не прошёл: ' + str(r['error']))
-            stop = 'отказ 1С'
-            break
-        items = r['data'].get('value', []) or []
-        hits = 0
-        for item in items:
-            key = str(item.get(f_num) or '').strip()
-            if key and key not in cache:
-                cache[key] = item.get('Ref_Key')
-                hits += 1
-        pages.append({'part': len(part), 'sec': took, 'hits': hits,
-                      'total_hits': len(cache)})
-        print(f'[GTD] part={len(part)} sec={took} hits={hits} total={len(cache)}')
+    found = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(find_one_gtd, cfg, n): n for n in uniq}
+        for fut in as_completed(futures):
+            n = futures[fut]
+            try:
+                ref, err = fut.result()
+            except Exception as e:
+                ref, err = None, str(e)[:200]
+            if err and errors is not None and len(errors) < 3:
+                errors.append(f'{n}: {err}')
+            if ref:
+                cache[n] = ref
+                found += 1
+    took = round(time.time() - started, 2)
+    print(f'[GTD] one-by-one asked={len(uniq)} found={found} sec={took}')
     if stats is not None:
         stats['scanned'] = len(uniq)
-        stats['pages'] = pages
-        stats['stop'] = stop or 'проверены все номера'
-        stats['field'] = f_num
+        stats['sec'] = took
+        stats['stop'] = 'проверены все номера'
+        stats['field'] = GTD_NUM_FIELD
     return cache
 
 
@@ -567,10 +568,10 @@ def check_gtd(cfg, numbers):
         'unknown': unknown,
         'read_errors': read_errors,
         'scanned': stats.get('scanned', 0),
-        'pages': stats.get('pages', []),
+        'sec': stats.get('sec', 0),
         'stop': stats.get('stop', ''),
         'field': stats.get('field', ''),
-        'error': ('Часть справочника не прочиталась: ' + read_errors[0])
+        'error': ('1С отказала при поиске: ' + read_errors[0])
                  if read_errors else None,
     }
 
