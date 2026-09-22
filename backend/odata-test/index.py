@@ -564,6 +564,7 @@ def check_gtd(cfg, numbers):
         'ok': not read_errors,
         'checked': len(uniq),
         'existing': len([n for n in uniq if cache.get(n)]),
+        'refs': cache,
         'missing': missing,
         'unknown': unknown,
         'read_errors': read_errors,
@@ -855,7 +856,13 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
         ref_numbers += [r.get('gtd') for r in rows]
     if f_rnpt and f_rnpt.endswith('_Key'):
         ref_numbers += [r.get('rnpt') for r in rows]
-    gtd_cache = prefetch_gtd(cfg, ref_numbers) if ref_numbers else {}
+    ref_numbers = [str(n or '').strip() for n in ref_numbers if str(n or '').strip()]
+
+    known = payload.get('gtd_refs') or {}
+    gtd_cache = {str(k).strip(): v for k, v in known.items() if v}
+    lost = [n for n in set(ref_numbers) if n not in gtd_cache]
+    if lost:
+        gtd_cache.update(lookup_gtd(cfg, lost))
     notes = []
     missing_gtd = set()
     missing_country = set()

@@ -51,6 +51,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [matchProgress, setMatchProgress] = useState("");
   const [gtdMissing, setGtdMissing] = useState<string[] | null>(null);
   const [gtdAll, setGtdAll] = useState<string[]>([]);
+  const [gtdRefs, setGtdRefs] = useState<Record<string, string>>({});
   const [gtdExisting, setGtdExisting] = useState(0);
   const [gtdScanned, setGtdScanned] = useState(0);
   const [gtdBusy, setGtdBusy] = useState(false);
@@ -161,6 +162,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           let exist = 0;
           let readErr = "";
           let scanned = 0;
+          const refs: Record<string, string> = {};
           const gStep = 40;
           for (let i = 0; i < nums.length; i += gStep) {
             setMatchProgress(
@@ -172,7 +174,9 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             bad.push(...(g.result.unknown || []));
             if (g.result.error) readErr = g.result.error;
             scanned += g.result.scanned || 0;
+            Object.assign(refs, g.result.refs || {});
           }
+          setGtdRefs(refs);
           setGtdError(readErr);
           setGtdScanned(scanned);
           setGtdExisting(exist);
@@ -436,6 +440,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
         incoming_number: docNumber || undefined,
         incoming_date: iso,
         vat_rate: vatRate,
+        ...(isReceipt ? { gtd_refs: gtdRefs } : {}),
         rows,
       };
       const r = isReceipt
