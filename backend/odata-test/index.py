@@ -610,6 +610,42 @@ def gtd_debug(cfg, numbers):
     return out
 
 
+def gtd_foreign(cfg, numbers):
+    """Возвращает 3 записи справочника, не совпавшие с нашими номерами, целиком."""
+    f_num = 'РегистрационныйНомер'
+    ours = [str(n or '').strip() for n in (numbers or []) if str(n or '').strip()]
+    wanted = set(ours)
+    foreign = []
+    scanned = 0
+    skip = 0
+    while skip < 60000 and len(foreign) < 3:
+        r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$top=1000&$skip={skip}")
+        if not r['ok']:
+            return {'error': str(r['error'])[:300], 'scanned': scanned}
+        items = r['data'].get('value', []) or []
+        scanned += len(items)
+        for item in items:
+            val = str(item.get(f_num) or '').strip()
+            if val and val not in wanted:
+                foreign.append({
+                    'value': val,
+                    'len': len(val),
+                    'raw_repr': repr(item.get(f_num)),
+                    'record': item,
+                })
+                if len(foreign) >= 3:
+                    break
+        if len(items) < 1000:
+            break
+        skip += 1000
+
+    return {
+        'scanned': scanned,
+        'foreign': foreign,
+        'ours': [{'value': n, 'len': len(n), 'raw_repr': repr(n)} for n in ours[:3]],
+    }
+
+
 def create_gtd_batch(cfg, numbers, budget=18.0):
     """Создаёт недостающие номера ГТД, сколько успеет за отведённое время."""
     started = time.time()
@@ -1020,6 +1056,9 @@ def handler(event: dict, context) -> dict:
 
     if action == 'check_gtd':
         return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})
+
+    if action == 'gtd_foreign':
+        return resp(200, {'result': gtd_foreign(cfg, body.get('numbers') or [])})
 
     if action == 'gtd_debug':
         return resp(200, {'result': gtd_debug(cfg, body.get('numbers') or [])})

@@ -208,6 +208,42 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doGtdForeign = async () => {
+    setGtdBusy(true);
+    setGtdError("");
+    try {
+      const r = await odataApi.gtdForeign(base, gtdMissing || []);
+      const d = r.result;
+      if (d.error) {
+        setGtdError(d.error);
+        return;
+      }
+      const ours = (d.ours || [])
+        .map(
+          (o: Record<string, unknown>) =>
+            `  ${o.raw_repr}  (длина ${o.len})`,
+        )
+        .join("\n");
+      const foreign = (d.foreign || [])
+        .map(
+          (f: Record<string, unknown>, i: number) =>
+            `--- запись ${i + 1} ---\n` +
+            `значение: ${f.raw_repr}  (длина ${f.len})\n` +
+            `реквизиты целиком:\n${JSON.stringify(f.record, null, 1)}`,
+        )
+        .join("\n\n");
+      setGtdProgress(
+        `Просмотрено записей: ${d.scanned}\n\n` +
+          `НАШИ номера:\n${ours}\n\n` +
+          `ЧУЖИЕ записи из 1С (не совпали):\n\n${foreign}`,
+      );
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doGtdDebug = async () => {
     setGtdBusy(true);
     setGtdError("");
@@ -642,6 +678,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       >
                         <Icon name="Bug" size={15} />
                         Диагностика поиска
+                      </Button>
+                      <Button
+                        onClick={doGtdForeign}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2 border-violet-500/50 text-violet-200"
+                      >
+                        <Icon name="Search" size={15} />
+                        Показать чужие записи
                       </Button>
                     </div>
                   </>
