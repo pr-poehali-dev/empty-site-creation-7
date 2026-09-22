@@ -506,27 +506,44 @@ def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
     sel = f'Ref_Key,{f_num}'
     skip = 0
     scanned = 0
+    pages = []
+    stop = ''
     while skip < 60000:
+        t0 = time.time()
         r = call_odata(
             cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$top=1000&$skip={skip}"
         )
+        took = round(time.time() - t0, 2)
         if not r['ok']:
+            pages.append({'skip': skip, 'got': 0, 'sec': took,
+                          'hits': 0, 'error': str(r['error'])[:200]})
+            stop = 'отказ 1С'
             if errors is not None and len(errors) < 3:
-                errors.append(
-                    f'Реквизит {f_num} не читается: ' + str(r['error'])
-                )
+                errors.append(f'Реквизит {f_num} не читается: ' + str(r['error']))
             break
         items = r['data'].get('value', []) or []
         scanned += len(items)
+        hits = 0
         for item in items:
             key = str(item.get(f_num) or '').strip()
             if key and key in wanted and key not in cache:
                 cache[key] = item.get('Ref_Key')
+                hits += 1
+        pages.append({'skip': skip, 'got': len(items), 'sec': took,
+                      'hits': hits, 'total_hits': len(cache)})
+        print(f'[GTD] skip={skip} got={len(items)} sec={took} '
+              f'hits={hits} total={len(cache)}')
         if len(items) < 1000:
+            stop = 'страница короче 1000 — конец справочника'
             break
         skip += 1000
+    else:
+        stop = 'достигнут предел 60000'
     if stats is not None:
         stats['scanned'] = scanned
+        stats['pages'] = pages
+        stats['stop'] = stop
+        stats['field'] = f_num
     return cache
 
 
@@ -546,9 +563,51 @@ def check_gtd(cfg, numbers):
         'unknown': unknown,
         'read_errors': read_errors,
         'scanned': stats.get('scanned', 0),
+        'pages': stats.get('pages', []),
+        'stop': stats.get('stop', ''),
+        'field': stats.get('field', ''),
         'error': ('Часть справочника не прочиталась: ' + read_errors[0])
                  if read_errors else None,
     }
+
+
+def gtd_debug(cfg, numbers):
+    """Диагностика поиска: размер справочника, образцы записей, точечные запросы."""
+    out = {}
+    f_num = 'РегистрационныйНомер'
+    out['field'] = f_num
+
+    c = call_odata(cfg, 'Catalog_НомераГТД/$count')
+    out['count'] = c.get('text') if c['ok'] else f"ошибка: {c.get('error')}"
+    if c['ok'] and not c.get('text'):
+        out['count'] = json.dumps(c.get('data'))[:100]
+
+    s = call_odata(cfg, 'Catalog_НомераГТД?$format=json&$top=3')
+    out['samples'] = s['data'].get('value', []) if s['ok'] else str(s.get('error'))
+
+    probes = []
+    for n in [str(x or '').strip() for x in (numbers or [])][:3]:
+        if not n:
+            continue
+        q = call_odata(
+            cfg,
+            f"Catalog_НомераГТД?$format=json&$filter={f_num} eq '{n}'&$top=5",
+        )
+        probes.append({
+            'number': n,
+            'found': len(q['data'].get('value', [])) if q['ok'] else None,
+            'rows': q['data'].get('value', [])[:2] if q['ok'] else None,
+            'error': None if q['ok'] else str(q.get('error'))[:200],
+        })
+    out['probes'] = probes
+
+    chk = check_gtd(cfg, numbers or [])
+    out['pages'] = chk.get('pages', [])
+    out['scanned'] = chk.get('scanned', 0)
+    out['stop'] = chk.get('stop', '')
+    out['existing'] = chk.get('existing', 0)
+    out['checked'] = chk.get('checked', 0)
+    return out
 
 
 def create_gtd_batch(cfg, numbers, budget=18.0):
@@ -961,6 +1020,9 @@ def handler(event: dict, context) -> dict:
 
     if action == 'check_gtd':
         return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})
+
+    if action == 'gtd_debug':
+        return resp(200, {'result': gtd_debug(cfg, body.get('numbers') or [])})
 
     if action == 'try_create_one_gtd':
         return resp(200, {'result': try_create_one_gtd(cfg, body.get('numbers') or [])})

@@ -208,6 +208,40 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doGtdDebug = async () => {
+    setGtdBusy(true);
+    setGtdError("");
+    try {
+      const r = await odataApi.gtdDebug(base, gtdMissing || []);
+      const d = r.result;
+      const pages = (d.pages || [])
+        .map(
+          (p: Record<string, unknown>) =>
+            `  skip ${p.skip}: вернулось ${p.got}, совпало ${p.hits}, ${p.sec}с${p.error ? " — " + p.error : ""}`,
+        )
+        .join("\n");
+      const probes = (d.probes || [])
+        .map(
+          (p: Record<string, unknown>) =>
+            `  ${p.number} → ${p.error ? "ошибка: " + p.error : "найдено " + p.found}`,
+        )
+        .join("\n");
+      setGtdProgress(
+        `Всего записей в справочнике: ${d.count}\n` +
+          `Прочитано: ${d.scanned}, остановка: ${d.stop}\n` +
+          `Поле сверки: ${d.field}\n` +
+          `Совпало: ${d.existing} из ${d.checked}\n\n` +
+          `Страницы:\n${pages}\n\n` +
+          `Точечный поиск:\n${probes}\n\n` +
+          `Образцы записей:\n${JSON.stringify(d.samples, null, 1)}`,
+      );
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doTryOneGtd = async () => {
     if (!gtdMissing?.length) return;
     setGtdBusy(true);
@@ -598,6 +632,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       >
                         <Icon name="Wrench" size={15} />
                         Убрать пустые записи
+                      </Button>
+                      <Button
+                        onClick={doGtdDebug}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2 border-sky-500/50 text-sky-200"
+                      >
+                        <Icon name="Bug" size={15} />
+                        Диагностика поиска
                       </Button>
                     </div>
                   </>
