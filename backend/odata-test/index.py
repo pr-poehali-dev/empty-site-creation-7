@@ -501,16 +501,8 @@ def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
     cache = {}
     if not uniq:
         return cache
-    f_num = number_field if number_field is not None else gtd_schema(cfg)['number_field']
-    if not f_num:
-        return cache
     wanted = set(uniq)
-    have = gtd_schema(cfg)['fields']
-    cols = ['Ref_Key']
-    for c in ('Code', 'Description', f_num):
-        if c and c not in cols and (not have or c in have):
-            cols.append(c)
-    sel = ','.join(cols)
+    sel = 'Ref_Key,Code'
     skip = 0
     scanned = 0
     while skip < 60000:
@@ -528,11 +520,9 @@ def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
         items = r['data'].get('value', []) or []
         scanned += len(items)
         for item in items:
-            for key in (str(item.get(f_num) or '').strip(),
-                        str(item.get('Code') or '').strip(),
-                        str(item.get('Description') or '').strip()):
-                if key and key in wanted and key not in cache:
-                    cache[key] = item.get('Ref_Key')
+            key = str(item.get('Code') or '').strip()
+            if key and key in wanted and key not in cache:
+                cache[key] = item.get('Ref_Key')
         if len(items) < 1000:
             break
         skip += 1000
