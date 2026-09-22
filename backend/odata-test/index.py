@@ -502,7 +502,8 @@ def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
     if not uniq:
         return cache
     wanted = set(uniq)
-    sel = 'Ref_Key,Code'
+    f_num = 'РегистрационныйНомер'
+    sel = f'Ref_Key,{f_num}'
     skip = 0
     scanned = 0
     while skip < 60000:
@@ -510,17 +511,15 @@ def prefetch_gtd(cfg, numbers, number_field=None, errors=None, stats=None):
             cfg, f"Catalog_НомераГТД?$format=json&$select={sel}&$top=1000&$skip={skip}"
         )
         if not r['ok']:
-            r = call_odata(
-                cfg, f"Catalog_НомераГТД?$format=json&$top=1000&$skip={skip}"
-            )
-        if not r['ok']:
             if errors is not None and len(errors) < 3:
-                errors.append(r['error'])
+                errors.append(
+                    f'Реквизит {f_num} не читается: ' + str(r['error'])
+                )
             break
         items = r['data'].get('value', []) or []
         scanned += len(items)
         for item in items:
-            key = str(item.get('Code') or '').strip()
+            key = str(item.get(f_num) or '').strip()
             if key and key in wanted and key not in cache:
                 cache[key] = item.get('Ref_Key')
         if len(items) < 1000:
