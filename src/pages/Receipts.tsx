@@ -18,10 +18,13 @@ const KINDS = [
   { key: "kind_repair", title: "Товар под ремонт", icon: "Wrench" },
 ];
 
+const WAREHOUSE_KEYS = ["wh_sgp", "wh_wipe", "wh_repair", "wh_scrap"];
+
 const ACTIONS = [
   { key: "manage_perms", icon: "Settings", label: "Настройки прав" },
   { key: "upload_files", icon: "Upload", label: "Загрузка файла поставщика" },
   { key: "catalog_edit", icon: "BookOpen", label: "Каталог приёмки" },
+  { key: "_stock", icon: "Warehouse", label: "Склады и остатки" },
 ];
 
 const Receipts = () => {
@@ -31,8 +34,11 @@ const Receipts = () => {
   const { perms, loading, can, expired } = useReceivingPerms();
   const [screen, setScreen] = useState<"home" | "perms">("home");
 
+  const hasStock = WAREHOUSE_KEYS.some((k) => can(k));
   const myKinds = KINDS.filter((k) => can(k.key));
-  const myActions = ACTIONS.filter((a) => can(a.key));
+  const myActions = ACTIONS.filter((a) =>
+    a.key === "_stock" ? hasStock : can(a.key)
+  );
 
   // Доступен один вид и нет кнопок в шапке — открываем сразу,
   // лишний тап в цеху это лишний тап.
@@ -70,6 +76,7 @@ const Receipts = () => {
     onClick: () => {
       if (a.key === "manage_perms") return setScreen("perms");
       if (a.key === "upload_files") return navigate("/admin/receiving-upload");
+      if (a.key === "_stock") return navigate("/admin/receiving-stock");
       return navigate("/admin/receiving-catalog");
     },
   }));

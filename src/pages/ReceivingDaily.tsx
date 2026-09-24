@@ -221,6 +221,15 @@ const ReceivingDaily = () => {
             </p>
           </div>
           <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 w-9 p-0"
+            title="Склады и остатки"
+            onClick={() => navigate("/admin/receiving-stock")}
+          >
+            <Icon name="Warehouse" size={18} />
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             className="h-9"

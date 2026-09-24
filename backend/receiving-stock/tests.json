@@ -1,0 +1,46 @@
+{
+  "tests": [
+    {
+      "name": "Проверка живости",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Список складов без токена закрыт",
+      "method": "GET",
+      "path": "/?action=meta",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Остатки без токена закрыты",
+      "method": "GET",
+      "path": "/?action=groups&warehouse=%D0%A1%D0%93%D0%9F",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Перемещение без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "move", "item_ids": [1], "warehouse_to": "СГП"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Отмена перемещения без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "undo_move", "move_ids": [1]},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
