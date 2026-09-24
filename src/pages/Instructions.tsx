@@ -50,7 +50,7 @@ const INVOICE_TABS = [
 const RECEIVING_TABS = [
   { key: "overview", label: "Общее", content: recOverview },
   { key: "table", label: "1. Таблица приёмки ✓", content: recTable },
-  { key: "upload", label: "2. Загрузка файла", content: recUpload },
+  { key: "upload", label: "2. Загрузка файла ✓", content: recUpload },
   { key: "rights", label: "3. Настройки прав", content: recRights },
   { key: "catalog", label: "4. Каталог приёмки", content: recCatalog },
   { key: "daily", label: "5. Ежедневная приёмка", content: recDaily },

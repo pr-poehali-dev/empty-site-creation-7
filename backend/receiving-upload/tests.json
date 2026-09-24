@@ -1,0 +1,51 @@
+{
+  "tests": [
+    {
+      "name": "Служба отвечает",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Список поставщиков приёмки",
+      "method": "GET",
+      "path": "/?action=suppliers",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Журнал загрузок",
+      "method": "GET",
+      "path": "/?action=uploads",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Поставщик без названия отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "create_supplier", "name": ""},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Загрузка без поставщика отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "start_upload", "file_name": "test.xlsx"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Проверка штрихкодов работает",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "check_barcodes", "barcodes": ["NOPE-0001"]},
+      "expectedStatus": 200,
+      "expectedBody": {"known": 0},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

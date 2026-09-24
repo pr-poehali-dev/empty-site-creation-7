@@ -28,6 +28,7 @@ import BulkPastePage from "./pages/shared/BulkPastePage";
 import Exchange1C from "./pages/Exchange1C";
 import Instructions from "./pages/Instructions";
 import InvoiceUpload from "./pages/InvoiceUpload";
+import ReceivingUpload from "./pages/ReceivingUpload";
 import AuctionsInfo from "./pages/AuctionsInfo";
 import TmaHome from "./pages/TmaHome";
 import TmaCabinet from "./pages/TmaCabinet";
@@ -106,6 +107,7 @@ const App = () => (
           <Route path="/admin/exchange-1c" element={<NotForWholesaler><Exchange1C /></NotForWholesaler>} />
           <Route path="/admin/instructions" element={<NotForWholesaler><Instructions /></NotForWholesaler>} />
           <Route path="/admin/invoices" element={<NotForWholesaler><InvoiceUpload /></NotForWholesaler>} />
+          <Route path="/admin/receiving-upload" element={<NotForWholesaler><ReceivingUpload /></NotForWholesaler>} />
           <Route path="/admin/auctions" element={<NotForWholesaler><OwnerAuctions /></NotForWholesaler>} />
           <Route path="/admin/auctions/info" element={<NotForWholesaler><AuctionsInfo /></NotForWholesaler>} />
           <Route path="/admin/auctions/settings" element={<NotForWholesaler><OwnerAuctionSettings /></NotForWholesaler>} />
