@@ -30,6 +30,7 @@ import Instructions from "./pages/Instructions";
 import InvoiceUpload from "./pages/InvoiceUpload";
 import ReceivingUpload from "./pages/ReceivingUpload";
 import ReceivingCatalog from "./pages/ReceivingCatalog";
+import ReceivingDaily from "./pages/ReceivingDaily";
 import AuctionsInfo from "./pages/AuctionsInfo";
 import TmaHome from "./pages/TmaHome";
 import TmaCabinet from "./pages/TmaCabinet";
@@ -110,6 +111,7 @@ const App = () => (
           <Route path="/admin/invoices" element={<NotForWholesaler><InvoiceUpload /></NotForWholesaler>} />
           <Route path="/admin/receiving-upload" element={<NotForWholesaler><ReceivingUpload /></NotForWholesaler>} />
           <Route path="/admin/receiving-catalog" element={<NotForWholesaler><ReceivingCatalog /></NotForWholesaler>} />
+          <Route path="/admin/receiving-daily" element={<NotForWholesaler><ReceivingDaily /></NotForWholesaler>} />
           <Route path="/admin/auctions" element={<NotForWholesaler><OwnerAuctions /></NotForWholesaler>} />
           <Route path="/admin/auctions/info" element={<NotForWholesaler><AuctionsInfo /></NotForWholesaler>} />
           <Route path="/admin/auctions/settings" element={<NotForWholesaler><OwnerAuctionSettings /></NotForWholesaler>} />

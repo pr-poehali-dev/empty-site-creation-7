@@ -1,0 +1,29 @@
+{
+  "tests": [
+    {
+      "name": "Проверка живости",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Без токена доступа нет",
+      "method": "GET",
+      "path": "/?action=meta",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Открыть приёмку без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "open", "kind": "kind_check", "work_date": "2026-09-24"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

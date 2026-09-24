@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +18,29 @@ const KINDS = [
   { key: "kind_repair", title: "Товар под ремонт", icon: "Wrench" },
 ];
 
+const ACTIONS = [
+  { key: "manage_perms", icon: "Settings", label: "Настройки прав" },
+  { key: "upload_files", icon: "Upload", label: "Загрузка файла поставщика" },
+  { key: "catalog_edit", icon: "BookOpen", label: "Каталог приёмки" },
+];
+
 const Receipts = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
   const { perms, loading, can, expired } = useReceivingPerms();
   const [screen, setScreen] = useState<"home" | "perms">("home");
+
+  const myKinds = KINDS.filter((k) => can(k.key));
+  const myActions = ACTIONS.filter((a) => can(a.key));
+
+  // Доступен один вид и нет кнопок в шапке — открываем сразу,
+  // лишний тап в цеху это лишний тап.
+  useEffect(() => {
+    if (!loading && screen === "home" && myKinds.length === 1 && myActions.length === 0) {
+      navigate(`/admin/receiving-daily?kind=${myKinds[0].key}`, { replace: true });
+    }
+  }, [loading, screen, myKinds.length, myActions.length]);
 
   const goBack = () => {
     if (screen !== "home") {
@@ -46,28 +63,16 @@ const Receipts = () => {
     );
   }
 
-  const kinds = KINDS.filter((k) => can(k.key));
+  const kinds = myKinds;
 
-  const actions = [
-    {
-      key: "manage_perms",
-      icon: "Settings",
-      label: "Настройки прав",
-      onClick: () => setScreen("perms"),
+  const actions = myActions.map((a) => ({
+    ...a,
+    onClick: () => {
+      if (a.key === "manage_perms") return setScreen("perms");
+      if (a.key === "upload_files") return navigate("/admin/receiving-upload");
+      return navigate("/admin/receiving-catalog");
     },
-    {
-      key: "upload_files",
-      icon: "Upload",
-      label: "Загрузка файла поставщика",
-      onClick: () => navigate("/admin/receiving-upload"),
-    },
-    {
-      key: "catalog_edit",
-      icon: "BookOpen",
-      label: "Каталог приёмки",
-      onClick: () => navigate("/admin/receiving-catalog"),
-    },
-  ].filter((a) => can(a.key));
+  }));
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -108,7 +113,9 @@ const Receipts = () => {
                         <Button
                           size="sm"
                           className="h-9 w-9 p-0"
-                          onClick={() => navigate("/admin/receiving-daily")}
+                          onClick={() =>
+                            navigate(`/admin/receiving-daily?kind=${kinds[0].key}`)
+                          }
                         >
                           <Icon name="Plus" size={18} />
                         </Button>
