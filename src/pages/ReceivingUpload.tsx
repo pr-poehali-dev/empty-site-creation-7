@@ -12,6 +12,7 @@ import {
   type RecParsed,
   type RecRow,
 } from "@/lib/receivingParse";
+import { useReceivingPerms, permHeaders } from "@/hooks/useReceivingPerms";
 
 const REC_URL = "https://functions.poehali.dev/9c11ad88-c1f5-4a4a-8272-fee5612f5d80";
 const CHUNK = 1000;
@@ -39,6 +40,7 @@ const ReceivingUpload = () => {
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const fileRef = useRef<HTMLInputElement>(null);
+  const { loading: permsLoading, can } = useReceivingPerms();
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -83,7 +85,7 @@ const ReceivingUpload = () => {
     try {
       const r = await fetch(REC_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: permHeaders(),
         body: JSON.stringify({ action: "create_supplier", name: newName.trim() }),
       });
       const d = await r.json();
@@ -120,7 +122,7 @@ const ReceivingUpload = () => {
       if (supplier) {
         const r = await fetch(REC_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: permHeaders(),
           body: JSON.stringify({
             action: "get_layout",
             supplier_id: supplier.id,
@@ -175,7 +177,7 @@ const ReceivingUpload = () => {
         const codes = built.slice(i, i + 5000).map((r) => r.supplier_barcode);
         const r = await fetch(REC_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: permHeaders(),
           body: JSON.stringify({ action: "check_barcodes", barcodes: codes }),
         });
         const d = await r.json();
@@ -193,7 +195,7 @@ const ReceivingUpload = () => {
     try {
       const startRes = await fetch(REC_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: permHeaders(),
         body: JSON.stringify({
           action: "start_upload",
           supplier_id: supplier.id,
@@ -216,7 +218,7 @@ const ReceivingUpload = () => {
         const chunk = rows.slice(i, i + CHUNK);
         const r = await fetch(REC_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: permHeaders(),
           body: JSON.stringify({
             action: "push_chunk",
             upload_id: uploadId,
@@ -242,7 +244,7 @@ const ReceivingUpload = () => {
 
       await fetch(REC_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: permHeaders(),
         body: JSON.stringify({
           action: "save_layout",
           supplier_id: supplier.id,
@@ -264,7 +266,7 @@ const ReceivingUpload = () => {
   const dropUpload = async (id: number) => {
     await fetch(REC_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: permHeaders(),
       body: JSON.stringify({ action: "drop_upload", upload_id: id }),
     });
     loadUploads();
@@ -295,11 +297,28 @@ const ReceivingUpload = () => {
       })).filter((x) => x.empty > 0)
     : [];
 
+  if (!permsLoading && !can("upload_files")) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="rounded-xl border border-white/[0.08] bg-card p-8 text-center max-w-sm">
+          <Icon name="Lock" size={32} className="mx-auto mb-3 text-muted-foreground" />
+          <p className="font-medium mb-1">Загрузка файлов не открыта</p>
+          <p className="text-sm text-muted-foreground mb-4">
+            Обратитесь к владельцу — он выдаёт права
+          </p>
+          <Button variant="outline" onClick={() => navigate("/admin/receiving")}>
+            К приёмкам
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/admin/dashboard")}>
+          <Button variant="ghost" size="icon" onClick={() => navigate("/admin/receiving")}>
             <Icon name="ArrowLeft" size={20} />
           </Button>
           <div className="flex-1">

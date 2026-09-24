@@ -1,0 +1,46 @@
+{
+  "tests": [
+    {
+      "name": "Служба отвечает",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Свои права без телефона: всё закрыто",
+      "method": "GET",
+      "path": "/?action=my",
+      "expectedStatus": 200,
+      "expectedBody": {"is_owner": false},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Матрица чужому закрыта",
+      "method": "GET",
+      "path": "/?action=matrix",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Переключение права чужому закрыто",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "set_perm", "role_id": 4, "perm_key": "wh_sgp", "enabled": true},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Неизвестное действие отклоняется",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "nope"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

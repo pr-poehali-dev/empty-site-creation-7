@@ -1,4 +1,5 @@
 {
+  "receiving-permissions": "https://functions.poehali.dev/dd5813af-28a1-49d8-bd0a-b0ecdf56d75d",
   "receiving-upload": "https://functions.poehali.dev/9c11ad88-c1f5-4a4a-8272-fee5612f5d80",
   "odata-test": "https://functions.poehali.dev/74601b0f-9a91-4dbb-aef5-3cf2cadf93c8",
   "converted-files": "https://functions.poehali.dev/fadb6c3a-c3a7-4774-8ca7-f5cc8f53b3e1",

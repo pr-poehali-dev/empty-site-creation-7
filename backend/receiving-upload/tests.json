@@ -21,20 +21,29 @@
       "expectedStatus": 200
     },
     {
-      "name": "Поставщик без названия отклоняется",
+      "name": "Создание поставщика без прав закрыто",
       "method": "POST",
       "path": "/",
-      "body": {"action": "create_supplier", "name": ""},
-      "expectedStatus": 400,
+      "body": {"action": "create_supplier", "name": "Тест"},
+      "expectedStatus": 403,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Загрузка без поставщика отклоняется",
+      "name": "Загрузка без прав закрыта",
       "method": "POST",
       "path": "/",
-      "body": {"action": "start_upload", "file_name": "test.xlsx"},
-      "expectedStatus": 400,
+      "body": {"action": "start_upload", "supplier_id": 1, "file_name": "test.xlsx"},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Удаление загрузки без прав закрыто",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "drop_upload", "upload_id": 999999},
+      "expectedStatus": 403,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },

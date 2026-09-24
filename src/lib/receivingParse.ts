@@ -120,18 +120,20 @@ export const parseReceivingFile = async (file: File): Promise<RecParsed> => {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
 
-  let best: { rows: unknown[][]; name: string } | null = null;
+  let rows: unknown[][] = [];
+  let sheetName = "";
   wb.SheetNames.forEach((name) => {
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], {
+    const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], {
       header: 1,
       raw: true,
       defval: null,
     });
-    if (!best || rows.length > best.rows.length) best = { rows, name };
+    if (sheetRows.length > rows.length) {
+      rows = sheetRows;
+      sheetName = name;
+    }
   });
-  if (!best) throw new Error("Файл пустой или не читается");
-
-  const { rows, name: sheetName } = best;
+  if (rows.length === 0) throw new Error("Файл пустой или не читается");
   let headerIndex = -1;
   let bestScore = 0;
   rows.slice(0, 60).forEach((row, i) => {

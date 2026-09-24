@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id',
+    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id, X-User-Phone',
     'Access-Control-Max-Age': '86400',
 }
 
@@ -34,6 +34,43 @@ def _conn():
 
 def _esc(s):
     return str(s).replace("'", "''")
+
+
+WRITE_ACTIONS = {'create_supplier', 'save_layout', 'start_upload', 'push_chunk', 'drop_upload'}
+PERM_FOR = {'drop_upload': 'delete_data'}
+
+
+def may(phone, perm_key):
+    """Проверяет право на сервере: владельцу всё, остальным роль плюс личные настройки."""
+    if not phone:
+        return False
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(f"SELECT role FROM users WHERE phone='{_esc(phone)}' LIMIT 1")
+        u = cur.fetchone()
+        if u and u[0] == 'owner':
+            return True
+        cur.execute(f"SELECT id, role_id FROM managers WHERE phone='{_esc(phone)}' LIMIT 1")
+        m = cur.fetchone()
+        if not m:
+            return False
+        mgr_id, role_id = m
+        value = False
+        if role_id:
+            cur.execute(
+                f"SELECT enabled FROM receiving_permissions "
+                f"WHERE role_id={int(role_id)} AND perm_key='{_esc(perm_key)}'"
+            )
+            row = cur.fetchone()
+            if row:
+                value = row[0]
+        cur.execute(
+            f"SELECT enabled FROM receiving_permissions "
+            f"WHERE manager_id={int(mgr_id)} AND perm_key='{_esc(perm_key)}'"
+        )
+        row = cur.fetchone()
+        if row:
+            value = row[0]
+        return bool(value)
 
 
 def _txt(v):
@@ -180,8 +217,11 @@ def list_uploads(limit=30):
 
 def drop_upload(upload_id):
     with _conn() as c, c.cursor() as cur:
-        cur.execute(f"DELETE FROM receiving_items WHERE upload_id={int(upload_id)}")
-        deleted = cur.rowcount
+        cur.execute(
+            f"WITH d AS (DELETE FROM receiving_items WHERE upload_id={int(upload_id)} RETURNING 1) "
+            f"SELECT COUNT(*) FROM d"
+        )
+        deleted = int(cur.fetchone()[0])
         cur.execute(f"DELETE FROM receiving_uploads WHERE id={int(upload_id)}")
     return {'deleted': deleted}
 
@@ -212,7 +252,13 @@ def handler(event: dict, context) -> dict:
     action = body.get('action') or action
     headers = event.get('headers') or {}
     user_id = headers.get('X-User-Id') or headers.get('x-user-id')
+    phone = headers.get('X-User-Phone') or headers.get('x-user-phone') or ''
     user_name = body.get('user_name')
+
+    if action in WRITE_ACTIONS:
+        needed = PERM_FOR.get(action, 'upload_files')
+        if not may(phone, needed):
+            return _resp(403, {'error': 'Нет доступа к этому действию'})
 
     if action == 'create_supplier':
         sup, err = create_supplier(body.get('name'))
