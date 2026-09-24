@@ -16,7 +16,7 @@ PERMS = [
     {'key': 'kind_check', 'group': 'Виды приёмки', 'title': 'Приёмка рабочего товара с проверкой'},
     {'key': 'kind_repair', 'group': 'Виды приёмки', 'title': 'Приёмка товара под ремонт'},
     {'key': 'upload_files', 'group': 'Действия', 'title': 'Загрузка файлов поставщиков'},
-    {'key': 'catalog_edit', 'group': 'Действия', 'title': 'Каталог приёмки: сборка и правка'},
+    {'key': 'catalog_edit', 'group': 'Действия', 'title': 'Доступ к каталогу приёмки'},
     {'key': 'delete_data', 'group': 'Действия', 'title': 'Удаление загрузок и позиций'},
     {'key': 'manage_perms', 'group': 'Действия', 'title': 'Настройка приёмочных прав'},
     {'key': 'wh_sgp', 'group': 'Склады', 'title': 'СГП'},
