@@ -17,6 +17,16 @@ import invPrices from "@/data/invoices/04-prices.md?raw";
 import invExport from "@/data/invoices/05-export.md?raw";
 import invIds from "@/data/invoices/06-ids.md?raw";
 import odataGuide from "@/data/1c/odata.md?raw";
+import recOverview from "@/data/receiving/00-overview.md?raw";
+import recTable from "@/data/receiving/01-table.md?raw";
+import recUpload from "@/data/receiving/02-upload.md?raw";
+import recRights from "@/data/receiving/03-rights.md?raw";
+import recCatalog from "@/data/receiving/04-catalog.md?raw";
+import recDaily from "@/data/receiving/05-daily.md?raw";
+import recCheck from "@/data/receiving/06-check.md?raw";
+import recStock from "@/data/receiving/07-stock.md?raw";
+import recOrders from "@/data/receiving/08-orders.md?raw";
+import recReports from "@/data/receiving/09-reports.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
 import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
@@ -35,6 +45,19 @@ const INVOICE_TABS = [
   { key: "prices", label: "4. Цены на сайте", content: invPrices },
   { key: "export", label: "5. Выгрузка в 1С", content: invExport },
   { key: "ids", label: "6. Идентификаторы", content: invIds },
+];
+
+const RECEIVING_TABS = [
+  { key: "overview", label: "Общее", content: recOverview },
+  { key: "table", label: "1. Таблица приёмки", content: recTable },
+  { key: "upload", label: "2. Загрузка файла", content: recUpload },
+  { key: "rights", label: "3. Настройки прав", content: recRights },
+  { key: "catalog", label: "4. Каталог приёмки", content: recCatalog },
+  { key: "daily", label: "5. Ежедневная приёмка", content: recDaily },
+  { key: "check", label: "6. Проверка товара", content: recCheck },
+  { key: "stock", label: "7. Склады", content: recStock },
+  { key: "orders", label: "8. Заявки и отгрузка", content: recOrders },
+  { key: "reports", label: "9. Сводки", content: recReports },
 ];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
@@ -549,10 +572,11 @@ const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "invoices" | "plans" | "backup" | "repo" | "about">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "invoices" | "receiving" | "plans" | "backup" | "repo" | "about">("menu");
   const [activeTab, setActiveTab] = useState("creation");
   const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
   const [invoiceTab, setInvoiceTab] = useState(INVOICE_TABS[0]?.key || "");
+  const [receivingTab, setReceivingTab] = useState(RECEIVING_TABS[0]?.key || "");
   const [openRecipe, setOpenRecipe] = useState<string | null>(null);
 
   if (user.role !== "owner") {
@@ -582,6 +606,8 @@ const Instructions = () => {
       ? "Журнал проекта"
       : section === "invoices"
       ? "Загрузка счетов"
+      : section === "receiving"
+      ? "Приёмки"
       : section === "plans"
       ? "Планы"
       : section === "backup"
@@ -684,6 +710,18 @@ const Instructions = () => {
                 <span className="text-lg font-semibold">Загрузка счетов</span>
               </div>
               <p className="text-sm text-muted-foreground">Счёт от поставщика → товары и цены на сайте → выгрузка в 1С. Этапы и планы</p>
+            </button>
+            <button
+              onClick={() => setSection("receiving")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                  <Icon name="PackageCheck" size={20} className="text-violet-400" />
+                </div>
+                <span className="text-lg font-semibold">Приёмки</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Приёмка товара от поставщика: загрузка файла, проверка, склады. Шаги и ход работы</p>
             </button>
             <button
               onClick={() => setSection("plans")}
@@ -878,6 +916,31 @@ const Instructions = () => {
             <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
               {renderMarkdown(
                 INVOICE_TABS.find((t) => t.key === invoiceTab)?.content || "",
+              )}
+            </div>
+          </>
+        )}
+
+        {section === "receiving" && (
+          <>
+            <div className="flex gap-2 mb-4 overflow-x-auto">
+              {RECEIVING_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setReceivingTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                    receivingTab === tab.key
+                      ? "bg-violet-500/20 text-violet-300 font-medium"
+                      : "text-muted-foreground hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+              {renderMarkdown(
+                RECEIVING_TABS.find((t) => t.key === receivingTab)?.content || "",
               )}
             </div>
           </>
