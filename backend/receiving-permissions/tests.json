@@ -9,23 +9,33 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Свои права без телефона: всё закрыто",
+      "name": "Без токена входа всё закрыто",
       "method": "GET",
       "path": "/?action=my",
       "expectedStatus": 200,
-      "expectedBody": {"is_owner": false},
+      "expectedBody": {"is_owner": false, "authorized": false},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Матрица чужому закрыта",
+      "name": "Поддельный токен не проходит",
+      "method": "GET",
+      "path": "/?action=my",
+      "headers": {"X-Authorization": "Bearer ffffffffffffffffffffffffffffffff"},
+      "expectedStatus": 200,
+      "expectedBody": {"is_owner": false, "authorized": false},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Подмена телефона не даёт прав",
       "method": "GET",
       "path": "/?action=matrix",
+      "headers": {"X-User-Phone": "+79606488639"},
       "expectedStatus": 403,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Переключение права чужому закрыто",
+      "name": "Переключение права без токена закрыто",
       "method": "POST",
       "path": "/",
       "body": {"action": "set_perm", "role_id": 4, "perm_key": "wh_sgp", "enabled": true},

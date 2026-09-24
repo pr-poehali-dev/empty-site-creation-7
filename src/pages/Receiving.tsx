@@ -19,8 +19,21 @@ const KINDS = [
 
 const Receiving = () => {
   const navigate = useNavigate();
-  const { perms, loading, can } = useReceivingPerms();
+  const { perms, loading, can, expired } = useReceivingPerms();
   const [screen, setScreen] = useState<"home" | "perms">("home");
+
+  if (expired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="rounded-xl border border-white/[0.08] bg-card p-8 text-center max-w-sm">
+          <Icon name="LogIn" size={32} className="mx-auto mb-3 text-muted-foreground" />
+          <p className="font-medium mb-1">Войдите заново</p>
+          <p className="text-sm text-muted-foreground mb-4">Срок входа истёк</p>
+          <Button onClick={() => navigate("/admin")}>Войти</Button>
+        </div>
+      </div>
+    );
+  }
 
   const kinds = KINDS.filter((k) => can(k.key));
 

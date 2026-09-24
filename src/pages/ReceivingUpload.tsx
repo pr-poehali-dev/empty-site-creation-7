@@ -40,7 +40,7 @@ const ReceivingUpload = () => {
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const fileRef = useRef<HTMLInputElement>(null);
-  const { loading: permsLoading, can } = useReceivingPerms();
+  const { loading: permsLoading, can, expired } = useReceivingPerms();
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -296,6 +296,19 @@ const ReceivingUpload = () => {
         empty: rows.filter((r) => r[f.key] === null || r[f.key] === "").length,
       })).filter((x) => x.empty > 0)
     : [];
+
+  if (expired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="rounded-xl border border-white/[0.08] bg-card p-8 text-center max-w-sm">
+          <Icon name="LogIn" size={32} className="mx-auto mb-3 text-muted-foreground" />
+          <p className="font-medium mb-1">Войдите заново</p>
+          <p className="text-sm text-muted-foreground mb-4">Срок входа истёк</p>
+          <Button onClick={() => navigate("/admin")}>Войти</Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!permsLoading && !can("upload_files")) {
     return (

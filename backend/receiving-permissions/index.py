@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id, X-User-Phone',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Authorization, Authorization, X-User-Id, X-Auth-Token, X-Session-Id',
     'Access-Control-Max-Age': '86400',
 }
 
@@ -50,23 +50,33 @@ def _esc(s):
     return str(s).replace("'", "''")
 
 
-def who(cur, phone):
-    """Определяет владельца и карточку сотрудника по телефону."""
-    if not phone:
-        return {'is_owner': False, 'manager_id': None, 'role_id': None, 'role_name': None}
-    cur.execute(f"SELECT role FROM users WHERE phone='{_esc(phone)}' LIMIT 1")
+ANON = {'is_owner': False, 'manager_id': None, 'role_id': None,
+        'role_name': None, 'authorized': False}
+
+
+def who(cur, token):
+    """Опознаёт человека по токену входа: токен ищется в таблице сессий, подменить нельзя."""
+    token = (token or '').replace('Bearer ', '').strip()
+    if not token:
+        return dict(ANON)
+    cur.execute(
+        f"SELECT u.role, u.phone FROM users u JOIN user_sessions s ON s.user_id=u.id "
+        f"WHERE s.token='{_esc(token)}' AND s.expires_at > NOW() LIMIT 1"
+    )
     u = cur.fetchone()
-    is_owner = bool(u and (u['role'] if isinstance(u, dict) else u[0]) == 'owner')
+    if not u:
+        return dict(ANON)
     cur.execute(
         f"SELECT m.id, m.role_id, r.name AS role_name FROM managers m "
-        f"LEFT JOIN roles r ON r.id=m.role_id WHERE m.phone='{_esc(phone)}' LIMIT 1"
+        f"LEFT JOIN roles r ON r.id=m.role_id WHERE m.phone='{_esc(u['phone'])}' LIMIT 1"
     )
     m = cur.fetchone()
     return {
-        'is_owner': is_owner,
+        'is_owner': u['role'] == 'owner',
         'manager_id': m['id'] if m else None,
         'role_id': m['role_id'] if m else None,
         'role_name': m['role_name'] if m else None,
+        'authorized': True,
     }
 
 
@@ -94,19 +104,20 @@ def effective(cur, actor):
     return result
 
 
-def my_permissions(phone):
+def my_permissions(token):
     with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
-        actor = who(cur, phone)
+        actor = who(cur, token)
         return {
             'is_owner': actor['is_owner'],
             'role_name': actor['role_name'],
+            'authorized': actor['authorized'],
             'permissions': effective(cur, actor),
         }
 
 
-def matrix(phone):
+def matrix(token):
     with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
-        actor = who(cur, phone)
+        actor = who(cur, token)
         perms = effective(cur, actor)
         if not actor['is_owner'] and not perms.get('manage_perms'):
             return None, 'Нет доступа к настройке прав'
@@ -140,14 +151,14 @@ def matrix(phone):
         }, None
 
 
-def set_perm(phone, role_id, manager_id, perm_key, enabled):
+def set_perm(token, role_id, manager_id, perm_key, enabled):
     if perm_key not in PERM_KEYS:
         return None, 'Неизвестное право'
     if bool(role_id) == bool(manager_id):
         return None, 'Укажите роль или сотрудника'
 
     with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
-        actor = who(cur, phone)
+        actor = who(cur, token)
         perms = effective(cur, actor)
         if not actor['is_owner'] and not perms.get('manage_perms'):
             return None, 'Нет доступа к настройке прав'
@@ -170,10 +181,10 @@ def set_perm(phone, role_id, manager_id, perm_key, enabled):
     return {'ok': True}, None
 
 
-def reset_person(phone, manager_id):
+def reset_person(token, manager_id):
     """Убирает личные переопределения — человек снова наследует права роли."""
     with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
-        actor = who(cur, phone)
+        actor = who(cur, token)
         perms = effective(cur, actor)
         if not actor['is_owner'] and not perms.get('manage_perms'):
             return None, 'Нет доступа к настройке прав'
@@ -188,7 +199,7 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
 
     headers = event.get('headers') or {}
-    phone = headers.get('X-User-Phone') or headers.get('x-user-phone') or ''
+    token = headers.get('X-Authorization') or headers.get('x-authorization') or ''
     params = event.get('queryStringParameters') or {}
     action = params.get('action', '')
 
@@ -196,9 +207,9 @@ def handler(event: dict, context) -> dict:
         if not action:
             return _resp(200, {'status': 'ok', 'service': 'receiving-permissions'})
         if action == 'my':
-            return _resp(200, my_permissions(phone))
+            return _resp(200, my_permissions(token))
         if action == 'matrix':
-            data, err = matrix(phone)
+            data, err = matrix(token)
             if err:
                 return _resp(403, {'error': err})
             return _resp(200, data)
@@ -210,10 +221,9 @@ def handler(event: dict, context) -> dict:
         return _resp(400, {'error': 'Тело запроса не разобрать'})
 
     action = body.get('action') or action
-    phone = body.get('phone') or phone
 
     if action == 'set_perm':
-        data, err = set_perm(phone, body.get('role_id'), body.get('manager_id'),
+        data, err = set_perm(token, body.get('role_id'), body.get('manager_id'),
                              body.get('perm_key'), bool(body.get('enabled')))
         if err:
             return _resp(403 if 'доступ' in err else 400, {'error': err})
@@ -222,7 +232,7 @@ def handler(event: dict, context) -> dict:
     if action == 'reset_person':
         if not body.get('manager_id'):
             return _resp(400, {'error': 'Не указан сотрудник'})
-        data, err = reset_person(phone, body['manager_id'])
+        data, err = reset_person(token, body['manager_id'])
         if err:
             return _resp(403, {'error': err})
         return _resp(200, data)

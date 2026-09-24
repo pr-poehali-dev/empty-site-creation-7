@@ -21,9 +21,10 @@
       "expectedStatus": 200
     },
     {
-      "name": "Создание поставщика без прав закрыто",
+      "name": "Подмена телефона не даёт загружать",
       "method": "POST",
       "path": "/",
+      "headers": {"X-User-Phone": "+79606488639"},
       "body": {"action": "create_supplier", "name": "Тест"},
       "expectedStatus": 403,
       "expectedBody": {"error": "string"},

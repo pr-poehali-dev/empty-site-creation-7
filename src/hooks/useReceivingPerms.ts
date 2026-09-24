@@ -6,21 +6,13 @@ export const RECEIVING_PERMS_URL =
 export interface MyPerms {
   is_owner: boolean;
   role_name: string | null;
+  authorized?: boolean;
   permissions: Record<string, boolean>;
 }
 
-export const authPhone = (): string => {
-  try {
-    const u = JSON.parse(localStorage.getItem("auth_user") || "{}");
-    return u.phone || "";
-  } catch {
-    return "";
-  }
-};
-
 export const permHeaders = (): Record<string, string> => ({
   "Content-Type": "application/json",
-  "X-User-Phone": authPhone(),
+  "X-Authorization": `Bearer ${localStorage.getItem("auth_token") || ""}`,
 });
 
 export const useReceivingPerms = () => {
@@ -46,6 +38,7 @@ export const useReceivingPerms = () => {
   }, []);
 
   const can = (key: string) => Boolean(perms?.is_owner || perms?.permissions?.[key]);
+  const expired = !loading && perms !== null && perms.authorized === false;
 
-  return { perms, loading, can };
+  return { perms, loading, can, expired };
 };

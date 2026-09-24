@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id, X-User-Phone',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Authorization, Authorization, X-User-Id, X-Auth-Token, X-Session-Id',
     'Access-Control-Max-Age': '86400',
 }
 
@@ -40,16 +40,22 @@ WRITE_ACTIONS = {'create_supplier', 'save_layout', 'start_upload', 'push_chunk',
 PERM_FOR = {'drop_upload': 'delete_data'}
 
 
-def may(phone, perm_key):
-    """Проверяет право на сервере: владельцу всё, остальным роль плюс личные настройки."""
-    if not phone:
+def may(token, perm_key):
+    """Проверяет право на сервере по токену входа: владельцу всё, остальным роль плюс личные настройки."""
+    token = (token or '').replace('Bearer ', '').strip()
+    if not token:
         return False
     with _conn() as c, c.cursor() as cur:
-        cur.execute(f"SELECT role FROM users WHERE phone='{_esc(phone)}' LIMIT 1")
+        cur.execute(
+            f"SELECT u.role, u.phone FROM users u JOIN user_sessions s ON s.user_id=u.id "
+            f"WHERE s.token='{_esc(token)}' AND s.expires_at > NOW() LIMIT 1"
+        )
         u = cur.fetchone()
-        if u and u[0] == 'owner':
+        if not u:
+            return False
+        if u[0] == 'owner':
             return True
-        cur.execute(f"SELECT id, role_id FROM managers WHERE phone='{_esc(phone)}' LIMIT 1")
+        cur.execute(f"SELECT id, role_id FROM managers WHERE phone='{_esc(u[1])}' LIMIT 1")
         m = cur.fetchone()
         if not m:
             return False
@@ -252,12 +258,12 @@ def handler(event: dict, context) -> dict:
     action = body.get('action') or action
     headers = event.get('headers') or {}
     user_id = headers.get('X-User-Id') or headers.get('x-user-id')
-    phone = headers.get('X-User-Phone') or headers.get('x-user-phone') or ''
+    token = headers.get('X-Authorization') or headers.get('x-authorization') or ''
     user_name = body.get('user_name')
 
     if action in WRITE_ACTIONS:
         needed = PERM_FOR.get(action, 'upload_files')
-        if not may(phone, needed):
+        if not may(token, needed):
             return _resp(403, {'error': 'Нет доступа к этому действию'})
 
     if action == 'create_supplier':
