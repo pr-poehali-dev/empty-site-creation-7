@@ -319,7 +319,7 @@ const ReceivingUpload = () => {
           <p className="text-sm text-muted-foreground mb-4">
             Обратитесь к владельцу — он выдаёт права
           </p>
-          <Button variant="outline" onClick={() => navigate("/admin/receiving")}>
+          <Button variant="outline" onClick={() => navigate("/admin/receipts")}>
             К приёмкам
           </Button>
         </div>
@@ -331,7 +331,7 @@ const ReceivingUpload = () => {
     <div className="min-h-screen">
       <header className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/admin/receiving")}>
+          <Button variant="ghost" size="icon" onClick={() => navigate("/admin/receipts")}>
             <Icon name="ArrowLeft" size={20} />
           </Button>
           <div className="flex-1">
