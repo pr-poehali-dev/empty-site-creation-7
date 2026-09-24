@@ -29,6 +29,46 @@ PERMS = [
     {'key': 'catalog_switch', 'group': 'Заявки', 'title': 'Переключатель каталога в заявках'},
 ]
 
+CATALOG_FIELDS = [
+    ('supplier_barcode', 'Штрихкод поставщика'),
+    ('tech_name', 'Техническое наименование'),
+    ('serial_number', 'Серийный номер'),
+    ('declared_defect', 'Заявленный дефект'),
+    ('brand', 'Бренд'),
+    ('model', 'Модель'),
+    ('product_group', 'Товарная группа'),
+    ('direction', 'Направление'),
+    ('order_number', 'Заказ-наряд'),
+    ('supplier_code', 'Код поставщика'),
+    ('weight_gross', 'Вес брутто'),
+    ('weight_net', 'Вес нетто'),
+    ('volume', 'Объём'),
+    ('has_package', 'Наличие упаковки'),
+    ('invoice_weight', 'Вес по накладной'),
+    ('factory_barcode', 'Заводской штрихкод'),
+    ('factory_barcode_2', 'Заводской штрихкод 2'),
+    ('check_result', 'Результат проверки'),
+    ('defect_confirmed', 'Дефект подтверждён'),
+    ('new_defect', 'Новый дефект'),
+    ('new_defect_text', 'Описание нового дефекта'),
+    ('checked_by_name', 'Кто проверил'),
+    ('checked_at', 'Когда проверил'),
+    ('warehouse', 'Склад'),
+]
+
+PRICE_FIELDS = [('price', 'Цена из загрузки')]
+
+GROUP_FIELDS = {'product_group', 'brand', 'model', 'direction', 'price'}
+
+for _k, _t in CATALOG_FIELDS:
+    PERMS.append({'key': f'cat_see_{_k}', 'group': 'Каталог: видит', 'title': _t})
+for _k, _t in CATALOG_FIELDS:
+    PERMS.append({'key': f'cat_edit_{_k}', 'group': 'Каталог: правит', 'title': _t})
+for _k, _t in PRICE_FIELDS:
+    PERMS.append({'key': f'cat_see_{_k}', 'group': 'Цены: видит', 'title': _t})
+for _k, _t in PRICE_FIELDS:
+    PERMS.append({'key': f'cat_edit_{_k}', 'group': 'Цены: правит', 'title': _t})
+
 PERM_KEYS = {p['key'] for p in PERMS}
 HIDDEN_ROLES = ('Оптовик',)
 
