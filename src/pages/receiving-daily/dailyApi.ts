@@ -14,11 +14,29 @@ export interface DailyItem {
   supplier_code: string | null;
   weight_gross: number | null;
   weight_net: number | null;
+  has_package: boolean | null;
+  invoice_weight: number | null;
+  factory_barcode: string | null;
+  defect_confirmed: boolean | null;
+  new_defect: boolean | null;
+  new_defect_text: string | null;
   check_result: string | null;
   warehouse: string | null;
   checked_at: string | null;
   checked_by_name: string | null;
   daily_receiving_id: number | null;
+}
+
+export type Outcome = "sale" | "wipe" | "repair" | "scrap";
+
+export interface CheckPayload {
+  item_id: number;
+  receiving_id: number;
+  outcome: Outcome;
+  has_package?: boolean;
+  defect_confirmed?: boolean;
+  new_defect?: boolean;
+  new_defect_text?: string;
 }
 
 export interface Receiving {
@@ -94,6 +112,19 @@ export const scanCode = (code: string) =>
   get<{ found: boolean; item?: DailyItem; code?: string }>(
     `action=scan&code=${encodeURIComponent(code)}`
   );
+
+export const saveCheck = (payload: CheckPayload) =>
+  post<{ ok: boolean; counters: Counters }>({ action: "check", ...payload });
+
+export const saveFactoryCode = (item_id: number, code: string) =>
+  post<{ ok: boolean; updated: number; tech_name: string }>({
+    action: "factory",
+    item_id,
+    code,
+  });
+
+export const undoCheck = (item_id: number, receiving_id: number) =>
+  post<{ ok: boolean; counters: Counters }>({ action: "undo", item_id, receiving_id });
 
 export const searchItems = (q: string) =>
   get<{ rows: DailyItem[] }>(`action=search&q=${encodeURIComponent(q)}`);

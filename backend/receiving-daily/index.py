@@ -20,10 +20,18 @@ KINDS = {
 
 OUTCOMES = ['sale', 'wipe', 'repair', 'scrap']
 
+WAREHOUSES = {
+    'sale': 'СГП',
+    'wipe': 'Протирка',
+    'repair': 'Под ремонт',
+    'scrap': 'Утиль',
+}
+
 ITEM_COLS = (
     'id, supplier_barcode, tech_name, serial_number, declared_defect, brand, model, '
     'product_group, direction, order_number, supplier_code, weight_gross, weight_net, '
-    'check_result, warehouse, checked_at, checked_by_name, daily_receiving_id'
+    'has_package, invoice_weight, factory_barcode, defect_confirmed, new_defect, '
+    'new_defect_text, check_result, warehouse, checked_at, checked_by_name, daily_receiving_id'
 )
 
 
@@ -241,6 +249,101 @@ def act_search(cur, params):
     return {'rows': [dict(r) for r in cur.fetchall()]}, None
 
 
+def _pick_weight(item, has_package):
+    """Вес для накладной берём из файла: с упаковкой — брутто, без неё — нетто.
+    Нужного веса в файле нет — ставим тот, что есть, иначе оставляем пустым."""
+    gross, net = item.get('weight_gross'), item.get('weight_net')
+    first, second = (gross, net) if has_package else (net, gross)
+    return first if first is not None else second
+
+
+def act_check(cur, actor, body):
+    """Исход проверки по конкретной единице: склад, вес для накладной, дефекты."""
+    item_id = int(body.get('item_id') or 0)
+    rid = int(body.get('receiving_id') or 0)
+    outcome = body.get('outcome') or ''
+    if not item_id or not rid:
+        return None, 'Не указана единица или приёмка'
+    if outcome not in OUTCOMES:
+        return None, 'Неизвестный исход проверки'
+
+    cur.execute(f"SELECT {ITEM_COLS} FROM receiving_items WHERE id={item_id} LIMIT 1")
+    item = cur.fetchone()
+    if not item:
+        return None, 'Единица не найдена'
+
+    has_package = body.get('has_package')
+    sets = [
+        f"check_result='{_esc(outcome)}'",
+        f"warehouse='{_esc(WAREHOUSES[outcome])}'",
+        f"daily_receiving_id={rid}",
+        f"checked_by_name='{_esc(actor['name'])}'",
+        'checked_at=now()',
+    ]
+    sets.append(
+        f"checked_by={int(actor['manager_id'])}" if actor['manager_id'] else 'checked_by=NULL'
+    )
+    if has_package is not None:
+        weight = _pick_weight(item, bool(has_package))
+        sets.append(f"has_package={'true' if has_package else 'false'}")
+        sets.append(f"invoice_weight={'NULL' if weight is None else weight}")
+
+    if outcome == 'repair':
+        confirmed = bool(body.get('defect_confirmed'))
+        new_defect = bool(body.get('new_defect'))
+        text = (body.get('new_defect_text') or '').strip() if new_defect else ''
+        sets.append(f"defect_confirmed={'true' if confirmed else 'false'}")
+        sets.append(f"new_defect={'true' if new_defect else 'false'}")
+        sets.append(f"new_defect_text='{_esc(text)}'" if text else 'new_defect_text=NULL')
+
+    cur.execute(f"UPDATE receiving_items SET {', '.join(sets)} WHERE id={item_id} RETURNING id")
+    if not cur.fetchone():
+        return None, 'Не удалось записать проверку'
+    return {'ok': True, 'counters': counters(cur, rid)}, None
+
+
+def act_factory(cur, body):
+    """Заводской штрихкод размножается по однофамильцам: одно сканирование закрывает модель."""
+    item_id = int(body.get('item_id') or 0)
+    code = (body.get('code') or '').strip()
+    if not item_id or not code:
+        return None, 'Не указан товар или код'
+
+    cur.execute(f"SELECT tech_name FROM receiving_items WHERE id={item_id} LIMIT 1")
+    row = cur.fetchone()
+    if not row:
+        return None, 'Единица не найдена'
+
+    tech = (row['tech_name'] or '').strip()
+    e = _esc(code)
+    where = (
+        f"id={item_id}" if not tech
+        else f"btrim(tech_name)='{_esc(tech)}'"
+    )
+    cur.execute(
+        f"UPDATE receiving_items SET factory_barcode='{e}' "
+        f"WHERE {where} AND (factory_barcode IS NULL OR factory_barcode='') RETURNING id"
+    )
+    return {'ok': True, 'updated': len(cur.fetchall()), 'tech_name': tech}, None
+
+
+def act_undo(cur, actor, body):
+    """Тапнул не ту кнопку — откат последнего исхода, чтобы не искать единицу заново."""
+    item_id = int(body.get('item_id') or 0)
+    rid = int(body.get('receiving_id') or 0)
+    if not item_id or not rid:
+        return None, 'Не указана единица или приёмка'
+    cur.execute(
+        f"UPDATE receiving_items SET check_result=NULL, warehouse=NULL, checked_at=NULL, "
+        f"checked_by=NULL, checked_by_name=NULL, daily_receiving_id=NULL, has_package=NULL, "
+        f"invoice_weight=NULL, defect_confirmed=NULL, new_defect=NULL, new_defect_text=NULL "
+        f"WHERE id={item_id} AND daily_receiving_id={rid} RETURNING id"
+    )
+    if not cur.fetchone():
+        return None, 'Эту проверку уже не отменить'
+    return {'ok': True, 'counters': counters(cur, rid)}, None
+
+
 def act_list(cur, actor, params):
     """Список приёмок: свои или всех — по праву see_all_lists."""
     work_date = _date(params.get('work_date'))
@@ -260,7 +363,7 @@ def act_list(cur, actor, params):
 
 
 def handler(event: dict, context) -> dict:
-    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, считать исходы и закрывать приёмку."""
+    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы и закрывать приёмку."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -307,6 +410,9 @@ def handler(event: dict, context) -> dict:
             'list': lambda: act_list(cur, actor, params),
             'open': lambda: act_open(cur, actor, body),
             'close': lambda: act_close(cur, actor, body),
+            'check': lambda: act_check(cur, actor, body),
+            'factory': lambda: act_factory(cur, body),
+            'undo': lambda: act_undo(cur, actor, body),
         }
         if action in handlers:
             data, err = handlers[action]()

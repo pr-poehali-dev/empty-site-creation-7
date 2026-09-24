@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import CheckDialog from "./receiving-daily/CheckDialog";
 import DailyCounters from "./receiving-daily/DailyCounters";
-import ItemCard from "./receiving-daily/ItemCard";
+import LastCheck from "./receiving-daily/LastCheck";
 import SearchBox from "./receiving-daily/SearchBox";
 import {
   closeReceiving,
@@ -13,6 +14,7 @@ import {
   loadState,
   openReceiving,
   scanCode,
+  undoCheck,
   type Counters,
   type DailyItem,
   type Receiving,
@@ -37,6 +39,8 @@ const ReceivingDaily = () => {
   const [counters, setCounters] = useState<Counters>(EMPTY);
   const [items, setItems] = useState<DailyItem[]>([]);
   const [current, setCurrent] = useState<DailyItem | null>(null);
+  const [last, setLast] = useState<DailyItem | null>(null);
+  const [undoing, setUndoing] = useState(false);
   const [notFound, setNotFound] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -117,7 +121,30 @@ const ReceivingDaily = () => {
     [takeItem]
   );
 
-  useBarcodeScanner({ enabled: stage === "work", onScan: handleScan });
+  useBarcodeScanner({ enabled: stage === "work" && !current, onScan: handleScan });
+
+  const afterCheck = (c: Counters, item: DailyItem) => {
+    setCounters(c);
+    setCurrent(null);
+    setLast(item);
+    if (receiving && listOpen) refresh(receiving.id);
+  };
+
+  const undoLast = async () => {
+    if (!last || !receiving) return;
+    setUndoing(true);
+    try {
+      const r = await undoCheck(last.id, receiving.id);
+      setCounters(r.counters);
+      setLast(null);
+      if (listOpen) refresh(receiving.id);
+      toast({ title: "Отменили" });
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setUndoing(false);
+    }
+  };
 
   const finish = async () => {
     if (!receiving) return;
@@ -247,7 +274,9 @@ const ReceivingDaily = () => {
           </div>
         )}
 
-        {current && <ItemCard item={current} onClose={() => setCurrent(null)} />}
+        {last && !current && (
+          <LastCheck item={last} busy={undoing} onUndo={undoLast} />
+        )}
 
         <DailyCounters counters={counters} />
 
@@ -282,6 +311,8 @@ const ReceivingDaily = () => {
                     <div className="text-sm truncate">{it.tech_name}</div>
                     <div className="text-xs text-muted-foreground">
                       {it.supplier_barcode}
+                      {it.warehouse ? ` · ${it.warehouse}` : ""}
+                      {it.invoice_weight ? ` · ${Number(it.invoice_weight)} кг` : ""}
                     </div>
                   </div>
                 ))
@@ -290,6 +321,15 @@ const ReceivingDaily = () => {
           )}
         </div>
       </main>
+
+      {current && receiving && (
+        <CheckDialog
+          item={current}
+          receivingId={receiving.id}
+          onDone={afterCheck}
+          onClose={() => setCurrent(null)}
+        />
+      )}
     </div>
   );
 };

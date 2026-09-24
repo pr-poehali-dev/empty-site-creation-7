@@ -24,6 +24,33 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Записать проверку без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "check", "item_id": 1, "receiving_id": 1, "outcome": "sale"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Заводской штрихкод без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "factory", "item_id": 1, "code": "123"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Отмена без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "undo", "item_id": 1, "receiving_id": 1},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }
