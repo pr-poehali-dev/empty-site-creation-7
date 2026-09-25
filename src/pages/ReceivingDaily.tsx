@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
@@ -43,8 +43,14 @@ const ReceivingDaily = () => {
   const [listOpen, setListOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [askFinish, setAskFinish] = useState(false);
+  const loaded = useRef(false);
 
   const goBack = () => navigate("/admin/receipts");
+
+  // Сменили вид приёмки — это другая работа, грузим заново.
+  useEffect(() => {
+    loaded.current = false;
+  }, [kind]);
 
   useEffect(() => {
     if (!KIND_TITLES[kind]) {
@@ -52,11 +58,14 @@ const ReceivingDaily = () => {
       setStage("error");
       return;
     }
+    // Адрес мы подменяем сами — перезагружать уже открытую приёмку незачем.
+    if (loaded.current) return;
     let alive = true;
     findCurrent(kind)
       .then((d) => {
         if (!alive) return;
         if (d.found) {
+          loaded.current = true;
           setReceiving(d.receiving);
           setCounters(d.counters);
           setItems(d.items);
@@ -76,9 +85,21 @@ const ReceivingDaily = () => {
     };
   }, [kind, resume]);
 
+  // Работа началась — закрепляем это в адресе. Иначе системная стрелка «назад»
+  // из закрытой приёмки откатывалась бы на адрес без resume и снова спрашивала,
+  // продолжать или создавать новую.
+  useEffect(() => {
+    if (stage === "work" && !resume && KIND_TITLES[kind]) {
+      navigate(`/admin/receiving-daily?kind=${encodeURIComponent(kind)}&resume=1`, {
+        replace: true,
+      });
+    }
+  }, [stage, resume, kind, navigate]);
+
   const start = async () => {
     try {
       const r = await openReceiving(kind);
+      loaded.current = true;
       setReceiving(r);
       setCounters(EMPTY);
       setItems([]);
