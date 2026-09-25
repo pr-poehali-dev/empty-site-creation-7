@@ -27,6 +27,7 @@ import recCheck from "@/data/receiving/06-check.md?raw";
 import recStock from "@/data/receiving/07-stock.md?raw";
 import recOrders from "@/data/receiving/08-orders.md?raw";
 import recReports from "@/data/receiving/09-reports.md?raw";
+import recTodo from "@/data/receiving/10-todo.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
 import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
@@ -58,6 +59,7 @@ const RECEIVING_TABS = [
   { key: "stock", label: "7. Склады", content: recStock },
   { key: "orders", label: "8. Заявки и отгрузка", content: recOrders },
   { key: "reports", label: "9. Сводки", content: recReports },
+  { key: "todo", label: "Доработки", content: recTodo },
 ];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
