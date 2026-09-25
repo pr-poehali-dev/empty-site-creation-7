@@ -100,7 +100,7 @@ export const loadReceivings = (f: ListFilter = {}) => {
   if (f.closedOnly) p.set("closed_only", "1");
   p.set("limit", String(f.limit ?? 5));
   p.set("offset", String(f.offset ?? 0));
-  return get<{ rows: ReceivingRow[]; total: number }>(p.toString());
+  return get<{ rows: ReceivingRow[]; total: number; see_all: boolean }>(p.toString());
 };
 
 export interface DailyState {

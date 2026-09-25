@@ -33,6 +33,7 @@ import ReceivingCatalog from "./pages/ReceivingCatalog";
 import ReceivingDaily from "./pages/ReceivingDaily";
 import ReceivingStock from "./pages/ReceivingStock";
 import ReceivingArchive from "./pages/ReceivingArchive";
+import ReceivingList from "./pages/ReceivingList";
 import AuctionsInfo from "./pages/AuctionsInfo";
 import TmaHome from "./pages/TmaHome";
 import TmaCabinet from "./pages/TmaCabinet";
@@ -116,6 +117,7 @@ const App = () => (
           <Route path="/admin/receiving-daily" element={<NotForWholesaler><ReceivingDaily /></NotForWholesaler>} />
           <Route path="/admin/receiving-stock" element={<NotForWholesaler><ReceivingStock /></NotForWholesaler>} />
           <Route path="/admin/receiving-archive/:id" element={<NotForWholesaler><ReceivingArchive /></NotForWholesaler>} />
+          <Route path="/admin/receiving-list" element={<NotForWholesaler><ReceivingList /></NotForWholesaler>} />
           <Route path="/admin/auctions" element={<NotForWholesaler><OwnerAuctions /></NotForWholesaler>} />
           <Route path="/admin/auctions/info" element={<NotForWholesaler><AuctionsInfo /></NotForWholesaler>} />
           <Route path="/admin/auctions/settings" element={<NotForWholesaler><OwnerAuctionSettings /></NotForWholesaler>} />

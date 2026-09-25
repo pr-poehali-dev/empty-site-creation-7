@@ -453,7 +453,7 @@ def act_list(cur, actor, params):
         for r in rows:
             r['counters'] = by_id[int(r['id'])]
 
-    return {'rows': rows, 'total': total}, None
+    return {'rows': rows, 'total': total, 'see_all': actor['_see_all']}, None
 
 
 def handler(event: dict, context) -> dict:
