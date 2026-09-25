@@ -44,6 +44,15 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Удалить приёмку без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "delete", "id": 1},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Отмена без токена нельзя",
       "method": "POST",
       "path": "/",

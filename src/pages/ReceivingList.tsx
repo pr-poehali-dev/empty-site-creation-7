@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
-import OutcomeChips from "./receiving-daily/OutcomeChips";
+import { toast } from "@/hooks/use-toast";
+import DeleteDialog from "./receiving-daily/DeleteDialog";
+import ReceivingRowItem from "./receiving-daily/ReceivingRowItem";
 import {
   KIND_SHORT,
-  KIND_TITLES,
+  deleteReceiving,
   loadReceivings,
   type ReceivingRow,
 } from "./receiving-daily/dailyApi";
@@ -20,9 +22,6 @@ const KIND_FILTERS = [
   { key: "kind_check", label: KIND_SHORT.kind_check },
   { key: "kind_repair", label: KIND_SHORT.kind_repair },
 ];
-
-const dateRu = (v: string) =>
-  new Date(v).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "2-digit" });
 
 /** Список приёмок. Свои видит каждый мастер, чужие — по праву «видит списки всех». */
 const ReceivingList = () => {
@@ -38,6 +37,8 @@ const ReceivingList = () => {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [toDelete, setToDelete] = useState<ReceivingRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const first = useRef(true);
 
   const fetchRows = useCallback(
@@ -82,6 +83,21 @@ const ReceivingList = () => {
     const next = shown + PAGE;
     setShown(next);
     fetchRows(next);
+  };
+
+  const remove = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await deleteReceiving(toDelete.id);
+      toast({ title: "Приёмка удалена" });
+      setToDelete(null);
+      fetchRows(shown);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const filtered = Boolean(from || to || q || kind || mine);
@@ -210,35 +226,18 @@ const ReceivingList = () => {
               </p>
             ) : (
               rows.map((r) => (
-                <button
+                <ReceivingRowItem
                   key={r.id}
-                  onClick={() =>
+                  row={r}
+                  full
+                  deleting={deleting}
+                  onOpen={() =>
                     navigate(
                       `/admin/receiving-archive/${r.id}?back=${encodeURIComponent(BACK)}`
                     )
                   }
-                  className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/[0.03] transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm flex items-center gap-2 flex-wrap">
-                      <span>{dateRu(r.work_date)}</span>
-                      <span className="text-muted-foreground">·</span>
-                      <span className="truncate">{r.employee_name}</span>
-                      {!r.closed && (
-                        <span className="text-[10px] rounded px-1.5 py-0.5 bg-emerald-500/15 text-emerald-300">
-                          открыта
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {KIND_TITLES[r.kind] || r.kind} · {r.qty} шт
-                    </div>
-                    <div className="mt-1.5">
-                      <OutcomeChips counters={r.counters} showZero={r.kind === "kind_check"} />
-                    </div>
-                  </div>
-                  <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
-                </button>
+                  onDelete={() => setToDelete(r)}
+                />
               ))
             )}
           </div>
@@ -258,6 +257,16 @@ const ReceivingList = () => {
           )}
         </div>
       </main>
+
+      {toDelete && (
+        <DeleteDialog
+          workDate={toDelete.work_date}
+          kind={toDelete.kind}
+          busy={deleting}
+          onConfirm={remove}
+          onCancel={() => setToDelete(null)}
+        />
+      )}
     </div>
   );
 };

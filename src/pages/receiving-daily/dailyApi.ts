@@ -74,6 +74,8 @@ export interface Counters {
 export interface ReceivingRow extends Receiving {
   qty: number;
   counters?: Counters;
+  /** Сервер уже учёл: своя, закрыта и пустая. */
+  can_delete?: boolean;
 }
 
 export interface ListFilter {
@@ -108,6 +110,8 @@ export interface DailyState {
   receiving: Receiving;
   counters: Counters;
   items: DailyItem[];
+  /** Своя ли приёмка — пустую закрытую можно удалить. */
+  can_delete?: boolean;
 }
 
 const headers = (): Record<string, string> => ({
@@ -155,6 +159,10 @@ export const loadArchive = (id: number, q = "") =>
   get<DailyState>(`action=state&id=${id}&limit=500&q=${encodeURIComponent(q)}`);
 
 export const closeReceiving = (id: number) => post<{ ok: boolean }>({ action: "close", id });
+
+/** Удалить можно только пустую закрытую и только свою — решает сервер. */
+export const deleteReceiving = (id: number) =>
+  post<{ ok: boolean; deleted: number }>({ action: "delete", id });
 
 export const scanCode = (code: string) =>
   get<{ found: boolean; item?: DailyItem; code?: string }>(

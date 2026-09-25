@@ -3,10 +3,13 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import { toast } from "@/hooks/use-toast";
 import ArchiveItemCard from "./receiving-daily/ArchiveItemCard";
 import DailyCounters from "./receiving-daily/DailyCounters";
+import DeleteDialog from "./receiving-daily/DeleteDialog";
 import {
   KIND_TITLES,
+  deleteReceiving,
   loadArchive,
   type Counters,
   type DailyItem,
@@ -40,9 +43,30 @@ const ReceivingArchive = () => {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<DailyItem | null>(null);
+  const [mayDelete, setMayDelete] = useState(false);
+  const [askDelete, setAskDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const first = useRef(true);
 
   const goBack = () => navigate(sp.get("back") || "/admin/receipts");
+
+  // Удалять можно только пустую закрытую — где сервер откажет, кнопки нет.
+  // Считаем по счётчику, а не по списку: при поиске список пуст, а товар есть.
+  const deletable = mayDelete && Boolean(receiving?.closed) && counters.total === 0;
+
+  const remove = async () => {
+    if (!receiving) return;
+    setDeleting(true);
+    try {
+      await deleteReceiving(receiving.id);
+      toast({ title: "Приёмка удалена" });
+      goBack();
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+      setDeleting(false);
+      setAskDelete(false);
+    }
+  };
 
   const fetchData = useCallback(
     async (q: string) => {
@@ -52,6 +76,7 @@ const ReceivingArchive = () => {
         setReceiving(d.receiving);
         setCounters(d.counters);
         setItems(d.items);
+        setMayDelete(Boolean(d.can_delete));
         setStage("ready");
       } catch (e) {
         setError((e as Error).message);
@@ -115,6 +140,18 @@ const ReceivingArchive = () => {
               {receiving?.employee_name ? ` · ${receiving.employee_name}` : ""}
             </p>
           </div>
+          {deletable && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+              title="Удалить приёмку"
+              disabled={deleting}
+              onClick={() => setAskDelete(true)}
+            >
+              <Icon name="Trash2" size={17} />
+            </Button>
+          )}
           <span
             className={`shrink-0 rounded-lg px-2 py-1 text-[11px] ${
               receiving?.closed
@@ -204,6 +241,16 @@ const ReceivingArchive = () => {
           </div>
         </div>
       </main>
+
+      {askDelete && receiving && (
+        <DeleteDialog
+          workDate={receiving.work_date}
+          kind={receiving.kind}
+          busy={deleting}
+          onConfirm={remove}
+          onCancel={() => setAskDelete(false)}
+        />
+      )}
 
       {open && <ArchiveItemCard item={open} onClose={() => setOpen(null)} />}
     </div>

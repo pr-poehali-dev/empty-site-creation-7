@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
-import OutcomeChips from "./OutcomeChips";
-import { KIND_SHORT, loadReceivings, type ReceivingRow } from "./dailyApi";
+import { toast } from "@/hooks/use-toast";
+import DeleteDialog from "./DeleteDialog";
+import ReceivingRowItem from "./ReceivingRowItem";
+import { deleteReceiving, loadReceivings, type ReceivingRow } from "./dailyApi";
 
 interface Props {
   /** Текущую приёмку в список прошлых не показываем. */
@@ -13,9 +15,6 @@ interface Props {
 }
 
 const PAGE = 5;
-
-const dateRu = (v: string) =>
-  new Date(v).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "2-digit" });
 
 /** Прошлые приёмки мастера. Фильтры бьют по всей базе, а не по показанным пяти. */
 const PastReceivings = ({ excludeId, backTo }: Props) => {
@@ -27,6 +26,8 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const [toDelete, setToDelete] = useState<ReceivingRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const first = useRef(true);
 
   const fetchRows = useCallback(
@@ -74,6 +75,21 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
     setFrom("");
     setTo("");
     setQ("");
+  };
+
+  const remove = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await deleteReceiving(toDelete.id);
+      toast({ title: "Приёмка удалена" });
+      setToDelete(null);
+      fetchRows(shown);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const filtered = Boolean(from || to || q);
@@ -138,31 +154,17 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
           </p>
         ) : (
           rows.map((r) => (
-            <button
+            <ReceivingRowItem
               key={r.id}
-              onClick={() =>
+              row={r}
+              deleting={deleting}
+              onOpen={() =>
                 navigate(
                   `/admin/receiving-archive/${r.id}?back=${encodeURIComponent(backTo)}`
                 )
               }
-              className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-white/[0.03] transition-colors"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="text-sm flex items-center gap-2">
-                  <span>{dateRu(r.work_date)}</span>
-                  {!r.closed && (
-                    <span className="text-[10px] rounded px-1.5 py-0.5 bg-emerald-500/15 text-emerald-300">
-                      открыта
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {KIND_SHORT[r.kind] || r.kind} · {r.qty} шт
-                </div>
-              </div>
-              <OutcomeChips counters={r.counters} />
-              <Icon name="ChevronRight" size={15} className="text-muted-foreground shrink-0" />
-            </button>
+              onDelete={() => setToDelete(r)}
+            />
           ))
         )}
       </div>
@@ -173,6 +175,16 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
             Показать ещё
           </Button>
         </div>
+      )}
+
+      {toDelete && (
+        <DeleteDialog
+          workDate={toDelete.work_date}
+          kind={toDelete.kind}
+          busy={deleting}
+          onConfirm={remove}
+          onCancel={() => setToDelete(null)}
+        />
       )}
     </div>
   );

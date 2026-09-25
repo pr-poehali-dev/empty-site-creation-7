@@ -226,7 +226,10 @@ def act_state(cur, actor, params):
         return None, 'Это чужая приёмка'
     # Закрытую смотрят целиком, в открытой список — для контроля последних пиков.
     limit = min(int(params.get('limit') or (500 if row['closed'] else 30)), 500)
-    return state(cur, row, limit, params.get('q') or ''), None
+    data = state(cur, row, limit, params.get('q') or '')
+    # Чужую приёмку удалить нельзя — экран не должен показывать кнопку впустую.
+    data['can_delete'] = bool(own or actor['is_owner'])
+    return data, None
 
 
 def act_close(cur, actor, body):
@@ -240,6 +243,39 @@ def act_close(cur, actor, body):
     if not cur.fetchone():
         return None, 'Приёмка уже закрыта или чужая'
     return {'ok': True}, None
+
+
+def act_delete(cur, actor, body):
+    """Удалить можно только пустую закрытую приёмку и только свою.
+    Владелец — любую подходящую. Условия проверяем здесь, а не верим экрану:
+    пока список висел открытым, в приёмку могли дописать товар."""
+    rid = int(body.get('id') or 0)
+    if not rid:
+        return None, 'Не указана приёмка'
+
+    cur.execute(f"SELECT * FROM daily_receivings WHERE id={rid} LIMIT 1")
+    row = cur.fetchone()
+    if not row:
+        return None, 'Приёмка не найдена'
+    row = dict(row)
+
+    own = (row['manager_id'] == actor['manager_id']) if actor['manager_id'] else row['is_owner']
+    if not own and not actor['is_owner']:
+        return None, 'Чужую приёмку удалить нельзя'
+
+    if not row['closed']:
+        return None, 'Сначала закончите приёмку'
+
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM receiving_items WHERE daily_receiving_id={rid}"
+    )
+    if int(cur.fetchone()['n']) > 0:
+        return None, 'В приёмке есть товар — такую не удаляем'
+
+    cur.execute(f"DELETE FROM daily_receivings WHERE id={rid} RETURNING id")
+    if not cur.fetchone():
+        return None, 'Не удалось удалить'
+    return {'ok': True, 'deleted': rid}, None
 
 
 def act_scan(cur, params):
@@ -438,6 +474,16 @@ def act_list(cur, actor, params):
     )
     rows = [dict(r) for r in cur.fetchall()]
 
+    # Кнопку удаления рисуем только там, где сервер и правда удалит.
+    for r in rows:
+        own = (
+            (r['manager_id'] == actor['manager_id']) if actor['manager_id']
+            else r['is_owner']
+        )
+        r['can_delete'] = bool(
+            (own or actor['is_owner']) and r['closed'] and int(r['qty']) == 0
+        )
+
     ids = [int(r['id']) for r in rows]
     if ids:
         joined = ','.join(str(i) for i in ids)
@@ -457,7 +503,7 @@ def act_list(cur, actor, params):
 
 
 def handler(event: dict, context) -> dict:
-    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы и закрывать приёмку."""
+    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -504,6 +550,7 @@ def handler(event: dict, context) -> dict:
             'list': lambda: act_list(cur, actor, params),
             'open': lambda: act_open(cur, actor, body),
             'close': lambda: act_close(cur, actor, body),
+            'delete': lambda: act_delete(cur, actor, body),
             'check': lambda: act_check(cur, actor, body),
             'factory': lambda: act_factory(cur, body),
             'undo': lambda: act_undo(cur, actor, body),
