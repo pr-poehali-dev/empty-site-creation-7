@@ -6,17 +6,12 @@ import Icon from "@/components/ui/icon";
 import ArchiveItemCard from "./receiving-daily/ArchiveItemCard";
 import DailyCounters from "./receiving-daily/DailyCounters";
 import {
+  KIND_TITLES,
   loadArchive,
   type Counters,
   type DailyItem,
   type Receiving,
 } from "./receiving-daily/dailyApi";
-
-const KIND_TITLES: Record<string, string> = {
-  kind_plain: "Рабочий товар без проверки",
-  kind_check: "Рабочий товар с проверкой",
-  kind_repair: "Товар под ремонт",
-};
 
 const EMPTY: Counters = { sale: 0, wipe: 0, repair: 0, scrap: 0, total: 0 };
 

@@ -8,8 +8,10 @@ import CheckDialog from "./receiving-daily/CheckDialog";
 import DailyCounters from "./receiving-daily/DailyCounters";
 import FinishDialog from "./receiving-daily/FinishDialog";
 import LastCheck from "./receiving-daily/LastCheck";
+import PastReceivings from "./receiving-daily/PastReceivings";
 import SearchBox from "./receiving-daily/SearchBox";
 import {
+  KIND_TITLES,
   closeReceiving,
   findCurrent,
   loadState,
@@ -20,12 +22,6 @@ import {
   type DailyItem,
   type Receiving,
 } from "./receiving-daily/dailyApi";
-
-const KIND_TITLES: Record<string, string> = {
-  kind_plain: "Рабочий товар без проверки",
-  kind_check: "Рабочий товар с проверкой",
-  kind_repair: "Товар под ремонт",
-};
 
 const EMPTY: Counters = { sale: 0, wipe: 0, repair: 0, scrap: 0, total: 0 };
 
@@ -337,6 +333,11 @@ const ReceivingDaily = () => {
             </div>
           )}
         </div>
+
+        <PastReceivings
+          excludeId={receiving?.id}
+          backTo={`/admin/receiving-daily?kind=${encodeURIComponent(kind)}&resume=1`}
+        />
       </main>
 
       {askFinish && (

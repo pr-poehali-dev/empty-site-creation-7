@@ -29,6 +29,18 @@ export interface DailyItem {
 
 export type Outcome = "sale" | "wipe" | "repair" | "scrap";
 
+export const KIND_TITLES: Record<string, string> = {
+  kind_plain: "Рабочий товар без проверки",
+  kind_check: "Рабочий товар с проверкой",
+  kind_repair: "Товар под ремонт",
+};
+
+export const KIND_SHORT: Record<string, string> = {
+  kind_plain: "Без проверки",
+  kind_check: "С проверкой",
+  kind_repair: "Под ремонт",
+};
+
 export interface CheckPayload {
   item_id: number;
   receiving_id: number;
@@ -58,6 +70,38 @@ export interface Counters {
   scrap: number;
   total: number;
 }
+
+export interface ReceivingRow extends Receiving {
+  qty: number;
+  counters?: Counters;
+}
+
+export interface ListFilter {
+  dateFrom?: string;
+  dateTo?: string;
+  q?: string;
+  mine?: boolean;
+  kind?: string;
+  excludeId?: number;
+  closedOnly?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+/** Отбор идёт по всей базе, наружу выдаётся порциями. */
+export const loadReceivings = (f: ListFilter = {}) => {
+  const p = new URLSearchParams({ action: "list" });
+  if (f.dateFrom) p.set("date_from", f.dateFrom);
+  if (f.dateTo) p.set("date_to", f.dateTo);
+  if (f.q) p.set("q", f.q);
+  if (f.mine) p.set("mine", "1");
+  if (f.kind) p.set("kind", f.kind);
+  if (f.excludeId) p.set("exclude", String(f.excludeId));
+  if (f.closedOnly) p.set("closed_only", "1");
+  p.set("limit", String(f.limit ?? 5));
+  p.set("offset", String(f.offset ?? 0));
+  return get<{ rows: ReceivingRow[]; total: number }>(p.toString());
+};
 
 export interface DailyState {
   found?: boolean;

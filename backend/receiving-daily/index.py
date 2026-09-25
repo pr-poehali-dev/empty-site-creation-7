@@ -384,21 +384,76 @@ def act_undo(cur, actor, body):
 
 
 def act_list(cur, actor, params):
-    """Список приёмок: свои или всех — по праву see_all_lists."""
-    work_date = _date(params.get('work_date'))
+    """Список приёмок: свои или всех — по праву see_all_lists.
+
+    Фильтры по датам и поиск по товару отбирают по всей базе, а не по
+    показанной порции: мастер ищет модель трёхмесячной давности и должен её найти.
+    Счётчики по исходам считаются одним запросом на все строки сразу — иначе
+    на полусотне приёмок экран думал бы секундами.
+    """
     parts = ["1=1"]
-    if work_date:
-        parts.append(f"work_date='{work_date}'")
-    if not actor['_see_all']:
+
+    date_from = _date(params.get('date_from')) or _date(params.get('work_date'))
+    date_to = _date(params.get('date_to')) or _date(params.get('work_date'))
+    if date_from:
+        parts.append(f"d.work_date>='{date_from}'")
+    if date_to:
+        parts.append(f"d.work_date<='{date_to}'")
+
+    # mine=1 — свой список даже у того, кто вправе видеть чужие.
+    mine = str(params.get('mine') or '') == '1'
+    if mine or not actor['_see_all']:
         parts.append(_owner_filter(actor))
+
+    kind = (params.get('kind') or '').strip()
+    if kind in KINDS:
+        parts.append(f"d.kind='{_esc(kind)}'")
+
+    exclude = int(params.get('exclude') or 0)
+    if exclude:
+        parts.append(f"d.id<>{exclude}")
+
+    if str(params.get('closed_only') or '') == '1':
+        parts.append("d.closed=true")
+
+    match = goods_match(params.get('q') or '')
+    if match:
+        parts.append(
+            f"EXISTS (SELECT 1 FROM receiving_items i "
+            f"WHERE i.daily_receiving_id=d.id AND {match})"
+        )
+
     where = ' AND '.join(parts)
+    limit = min(int(params.get('limit') or 5), 100)
+    offset = max(int(params.get('offset') or 0), 0)
+
+    cur.execute(f"SELECT COUNT(*) AS n FROM daily_receivings d WHERE {where}")
+    total = int(cur.fetchone()['n'])
+
     cur.execute(
         f"SELECT d.*, (SELECT COUNT(*) FROM receiving_items i "
         f"WHERE i.daily_receiving_id=d.id) AS qty "
         f"FROM daily_receivings d WHERE {where} "
-        f"ORDER BY d.work_date DESC, d.id DESC LIMIT 100"
+        f"ORDER BY d.work_date DESC, d.id DESC LIMIT {limit} OFFSET {offset}"
     )
-    return {'rows': [dict(r) for r in cur.fetchall()]}, None
+    rows = [dict(r) for r in cur.fetchall()]
+
+    ids = [int(r['id']) for r in rows]
+    if ids:
+        joined = ','.join(str(i) for i in ids)
+        cur.execute(
+            f"SELECT daily_receiving_id AS rid, check_result AS r, COUNT(*) AS n "
+            f"FROM receiving_items WHERE daily_receiving_id IN ({joined}) "
+            f"AND check_result IS NOT NULL GROUP BY 1,2"
+        )
+        by_id = {i: {o: 0 for o in OUTCOMES} for i in ids}
+        for row in cur.fetchall():
+            if row['r'] in by_id[row['rid']]:
+                by_id[row['rid']][row['r']] = int(row['n'])
+        for r in rows:
+            r['counters'] = by_id[int(r['id'])]
+
+    return {'rows': rows, 'total': total}, None
 
 
 def handler(event: dict, context) -> dict:
