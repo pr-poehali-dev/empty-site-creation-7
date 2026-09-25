@@ -159,7 +159,11 @@ const ReceivingArchive = () => {
                 : "bg-emerald-500/15 text-emerald-300"
             }`}
           >
-            {receiving?.closed ? "закрыта" : "открыта"}
+            {receiving?.closed
+              ? receiving.auto_closed
+                ? "закрыта автоматически"
+                : "закрыта"
+              : "открыта"}
           </span>
         </div>
       </header>
@@ -173,7 +177,9 @@ const ReceivingArchive = () => {
             <div className="text-sm">
               <div className="font-medium">Приёмка в архиве</div>
               <div className="text-xs text-muted-foreground">
-                Смотреть можно, дописать или изменить — нет
+                {receiving?.auto_closed
+                  ? "Закрылась сама в конце суток — кнопку «Закончить» не нажали"
+                  : "Смотреть можно, дописать или изменить — нет"}
               </div>
             </div>
           </div>

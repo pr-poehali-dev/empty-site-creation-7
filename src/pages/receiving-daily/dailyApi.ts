@@ -59,6 +59,8 @@ export interface Receiving {
   kind: string;
   work_date: string;
   closed: boolean;
+  /** Закрыл не мастер, а система: сутки кончились, кнопку не нажали. */
+  auto_closed?: boolean;
   opened_at: string;
   closed_at: string | null;
 }
@@ -92,7 +94,8 @@ export interface ListFilter {
 
 /** Отбор идёт по всей базе, наружу выдаётся порциями. */
 export const loadReceivings = (f: ListFilter = {}) => {
-  const p = new URLSearchParams({ action: "list" });
+  // Дата с телефона: по ней сервер закроет забытые приёмки прошлых дней.
+  const p = new URLSearchParams({ action: "list", today: todayLocal() });
   if (f.dateFrom) p.set("date_from", f.dateFrom);
   if (f.dateTo) p.set("date_to", f.dateTo);
   if (f.q) p.set("q", f.q);

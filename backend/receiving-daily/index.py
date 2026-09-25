@@ -115,6 +115,23 @@ def _owner_filter(actor):
     return "manager_id IS NULL AND is_owner=true"
 
 
+def autoclose_past(cur, actor, work_date):
+    """Сутки кончились — кончилась и приёмка. Кнопку нажать забывают,
+    и без этого забытые приёмки висели бы открытыми вечно.
+
+    Дату «сегодня» берём с телефона мастера: часовые пояса у всех свои.
+    Чужие приёмки не трогаем — их «сегодня» нам неизвестно.
+    """
+    if not work_date:
+        return 0
+    cur.execute(
+        f"UPDATE daily_receivings SET closed=true, auto_closed=true, closed_at=now() "
+        f"WHERE closed=false AND work_date<'{work_date}' AND {_owner_filter(actor)} "
+        f"RETURNING id"
+    )
+    return len(cur.fetchall())
+
+
 def find_open(cur, actor, kind, work_date):
     cur.execute(
         f"SELECT * FROM daily_receivings WHERE {_owner_filter(actor)} "
@@ -204,6 +221,7 @@ def act_current(cur, actor, params):
     work_date = _date(params.get('work_date'))
     if not work_date:
         return None, 'Не передана дата рабочего дня'
+    autoclose_past(cur, actor, work_date)
     row = find_open(cur, actor, kind, work_date)
     if not row:
         return {'found': False}, None
@@ -427,6 +445,9 @@ def act_list(cur, actor, params):
     Счётчики по исходам считаются одним запросом на все строки сразу — иначе
     на полусотне приёмок экран думал бы секундами.
     """
+    # Заодно подчищаем забытые: список — первое место, где видна чужая небрежность.
+    autoclose_past(cur, actor, _date(params.get('today')))
+
     parts = ["1=1"]
 
     date_from = _date(params.get('date_from')) or _date(params.get('work_date'))

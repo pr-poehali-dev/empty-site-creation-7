@@ -35,6 +35,14 @@ const ReceivingRowItem = ({ row, full = false, deleting, onOpen, onDelete }: Pro
               открыта
             </span>
           )}
+          {row.closed && row.auto_closed && (
+            <span
+              className="text-[10px] rounded px-1.5 py-0.5 bg-white/[0.06] text-muted-foreground"
+              title="Сутки кончились, а кнопку «Закончить» не нажали"
+            >
+              закрыта автоматически
+            </span>
+          )}
         </div>
         <div className="text-xs text-muted-foreground truncate">
           {(full ? KIND_TITLES : KIND_SHORT)[row.kind] || row.kind} · {row.qty} шт
