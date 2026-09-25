@@ -23,7 +23,17 @@ KEY_BY_NAME = {w['name']: w['key'] for w in WAREHOUSES}
 
 ITEM_COLS = (
     'id, supplier_barcode, tech_name, serial_number, declared_defect, brand, model, '
-    'factory_barcode, check_result, warehouse, checked_at, checked_by_name'
+    'product_group, factory_barcode, check_result, warehouse, checked_at, checked_by_name'
+)
+
+G = "COALESCE(NULLIF(btrim(product_group),''),'')"
+B = "COALESCE(NULLIF(btrim(brand),''),'')"
+M = "COALESCE(NULLIF(btrim(model),''),'')"
+
+NAME_SQL = (
+    f"btrim(CASE WHEN {G}='' THEN 'без группы' ELSE {G} END || ' ' || "
+    f"CASE WHEN {B}='' THEN 'без бренда' ELSE {B} END || ' ' || "
+    f"CASE WHEN {M}='' THEN 'без модели' ELSE {M} END)"
 )
 
 
@@ -116,38 +126,61 @@ def act_totals(cur, allowed):
     return {'totals': [{'name': n, 'qty': found.get(n, 0)} for n in allowed]}
 
 
-def act_groups(cur, allowed, params):
-    """Остаток склада — по техническим наименованиям, поштучно."""
-    wh = (params.get('warehouse') or '').strip()
-    if wh not in allowed:
-        return None, 'Этот склад вам не открыт'
-    q = (params.get('q') or '').strip()
+def _stock_where(wh, q):
+    """Поиск по складу: тут готовая продукция, поэтому ищем и по модели,
+    и по заводскому коду — он общий на позицию, и это как раз удобно."""
     where = f"warehouse='{_esc(wh)}'"
     if len(q) >= 2:
         e = _esc(q)
         where += (
-            f" AND (tech_name ILIKE '%{e}%' OR supplier_barcode ILIKE '%{e}%' "
-            f"OR factory_barcode ILIKE '%{e}%' OR brand ILIKE '%{e}%')"
+            f" AND (model ILIKE '%{e}%' OR brand ILIKE '%{e}%' "
+            f"OR product_group ILIKE '%{e}%' OR supplier_barcode ILIKE '%{e}%' "
+            f"OR order_number ILIKE '%{e}%' OR factory_barcode ILIKE '%{e}%')"
         )
+    return where
+
+
+def act_groups(cur, allowed, params):
+    """Остаток склада — по позициям: группа + бренд + модель.
+    По техническому наименованию группировать нельзя: поставщик дописывает
+    слэш с номером, и каждая единица становится отдельной строкой."""
+    wh = (params.get('warehouse') or '').strip()
+    if wh not in allowed:
+        return None, 'Этот склад вам не открыт'
+    q = (params.get('q') or '').strip()
+    where = _stock_where(wh, q)
     cur.execute(
-        f"SELECT btrim(tech_name) AS tech_name, COUNT(*) AS qty FROM receiving_items "
-        f"WHERE {where} GROUP BY 1 ORDER BY qty DESC, 1 LIMIT 200"
+        f"SELECT {NAME_SQL} AS name, {G} AS product_group, {B} AS brand, {M} AS model, "
+        f"COUNT(*) AS qty, "
+        f"MIN(NULLIF(btrim(factory_barcode),'')) AS factory_barcode, "
+        f"COUNT(DISTINCT NULLIF(btrim(factory_barcode),'')) AS factory_variants "
+        f"FROM receiving_items WHERE {where} "
+        f"GROUP BY 1,2,3,4 ORDER BY qty DESC, 1 LIMIT 200"
     )
-    rows = [{'tech_name': r['tech_name'], 'qty': int(r['qty'])} for r in cur.fetchall()]
+    rows = []
+    for r in cur.fetchall():
+        d = dict(r)
+        d['qty'] = int(d['qty'])
+        d['factory_variants'] = int(d['factory_variants'] or 0)
+        rows.append(d)
     return {'rows': rows, 'warehouse': wh}, None
 
 
 def act_units(cur, allowed, params):
-    """Раскрытие группы: конкретные единицы с их штрихкодами."""
+    """Раскрытие позиции: конкретные единицы с их штрихкодами."""
     wh = (params.get('warehouse') or '').strip()
     if wh not in allowed:
         return None, 'Этот склад вам не открыт'
-    tech = (params.get('tech_name') or '').strip()
-    if not tech:
-        return None, 'Не указано наименование'
+    g = (params.get('product_group') or '').strip()
+    b = (params.get('brand') or '').strip()
+    m = (params.get('model') or '').strip()
+    q = (params.get('q') or '').strip()
+    if not (g or b or m):
+        return None, 'Не указана позиция'
+    where = _stock_where(wh, q)
     cur.execute(
         f"SELECT {ITEM_COLS} FROM receiving_items "
-        f"WHERE warehouse='{_esc(wh)}' AND btrim(tech_name)='{_esc(tech)}' "
+        f"WHERE {where} AND {G}='{_esc(g)}' AND {B}='{_esc(b)}' AND {M}='{_esc(m)}' "
         f"ORDER BY id LIMIT 300"
     )
     return {'rows': [dict(r) for r in cur.fetchall()]}, None

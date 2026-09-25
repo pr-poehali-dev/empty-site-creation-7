@@ -200,7 +200,7 @@ const ReceivingStock = () => {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Наименование, бренд или штрихкод"
+            placeholder="Модель, бренд, группа или штрихкод"
             className="pl-9 h-11"
           />
           {busy && (
@@ -241,9 +241,10 @@ const ReceivingStock = () => {
           ) : (
             groups.map((g) => (
               <StockGroupRow
-                key={g.tech_name}
+                key={`${g.product_group}|${g.brand}|${g.model}`}
                 group={g}
                 warehouse={active}
+                query={query}
                 selected={selected}
                 onToggle={toggleUnit}
               />

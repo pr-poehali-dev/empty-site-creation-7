@@ -138,7 +138,9 @@ def list_groups(cur, params, see_price):
     price_cols = "MIN(price) AS price_min, MAX(price) AS price_max," if see_price else ""
     cur.execute(
         f"SELECT {NAME_SQL} AS name, {G} AS product_group, {B} AS brand, {M} AS model, "
-        f"MAX(direction) AS direction, {price_cols} COUNT(*) AS qty "
+        f"MAX(direction) AS direction, {price_cols} COUNT(*) AS qty, "
+        f"MIN(NULLIF(btrim(factory_barcode),'')) AS factory_barcode, "
+        f"COUNT(DISTINCT NULLIF(btrim(factory_barcode),'')) AS factory_variants "
         f"FROM receiving_items WHERE {where} "
         f"GROUP BY 1,2,3,4 ORDER BY 1 LIMIT {limit} OFFSET {offset}"
     )

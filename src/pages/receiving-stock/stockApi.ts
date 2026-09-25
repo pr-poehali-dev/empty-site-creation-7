@@ -16,8 +16,13 @@ export interface StockUnit {
 }
 
 export interface StockGroup {
-  tech_name: string;
+  name: string;
+  product_group: string;
+  brand: string;
+  model: string;
   qty: number;
+  factory_barcode: string | null;
+  factory_variants: number;
 }
 
 export interface WarehouseTotal {
@@ -74,9 +79,13 @@ export const loadGroups = (warehouse: string, q = "") =>
     `action=groups&warehouse=${encodeURIComponent(warehouse)}&q=${encodeURIComponent(q)}`
   );
 
-export const loadUnits = (warehouse: string, techName: string) =>
+export const loadUnits = (warehouse: string, group: StockGroup, q = "") =>
   get<{ rows: StockUnit[] }>(
-    `action=units&warehouse=${encodeURIComponent(warehouse)}&tech_name=${encodeURIComponent(techName)}`
+    `action=units&warehouse=${encodeURIComponent(warehouse)}` +
+      `&product_group=${encodeURIComponent(group.product_group)}` +
+      `&brand=${encodeURIComponent(group.brand)}` +
+      `&model=${encodeURIComponent(group.model)}` +
+      `&q=${encodeURIComponent(q)}`
   );
 
 export const findByCode = (code: string) =>

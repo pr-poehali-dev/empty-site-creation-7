@@ -45,6 +45,7 @@ export const TECH_COLUMNS = [
   "declared_defect",
   "warehouse",
   "price",
+  "factory_barcode",
 ];
 
 export interface CatalogMeta {
@@ -64,7 +65,17 @@ export interface GroupRow {
   price_min?: string | null;
   price_max?: string | null;
   qty: number;
+  factory_barcode?: string | null;
+  factory_variants?: number;
 }
+
+/** Код общий на всю позицию. Разошлись — показываем это, а не прячем. */
+export const factoryLabel = (row: GroupRow) => {
+  const n = Number(row.factory_variants || 0);
+  if (n === 0) return "";
+  if (n > 1) return `заводских кодов: ${n}`;
+  return String(row.factory_barcode || "");
+};
 
 export type ItemRow = Record<string, unknown> & { id: number };
 

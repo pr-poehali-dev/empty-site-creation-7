@@ -218,15 +218,15 @@ def act_close(cur, actor, body):
 
 
 def act_scan(cur, params):
-    """Выстрел сканера: точное совпадение по штрихкоду или номеру заказ-наряда."""
+    """Выстрел сканера: только штрихкод поставщика — он один индивидуален.
+    Заводской код общий на всю позицию, по нему вернулась бы случайная единица."""
     code = (params.get('code') or '').strip()
     if not code:
         return {'found': False}, None
     e = _esc(code)
     cur.execute(
         f"SELECT {ITEM_COLS} FROM receiving_items "
-        f"WHERE supplier_barcode='{e}' OR factory_barcode='{e}' "
-        f"OR factory_barcode_2='{e}' OR order_number='{e}' LIMIT 1"
+        f"WHERE supplier_barcode='{e}' LIMIT 1"
     )
     row = cur.fetchone()
     if not row:
@@ -235,7 +235,8 @@ def act_scan(cur, params):
 
 
 def act_search(cur, params):
-    """Поиск по мере ввода: частичное совпадение по штрихкоду и заказ-наряду."""
+    """Поиск по мере ввода: только по индивидуальным полям единицы —
+    штрихкод поставщика и номер заказ-наряда. Заводской код сюда не берём."""
     q = (params.get('q') or '').strip()
     if len(q) < 2:
         return {'rows': []}, None
@@ -243,7 +244,6 @@ def act_search(cur, params):
     cur.execute(
         f"SELECT {ITEM_COLS} FROM receiving_items "
         f"WHERE supplier_barcode ILIKE '%{e}%' OR order_number ILIKE '%{e}%' "
-        f"OR factory_barcode ILIKE '%{e}%' OR factory_barcode_2 ILIKE '%{e}%' "
         f"ORDER BY id LIMIT 15"
     )
     return {'rows': [dict(r) for r in cur.fetchall()]}, None
@@ -303,23 +303,37 @@ def act_check(cur, actor, body):
 
 
 def act_factory(cur, body):
-    """Заводской штрихкод размножается по однофамильцам: одно сканирование закрывает модель."""
+    """Заводской штрихкод размножается по позиции: группа + бренд + модель.
+    По техническому наименованию нельзя — поставщик дописывает слэш с номером,
+    и все 16 945 наименований разные, код лёг бы на одну единицу."""
     item_id = int(body.get('item_id') or 0)
     code = (body.get('code') or '').strip()
     if not item_id or not code:
         return None, 'Не указан товар или код'
 
-    cur.execute(f"SELECT tech_name FROM receiving_items WHERE id={item_id} LIMIT 1")
+    cur.execute(
+        f"SELECT tech_name, product_group, brand, model "
+        f"FROM receiving_items WHERE id={item_id} LIMIT 1"
+    )
     row = cur.fetchone()
     if not row:
         return None, 'Единица не найдена'
 
     tech = (row['tech_name'] or '').strip()
+    g = (row['product_group'] or '').strip()
+    b = (row['brand'] or '').strip()
+    m = (row['model'] or '').strip()
+
+    if g or b or m:
+        where = (
+            f"btrim(COALESCE(product_group,''))='{_esc(g)}' AND "
+            f"btrim(COALESCE(brand,''))='{_esc(b)}' AND "
+            f"btrim(COALESCE(model,''))='{_esc(m)}'"
+        )
+    else:
+        where = f"id={item_id}"
+
     e = _esc(code)
-    where = (
-        f"id={item_id}" if not tech
-        else f"btrim(tech_name)='{_esc(tech)}'"
-    )
     cur.execute(
         f"UPDATE receiving_items SET factory_barcode='{e}' "
         f"WHERE {where} AND (factory_barcode IS NULL OR factory_barcode='') RETURNING id"

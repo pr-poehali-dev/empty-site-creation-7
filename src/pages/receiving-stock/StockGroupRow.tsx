@@ -7,16 +7,22 @@ import { loadUnits, type StockGroup, type StockUnit } from "./stockApi";
 interface Props {
   group: StockGroup;
   warehouse: string;
+  query?: string;
   selected: Set<number>;
   onToggle: (id: number) => void;
 }
 
-/** Строка остатка: наименование и количество, по тапу — конкретные единицы. */
-const StockGroupRow = ({ group, warehouse, selected, onToggle }: Props) => {
+/** Строка остатка: позиция и количество, по тапу — конкретные единицы. */
+const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Props) => {
   const [open, setOpen] = useState(false);
   const [units, setUnits] = useState<StockUnit[]>([]);
   const [busy, setBusy] = useState(false);
   const [historyOf, setHistoryOf] = useState<number | null>(null);
+
+  const factory =
+    group.factory_variants > 1
+      ? `заводских кодов: ${group.factory_variants}`
+      : group.factory_barcode || "";
 
   const toggle = async () => {
     const next = !open;
@@ -24,7 +30,7 @@ const StockGroupRow = ({ group, warehouse, selected, onToggle }: Props) => {
     if (next && units.length === 0) {
       setBusy(true);
       try {
-        const d = await loadUnits(warehouse, group.tech_name);
+        const d = await loadUnits(warehouse, group, query);
         setUnits(d.rows);
       } catch {
         setUnits([]);
@@ -45,7 +51,15 @@ const StockGroupRow = ({ group, warehouse, selected, onToggle }: Props) => {
           size={16}
           className="text-muted-foreground shrink-0"
         />
-        <span className="flex-1 min-w-0 text-sm break-words">{group.tech_name}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm break-words">{group.name}</span>
+          {factory && (
+            <span className="block text-xs text-sky-300/80 break-all mt-0.5">
+              <Icon name="Barcode" size={12} className="inline mr-1 -mt-0.5" />
+              {factory}
+            </span>
+          )}
+        </span>
         <span className="text-sm font-semibold shrink-0">{group.qty}</span>
       </button>
 
@@ -67,7 +81,10 @@ const StockGroupRow = ({ group, warehouse, selected, onToggle }: Props) => {
                   className="mt-0.5 shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs break-all">{u.supplier_barcode}</div>
+                  <div className="text-xs break-words">{u.tech_name}</div>
+                  <div className="text-[11px] text-muted-foreground break-all">
+                    {u.supplier_barcode}
+                  </div>
                   {u.declared_defect?.trim() && (
                     <div className="text-xs text-muted-foreground break-words">
                       {u.declared_defect}

@@ -17,6 +17,7 @@ import {
   FIELD_TITLES,
   TECH_COLUMNS,
   cellText,
+  factoryLabel,
   priceLabel,
   type CatalogMeta,
   type GroupRow,
@@ -238,6 +239,12 @@ const ReceivingCatalog = () => {
                     {g.direction || "без направления"}
                     {seePrice && priceLabel(g) ? ` · ${priceLabel(g)} ₽` : ""}
                   </div>
+                  {factoryLabel(g) && (
+                    <div className="text-xs text-sky-300/80 truncate mt-0.5">
+                      <Icon name="Barcode" size={12} className="inline mr-1 -mt-0.5" />
+                      {factoryLabel(g)}
+                    </div>
+                  )}
                 </div>
                 <div className="text-sm tabular-nums text-muted-foreground shrink-0">
                   {g.qty} шт
