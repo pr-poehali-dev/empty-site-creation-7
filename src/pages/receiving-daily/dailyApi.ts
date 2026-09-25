@@ -106,6 +106,10 @@ export const openReceiving = (kind: string) =>
 
 export const loadState = (id: number) => get<DailyState>(`action=state&id=${id}`);
 
+/** Просмотр закрытой приёмки: список целиком, с отбором по товару. */
+export const loadArchive = (id: number, q = "") =>
+  get<DailyState>(`action=state&id=${id}&limit=500&q=${encodeURIComponent(q)}`);
+
 export const closeReceiving = (id: number) => post<{ ok: boolean }>({ action: "close", id });
 
 export const scanCode = (code: string) =>

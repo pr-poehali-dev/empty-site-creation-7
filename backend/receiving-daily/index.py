@@ -140,20 +140,43 @@ def counters(cur, receiving_id):
     return out
 
 
-def checked_list(cur, receiving_id, limit=30):
+GOODS_FIELDS = (
+    'model', 'tech_name', 'supplier_barcode', 'factory_barcode',
+    'order_number', 'brand', 'product_group',
+)
+
+
+def goods_match(q):
+    """Поиск по товару: все слова должны найтись, каждое в любом из полей.
+    Используется и внутри приёмки, и при отборе приёмок по товару."""
+    words = [w for w in (q or '').split() if len(w) >= 2][:5]
+    if not words:
+        return ''
+    parts = []
+    for w in words:
+        e = _esc(w)
+        ors = ' OR '.join(f"{f} ILIKE '%{e}%'" for f in GOODS_FIELDS)
+        parts.append(f"({ors})")
+    return ' AND '.join(parts)
+
+
+def checked_list(cur, receiving_id, limit=30, q=''):
+    where = f"daily_receiving_id={int(receiving_id)}"
+    match = goods_match(q)
+    if match:
+        where += f" AND {match}"
     cur.execute(
-        f"SELECT {ITEM_COLS} FROM receiving_items "
-        f"WHERE daily_receiving_id={int(receiving_id)} "
+        f"SELECT {ITEM_COLS} FROM receiving_items WHERE {where} "
         f"ORDER BY checked_at DESC NULLS LAST, id DESC LIMIT {int(limit)}"
     )
     return [dict(r) for r in cur.fetchall()]
 
 
-def state(cur, receiving):
+def state(cur, receiving, limit=30, q=''):
     return {
         'receiving': receiving,
         'counters': counters(cur, receiving['id']),
-        'items': checked_list(cur, receiving['id']),
+        'items': checked_list(cur, receiving['id'], limit, q),
     }
 
 
@@ -201,7 +224,9 @@ def act_state(cur, actor, params):
     own = (row['manager_id'] == actor['manager_id']) if actor['manager_id'] else row['is_owner']
     if not own and not actor['_see_all']:
         return None, 'Это чужая приёмка'
-    return state(cur, row), None
+    # Закрытую смотрят целиком, в открытой список — для контроля последних пиков.
+    limit = min(int(params.get('limit') or (500 if row['closed'] else 30)), 500)
+    return state(cur, row, limit, params.get('q') or ''), None
 
 
 def act_close(cur, actor, body):

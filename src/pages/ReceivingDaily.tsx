@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import CheckDialog from "./receiving-daily/CheckDialog";
 import DailyCounters from "./receiving-daily/DailyCounters";
+import FinishDialog from "./receiving-daily/FinishDialog";
 import LastCheck from "./receiving-daily/LastCheck";
 import SearchBox from "./receiving-daily/SearchBox";
 import {
@@ -32,6 +33,7 @@ const ReceivingDaily = () => {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const kind = sp.get("kind") || "";
+  const resume = sp.get("resume") === "1";
 
   const [stage, setStage] = useState<"loading" | "ask" | "work" | "error">("loading");
   const [error, setError] = useState("");
@@ -44,6 +46,7 @@ const ReceivingDaily = () => {
   const [notFound, setNotFound] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [askFinish, setAskFinish] = useState(false);
 
   const goBack = () => navigate("/admin/receipts");
 
@@ -61,7 +64,8 @@ const ReceivingDaily = () => {
           setReceiving(d.receiving);
           setCounters(d.counters);
           setItems(d.items);
-          setStage("ask");
+          // Вернулись со складов — переспрашивать незачем, работа продолжается.
+          setStage(resume ? "work" : "ask");
         } else {
           start();
         }
@@ -74,7 +78,7 @@ const ReceivingDaily = () => {
     return () => {
       alive = false;
     };
-  }, [kind]);
+  }, [kind, resume]);
 
   const start = async () => {
     try {
@@ -121,7 +125,10 @@ const ReceivingDaily = () => {
     [takeItem]
   );
 
-  useBarcodeScanner({ enabled: stage === "work" && !current, onScan: handleScan });
+  useBarcodeScanner({
+    enabled: stage === "work" && !current && !askFinish,
+    onScan: handleScan,
+  });
 
   const afterCheck = (c: Counters, item: DailyItem) => {
     setCounters(c);
@@ -156,6 +163,7 @@ const ReceivingDaily = () => {
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
       setClosing(false);
+      setAskFinish(false);
     }
   };
 
@@ -225,7 +233,7 @@ const ReceivingDaily = () => {
             size="sm"
             className="h-9 w-9 p-0"
             title="Склады и остатки"
-            onClick={() => navigate("/admin/receiving-stock")}
+            onClick={() => navigate(`/admin/receiving-stock?from=${encodeURIComponent(kind)}`)}
           >
             <Icon name="Warehouse" size={18} />
           </Button>
@@ -234,7 +242,7 @@ const ReceivingDaily = () => {
             size="sm"
             className="h-9"
             disabled={closing}
-            onClick={finish}
+            onClick={() => setAskFinish(true)}
           >
             <Icon name="CheckCheck" size={16} className="mr-1" />
             Закончить
@@ -330,6 +338,15 @@ const ReceivingDaily = () => {
           )}
         </div>
       </main>
+
+      {askFinish && (
+        <FinishDialog
+          total={counters.total}
+          busy={closing}
+          onConfirm={finish}
+          onCancel={() => setAskFinish(false)}
+        />
+      )}
 
       {current && receiving && (
         <CheckDialog

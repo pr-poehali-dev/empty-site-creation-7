@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
@@ -16,6 +16,17 @@ import {
 
 const ReceivingStock = () => {
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  const from = sp.get("from") || "";
+
+  /** Пришли из приёмки — возвращаемся в неё, а не в корень: иначе работа теряется. */
+  const goBack = () =>
+    navigate(
+      from
+        ? `/admin/receiving-daily?kind=${encodeURIComponent(from)}&resume=1`
+        : "/admin/receipts"
+    );
+
   const [warehouses, setWarehouses] = useState<{ key: string; name: string }[]>([]);
   const [totals, setTotals] = useState<WarehouseTotal[]>([]);
   const [active, setActive] = useState("");
@@ -124,7 +135,7 @@ const ReceivingStock = () => {
           <p className="text-sm text-muted-foreground mb-4">
             {stage === "empty" ? "Обратитесь к владельцу" : error}
           </p>
-          <Button onClick={() => navigate("/admin/receipts")}>К приёмкам</Button>
+          <Button onClick={goBack}>{from ? "В приёмку" : "К приёмкам"}</Button>
         </div>
       </div>
     );
@@ -140,7 +151,7 @@ const ReceivingStock = () => {
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => navigate("/admin/receipts")}
+            onClick={goBack}
           >
             <Icon name="ArrowLeft" size={18} />
           </Button>
