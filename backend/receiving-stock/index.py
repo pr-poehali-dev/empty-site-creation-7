@@ -309,7 +309,7 @@ def act_history(cur, params):
     if not item_id:
         return None, 'Не указана единица'
     cur.execute(
-        f"SELECT id, warehouse_from, warehouse_to, moved_by_name, moved_at "
+        f"SELECT id, warehouse_from, warehouse_to, moved_by_name, moved_at, source "
         f"FROM receiving_moves WHERE item_id={item_id} ORDER BY id DESC LIMIT 50"
     )
     moves = [dict(r) for r in cur.fetchall()]

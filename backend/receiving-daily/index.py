@@ -20,6 +20,8 @@ KINDS = {
 
 OUTCOMES = ['sale', 'wipe', 'repair', 'scrap']
 
+OUT_OF_STOCK = 'Убран из приёмки'
+
 WAREHOUSES = {
     'sale': 'СГП',
     'wipe': 'Протирка',
@@ -177,6 +179,22 @@ def goods_match(q):
     return ' AND '.join(parts)
 
 
+def log_move(cur, item_id, wh_from, wh_to, actor, source):
+    """Запись в путь товара. source='check' — попал на склад через приёмку,
+    'remove' — убран из приёмки в общий пул, 'move' — перемещён на складах."""
+    src = 'NULL' if not wh_from else f"'{_esc(wh_from)}'"
+    # Пустого назначения колонка не допускает, а менять её платформа не даёт.
+    # Пишем словом: товар ушёл со склада в общий пул.
+    dst = f"'{_esc(wh_to)}'" if wh_to else f"'{OUT_OF_STOCK}'"
+    mid = int(actor['manager_id']) if actor.get('manager_id') else 'NULL'
+    cur.execute(
+        f"INSERT INTO receiving_moves "
+        f"(item_id, warehouse_from, warehouse_to, moved_by, moved_by_name, source) "
+        f"VALUES ({int(item_id)}, {src}, {dst}, {mid}, "
+        f"'{_esc(actor['name'])}', '{_esc(source)}')"
+    )
+
+
 def attach_moves(cur, items):
     """Путь каждой единицы после мастера — одним запросом на всю приёмку.
 
@@ -188,7 +206,7 @@ def attach_moves(cur, items):
         return items
     joined = ','.join(str(i) for i in ids)
     cur.execute(
-        f"SELECT item_id, warehouse_from, warehouse_to, moved_by_name, moved_at "
+        f"SELECT item_id, warehouse_from, warehouse_to, moved_by_name, moved_at, source "
         f"FROM receiving_moves WHERE item_id IN ({joined}) ORDER BY id"
     )
     by_item = {}
@@ -198,6 +216,7 @@ def attach_moves(cur, items):
             'warehouse_to': r['warehouse_to'],
             'moved_by_name': r['moved_by_name'],
             'moved_at': r['moved_at'],
+            'source': r['source'],
         })
     for it in items:
         it['moves'] = by_item.get(int(it['id']), [])
@@ -423,6 +442,10 @@ def act_check(cur, actor, body):
     cur.execute(f"UPDATE receiving_items SET {', '.join(sets)} WHERE id={item_id} RETURNING id")
     if not cur.fetchone():
         return None, 'Не удалось записать проверку'
+
+    # Попадание на склад через приёмку — такое же событие пути, как перемещение.
+    # Раньше его не писали, и повторные заходы в тот же склад исчезали из истории.
+    log_move(cur, item_id, item.get('warehouse'), WAREHOUSES[outcome], actor, 'check')
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 
@@ -471,6 +494,11 @@ def act_undo(cur, actor, body):
     rid = int(body.get('receiving_id') or 0)
     if not item_id or not rid:
         return None, 'Не указана единица или приёмка'
+
+    cur.execute(f"SELECT warehouse FROM receiving_items WHERE id={item_id} LIMIT 1")
+    prev = cur.fetchone()
+    was = prev['warehouse'] if prev else None
+
     cur.execute(
         f"UPDATE receiving_items SET check_result=NULL, warehouse=NULL, checked_at=NULL, "
         f"checked_by=NULL, checked_by_name=NULL, daily_receiving_id=NULL, has_package=NULL, "
@@ -479,6 +507,8 @@ def act_undo(cur, actor, body):
     )
     if not cur.fetchone():
         return None, 'Эту проверку уже не отменить'
+
+    log_move(cur, item_id, was, None, actor, 'remove')
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 
@@ -504,6 +534,12 @@ def act_item_remove(cur, actor, body):
     if row['closed']:
         return None, 'Приёмка закрыта, изменить её нельзя'
 
+    # Склад читаем до очистки: после неё будет уже пусто, а в путь писать нужно,
+    # откуда товар ушёл.
+    cur.execute(f"SELECT warehouse FROM receiving_items WHERE id={item_id} LIMIT 1")
+    prev = cur.fetchone()
+    was = prev['warehouse'] if prev else None
+
     cur.execute(
         f"UPDATE receiving_items SET check_result=NULL, warehouse=NULL, checked_at=NULL, "
         f"checked_by=NULL, checked_by_name=NULL, daily_receiving_id=NULL, has_package=NULL, "
@@ -512,6 +548,8 @@ def act_item_remove(cur, actor, body):
     )
     if not cur.fetchone():
         return None, 'Этой позиции в приёмке уже нет'
+
+    log_move(cur, item_id, was, None, actor, 'remove')
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 

@@ -36,6 +36,8 @@ export interface MoveRow {
   warehouse_to: string;
   moved_by_name: string | null;
   moved_at: string;
+  /** check — попал на склад через приёмку, remove — убран из приёмки, move — перемещён. */
+  source?: string;
 }
 
 export interface MoveResult {

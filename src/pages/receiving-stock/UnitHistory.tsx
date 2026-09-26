@@ -54,9 +54,16 @@ const UnitHistory = ({ itemId }: Props) => {
     <div className="px-3 py-2 space-y-1.5">
       {moves.map((m) => (
         <div key={m.id} className="flex items-start gap-2 text-xs">
-          <Icon name="ArrowRight" size={12} className="mt-0.5 text-sky-400 shrink-0" />
+          <Icon
+            name={m.source === "check" ? "UserCheck" : "ArrowRight"}
+            size={12}
+            className={`mt-0.5 shrink-0 ${
+              m.source === "check" ? "text-emerald-400" : "text-sky-400"
+            }`}
+          />
           <span className="text-muted-foreground">
             {m.warehouse_from || "не было склада"} → {m.warehouse_to}
+            {m.source === "check" ? " (приёмка)" : ""}
             {m.moved_by_name ? ` · ${m.moved_by_name}` : ""} · {fmt(m.moved_at)}
           </span>
         </div>
