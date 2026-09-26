@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
+import MoveHistory from "./MoveHistory";
 import type { DailyItem } from "./dailyApi";
 
 interface Props {
@@ -85,6 +86,13 @@ const ArchiveItemCard = ({ item, onClose }: Props) => {
               </div>
             </div>
           )}
+
+          <div>
+            <div className="text-[11px] text-muted-foreground mb-1">
+              Путь товара
+            </div>
+            <MoveHistory item={item} />
+          </div>
 
           <div className="text-[11px] text-muted-foreground border-t border-white/[0.06] pt-2">
             {item.checked_by_name ? `Проверил: ${item.checked_by_name}` : "Кто проверил — не записано"}

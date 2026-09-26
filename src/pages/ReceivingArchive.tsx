@@ -9,7 +9,9 @@ import DailyCounters from "./receiving-daily/DailyCounters";
 import DeleteDialog from "./receiving-daily/DeleteDialog";
 import {
   KIND_TITLES,
+  OUTCOME_WAREHOUSE,
   deleteReceiving,
+  isMoved,
   loadArchive,
   type Counters,
   type DailyItem,
@@ -227,7 +229,11 @@ const ReceivingArchive = () => {
                 <button
                   key={it.id}
                   onClick={() => setOpen(it)}
-                  className="w-full px-4 py-2.5 text-left hover:bg-white/[0.03] transition-colors flex items-center gap-3"
+                  className={`w-full px-4 py-2.5 text-left hover:bg-white/[0.03] transition-colors flex items-center gap-3 ${
+                    isMoved(it)
+                      ? "border-l-2 border-amber-500/70 bg-amber-500/[0.04]"
+                      : ""
+                  }`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-sm break-words">{it.tech_name}</div>
@@ -235,6 +241,12 @@ const ReceivingArchive = () => {
                       {it.supplier_barcode}
                       {it.warehouse ? ` · ${it.warehouse}` : ""}
                     </div>
+                    {isMoved(it) && (
+                      <div className="text-[11px] text-amber-300/90 mt-0.5">
+                        Мастер: {OUTCOME_WAREHOUSE[it.check_result || ""]} →
+                        сейчас: {it.warehouse}
+                      </div>
+                    )}
                   </div>
                   <Icon
                     name="ChevronRight"

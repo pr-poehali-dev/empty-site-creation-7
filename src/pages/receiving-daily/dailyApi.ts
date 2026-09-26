@@ -1,5 +1,12 @@
 export const DAILY_URL = "https://functions.poehali.dev/afeafd1b-f066-4048-8588-e5879958220e";
 
+export interface ItemMove {
+  warehouse_from: string | null;
+  warehouse_to: string;
+  moved_by_name: string | null;
+  moved_at: string;
+}
+
 export interface DailyItem {
   id: number;
   supplier_barcode: string;
@@ -25,7 +32,23 @@ export interface DailyItem {
   checked_at: string | null;
   checked_by_name: string | null;
   daily_receiving_id: number | null;
+  /** Перемещения между складами после решения мастера. */
+  moves?: ItemMove[];
 }
+
+/** Куда мастер отправил товар. Отгрузки тут нет: она списание, а не склад. */
+export const OUTCOME_WAREHOUSE: Record<string, string> = {
+  sale: "СГП",
+  wipe: "Протирка",
+  repair: "Под ремонт",
+  scrap: "Утиль",
+};
+
+/** Товар увели с того склада, куда его отправил мастер. */
+export const isMoved = (item: DailyItem): boolean => {
+  const planned = OUTCOME_WAREHOUSE[item.check_result || ""];
+  return Boolean(planned && item.warehouse && item.warehouse !== planned);
+};
 
 export type Outcome = "sale" | "wipe" | "repair" | "scrap";
 

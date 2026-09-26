@@ -177,6 +177,33 @@ def goods_match(q):
     return ' AND '.join(parts)
 
 
+def attach_moves(cur, items):
+    """Путь каждой единицы после мастера — одним запросом на всю приёмку.
+
+    По запросу на строку экран думал бы на полусотне позиций. Само решение
+    мастера сюда не кладём: оно уже есть в полях check_result и checked_by_name.
+    """
+    ids = [int(i['id']) for i in items]
+    if not ids:
+        return items
+    joined = ','.join(str(i) for i in ids)
+    cur.execute(
+        f"SELECT item_id, warehouse_from, warehouse_to, moved_by_name, moved_at "
+        f"FROM receiving_moves WHERE item_id IN ({joined}) ORDER BY id"
+    )
+    by_item = {}
+    for r in cur.fetchall():
+        by_item.setdefault(int(r['item_id']), []).append({
+            'warehouse_from': r['warehouse_from'],
+            'warehouse_to': r['warehouse_to'],
+            'moved_by_name': r['moved_by_name'],
+            'moved_at': r['moved_at'],
+        })
+    for it in items:
+        it['moves'] = by_item.get(int(it['id']), [])
+    return items
+
+
 def checked_list(cur, receiving_id, limit=30, q=''):
     where = f"daily_receiving_id={int(receiving_id)}"
     match = goods_match(q)
@@ -186,7 +213,7 @@ def checked_list(cur, receiving_id, limit=30, q=''):
         f"SELECT {ITEM_COLS} FROM receiving_items WHERE {where} "
         f"ORDER BY checked_at DESC NULLS LAST, id DESC LIMIT {int(limit)}"
     )
-    return [dict(r) for r in cur.fetchall()]
+    return attach_moves(cur, [dict(r) for r in cur.fetchall()])
 
 
 def state(cur, receiving, limit=30, q=''):

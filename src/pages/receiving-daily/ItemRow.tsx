@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
-import type { DailyItem } from "./dailyApi";
+import MoveHistory from "./MoveHistory";
+import { OUTCOME_WAREHOUSE, isMoved, type DailyItem } from "./dailyApi";
 
 interface Props {
   item: DailyItem;
@@ -10,19 +11,41 @@ interface Props {
   onRemove: (item: DailyItem) => void;
 }
 
-/** Строка проверенной позиции. Убрать её может только тот, кому дано право. */
+/** Строка проверенной позиции. Убрать её может только тот, кому дано право.
+ *
+ * Оранжевая рамка — товар увели с того склада, куда его отправил мастер.
+ * Решение мастера при этом остаётся: счётчики считают его работу, а не склад. */
 const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
   const [confirm, setConfirm] = useState(false);
+  const [open, setOpen] = useState(false);
+  const moved = isMoved(item);
+  const planned = OUTCOME_WAREHOUSE[item.check_result || ""];
 
   return (
-    <div className="px-4 py-2 flex items-start gap-2">
+    <div
+      className={`px-4 py-2 flex items-start gap-2 ${
+        moved ? "border-l-2 border-amber-500/70 bg-amber-500/[0.04]" : ""
+      }`}
+    >
       <div className="flex-1 min-w-0">
-        <div className="text-sm truncate">{item.tech_name}</div>
-        <div className="text-xs text-muted-foreground">
-          {item.supplier_barcode}
-          {item.warehouse ? ` · ${item.warehouse}` : ""}
-          {item.invoice_weight ? ` · ${Number(item.invoice_weight)} кг` : ""}
-        </div>
+        <button
+          className="w-full text-left"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <div className="text-sm truncate">{item.tech_name}</div>
+          <div className="text-xs text-muted-foreground">
+            {item.supplier_barcode}
+            {item.warehouse ? ` · ${item.warehouse}` : ""}
+            {item.invoice_weight ? ` · ${Number(item.invoice_weight)} кг` : ""}
+          </div>
+          {moved && (
+            <div className="text-[11px] text-amber-300/90 mt-0.5">
+              Мастер: {planned} → сейчас: {item.warehouse}
+            </div>
+          )}
+        </button>
+
+        {open && <MoveHistory item={item} />}
 
         {confirm && (
           <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.08] p-2">
