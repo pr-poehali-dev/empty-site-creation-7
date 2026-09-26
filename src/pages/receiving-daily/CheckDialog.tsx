@@ -22,16 +22,18 @@ interface Props {
 
 type Stage = "package" | "factory" | "outcome";
 
-/** Порядок жёсткий: упаковка → заводской код (если его ещё нет) → исход. */
+/** Порядок жёсткий: упаковка → заводской код (если есть откуда взять) → исход. */
 const CheckDialog = ({ item, receivingId, onDone, onClose }: Props) => {
-  const needFactory = !item.factory_barcode?.trim();
+  const noFactoryYet = !item.factory_barcode?.trim();
   const [stage, setStage] = useState<Stage>("package");
   const [hasPackage, setHasPackage] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
 
   const pickPackage = (value: boolean) => {
     setHasPackage(value);
-    setStage(needFactory ? "factory" : "outcome");
+    // Заводской код печатают на коробке. Нет коробки — сканировать нечего,
+    // и спрашивать не за чем: шаг пропускаем.
+    setStage(value && noFactoryYet ? "factory" : "outcome");
   };
 
   const pickFactory = async (code: string) => {

@@ -185,5 +185,13 @@ export const saveFactoryCode = (item_id: number, code: string) =>
 export const undoCheck = (item_id: number, receiving_id: number) =>
   post<{ ok: boolean; counters: Counters }>({ action: "undo", item_id, receiving_id });
 
+/** Убрать позицию из приёмки: результат снимается, товар уходит в общий пул. */
+export const removeItem = (item_id: number, receiving_id: number) =>
+  post<{ ok: boolean; counters: Counters }>({
+    action: "item_remove",
+    item_id,
+    receiving_id,
+  });
+
 export const searchItems = (q: string) =>
   get<{ rows: DailyItem[] }>(`action=search&q=${encodeURIComponent(q)}`);

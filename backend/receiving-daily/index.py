@@ -455,6 +455,39 @@ def act_undo(cur, actor, body):
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 
+def act_item_remove(cur, actor, body):
+    """Убрать позицию из приёмки — по праву item_remove.
+
+    Из базы ничего не стирается: снимаем результат проверки и отвязываем
+    от приёмки. Товар возвращается в общий пул и может быть принят заново,
+    история загрузки от поставщика остаётся целой.
+    """
+    if not actor.get('_can_remove'):
+        return None, 'Нет права убирать товары из приёмки'
+    item_id = int(body.get('item_id') or 0)
+    rid = int(body.get('receiving_id') or 0)
+    if not item_id or not rid:
+        return None, 'Не указана позиция или приёмка'
+
+    # В закрытую приёмку правок нет — она в архиве.
+    cur.execute(f"SELECT closed FROM daily_receivings WHERE id={rid} LIMIT 1")
+    row = cur.fetchone()
+    if not row:
+        return None, 'Приёмка не найдена'
+    if row['closed']:
+        return None, 'Приёмка закрыта, изменить её нельзя'
+
+    cur.execute(
+        f"UPDATE receiving_items SET check_result=NULL, warehouse=NULL, checked_at=NULL, "
+        f"checked_by=NULL, checked_by_name=NULL, daily_receiving_id=NULL, has_package=NULL, "
+        f"invoice_weight=NULL, defect_confirmed=NULL, new_defect=NULL, new_defect_text=NULL "
+        f"WHERE id={item_id} AND daily_receiving_id={rid} RETURNING id"
+    )
+    if not cur.fetchone():
+        return None, 'Этой позиции в приёмке уже нет'
+    return {'ok': True, 'counters': counters(cur, rid)}, None
+
+
 def act_list(cur, actor, params):
     """Список приёмок: свои или всех — по праву see_all_lists.
 
@@ -566,6 +599,7 @@ def handler(event: dict, context) -> dict:
             return _resp(401, {'error': 'Войдите заново'})
         perms = perms_of(cur, actor)
         actor['_see_all'] = can(actor, perms, 'see_all_lists')
+        actor['_can_remove'] = can(actor, perms, 'item_remove')
 
         kind = body.get('kind') or params.get('kind') or ''
         if kind and not can(actor, perms, kind):
@@ -578,6 +612,7 @@ def handler(event: dict, context) -> dict:
                     if can(actor, perms, k)
                 ],
                 'see_all': actor['_see_all'],
+                'can_remove': actor['_can_remove'],
                 'name': actor['name'],
             })
 
@@ -590,6 +625,7 @@ def handler(event: dict, context) -> dict:
             'open': lambda: act_open(cur, actor, body),
             'close': lambda: act_close(cur, actor, body),
             'delete': lambda: act_delete(cur, actor, body),
+            'item_remove': lambda: act_item_remove(cur, actor, body),
             'check': lambda: act_check(cur, actor, body),
             'factory': lambda: act_factory(cur, body),
             'undo': lambda: act_undo(cur, actor, body),

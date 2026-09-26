@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { useReceivingPerms } from "@/hooks/useReceivingPerms";
 import CheckDialog from "./receiving-daily/CheckDialog";
 import DailyCounters from "./receiving-daily/DailyCounters";
 import FinishDialog from "./receiving-daily/FinishDialog";
+import ItemRow from "./receiving-daily/ItemRow";
 import LastCheck from "./receiving-daily/LastCheck";
 import PastReceivings from "./receiving-daily/PastReceivings";
 import SearchBox from "./receiving-daily/SearchBox";
@@ -16,6 +18,7 @@ import {
   findCurrent,
   loadState,
   openReceiving,
+  removeItem,
   scanCode,
   undoCheck,
   type Counters,
@@ -42,7 +45,10 @@ const ReceivingDaily = () => {
   const [listOpen, setListOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [askFinish, setAskFinish] = useState(false);
+  const [removingId, setRemovingId] = useState(0);
   const loaded = useRef(false);
+  const { can } = useReceivingPerms();
+  const canRemove = can("item_remove");
 
   const goBack = () => navigate("/admin/receipts");
 
@@ -156,6 +162,23 @@ const ReceivingDaily = () => {
       toast({ title: (e as Error).message, variant: "destructive" });
     } finally {
       setUndoing(false);
+    }
+  };
+
+  const removeFromReceiving = async (item: DailyItem) => {
+    if (!receiving) return;
+    setRemovingId(item.id);
+    try {
+      const r = await removeItem(item.id, receiving.id);
+      setCounters(r.counters);
+      // Убрали ту, что висит в «последней проверке» — убираем и оттуда.
+      setLast((p) => (p?.id === item.id ? null : p));
+      refresh(receiving.id);
+      toast({ title: "Товар вернулся в общий пул" });
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRemovingId(0);
     }
   };
 
@@ -305,14 +328,13 @@ const ReceivingDaily = () => {
                 </p>
               ) : (
                 items.map((it) => (
-                  <div key={it.id} className="px-4 py-2">
-                    <div className="text-sm truncate">{it.tech_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {it.supplier_barcode}
-                      {it.warehouse ? ` · ${it.warehouse}` : ""}
-                      {it.invoice_weight ? ` · ${Number(it.invoice_weight)} кг` : ""}
-                    </div>
-                  </div>
+                  <ItemRow
+                    key={it.id}
+                    item={it}
+                    canRemove={canRemove}
+                    busy={removingId === it.id}
+                    onRemove={removeFromReceiving}
+                  />
                 ))
               )}
             </div>

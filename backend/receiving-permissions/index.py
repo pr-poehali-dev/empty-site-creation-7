@@ -18,6 +18,7 @@ PERMS = [
     {'key': 'upload_files', 'group': 'Действия', 'title': 'Загрузка файлов поставщиков'},
     {'key': 'catalog_edit', 'group': 'Действия', 'title': 'Доступ к каталогу приёмки'},
     {'key': 'delete_data', 'group': 'Действия', 'title': 'Удаление загрузок и позиций'},
+    {'key': 'item_remove', 'group': 'Действия', 'title': 'Удаление товаров из приёмки'},
     {'key': 'manage_perms', 'group': 'Действия', 'title': 'Настройка приёмочных прав'},
     {'key': 'wh_sgp', 'group': 'Склады', 'title': 'СГП'},
     {'key': 'wh_wipe', 'group': 'Склады', 'title': 'Протирка'},
