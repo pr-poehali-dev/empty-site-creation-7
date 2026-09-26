@@ -219,7 +219,7 @@ const ReceivingArchive = () => {
             </span>
           </div>
 
-          <div className="divide-y divide-white/[0.06]">
+          <div className="p-2 space-y-2">
             {items.length === 0 ? (
               <p className="px-4 py-8 text-sm text-muted-foreground text-center">
                 {query ? "Ничего не нашли" : "В этой приёмке ничего не проверено"}
@@ -229,15 +229,12 @@ const ReceivingArchive = () => {
                 <button
                   key={it.id}
                   onClick={() => setOpen(it)}
-                  className={`relative w-full px-4 py-2.5 text-left hover:bg-white/[0.03] transition-colors flex items-center gap-3 ${
-                    isMoved(it) ? "bg-amber-500/[0.07]" : ""
+                  className={`w-full rounded-lg p-2.5 text-left transition-colors flex items-center gap-3 ${
+                    isMoved(it)
+                      ? "border-2 border-amber-500 bg-amber-950/25"
+                      : "border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.04]"
                   }`}
                 >
-                  {/* Полоса отдельным элементом: divide-y перебивает цвет border-l. */}
-                  {isMoved(it) && (
-                    <span className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500" />
-                  )}
-
                   <div className="flex-1 min-w-0">
                     <div className="text-sm break-words">{it.tech_name}</div>
                     <div className="text-xs text-muted-foreground break-all">

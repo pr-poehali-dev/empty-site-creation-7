@@ -321,7 +321,7 @@ const ReceivingDaily = () => {
           </button>
 
           {listOpen && (
-            <div className="border-t border-white/[0.06] divide-y divide-white/[0.06] max-h-80 overflow-y-auto">
+            <div className="border-t border-white/[0.06] max-h-80 overflow-y-auto p-2 space-y-2">
               {items.length === 0 ? (
                 <p className="px-4 py-4 text-sm text-muted-foreground text-center">
                   Пока ничего не проверено
