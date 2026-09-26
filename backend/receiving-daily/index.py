@@ -204,17 +204,35 @@ def act_open(cur, actor, body):
     work_date = _date(body.get('work_date'))
     if not work_date:
         return None, 'Не передана дата рабочего дня'
+
+    # Сутки кончились — забытую приёмку закрываем, только потом открываем новую.
+    autoclose_past(cur, actor, work_date)
+
+    # Одна открытая приёмка на мастера. Двойное нажатие или два окна не должны
+    # плодить вторую — возвращаем ту же самую, а не ошибку.
+    existing = find_open(cur, actor, kind, work_date)
+    if existing:
+        return dict(existing), None
+
     mid = 'NULL' if not actor['manager_id'] else str(int(actor['manager_id']))
     cur.execute(
         f"INSERT INTO daily_receivings (manager_id, is_owner, employee_name, kind, work_date) "
         f"VALUES ({mid}, {'true' if actor['is_owner'] else 'false'}, "
-        f"'{_esc(actor['name'])}', '{_esc(kind)}', '{work_date}') RETURNING *"
+        f"'{_esc(actor['name'])}', '{_esc(kind)}', '{work_date}') "
+        f"ON CONFLICT DO NOTHING RETURNING *"
     )
-    return dict(cur.fetchone()), None
+    row = cur.fetchone()
+    if row:
+        return dict(row), None
+    # Запрет в базе сработал: два нажатия одновременно. Отдаём победившую приёмку.
+    existing = find_open(cur, actor, kind, work_date)
+    if existing:
+        return dict(existing), None
+    return None, 'Не удалось открыть приёмку'
 
 
 def act_current(cur, actor, params):
-    """Есть ли сегодня незакрытая приёмка этого вида — от этого зависит вопрос на экране."""
+    """Есть ли сегодня незакрытая приёмка этого вида — в неё мастер и вернётся."""
     kind = params.get('kind') or ''
     if kind not in KINDS:
         return None, 'Неизвестный вид приёмки'

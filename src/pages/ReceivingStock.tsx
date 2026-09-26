@@ -23,7 +23,7 @@ const ReceivingStock = () => {
   const goBack = () =>
     navigate(
       from
-        ? `/admin/receiving-daily?kind=${encodeURIComponent(from)}&resume=1`
+        ? `/admin/receiving-daily?kind=${encodeURIComponent(from)}`
         : "/admin/receipts"
     );
 

@@ -29,9 +29,8 @@ const ReceivingDaily = () => {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const kind = sp.get("kind") || "";
-  const resume = sp.get("resume") === "1";
 
-  const [stage, setStage] = useState<"loading" | "ask" | "work" | "error">("loading");
+  const [stage, setStage] = useState<"loading" | "work" | "error">("loading");
   const [error, setError] = useState("");
   const [receiving, setReceiving] = useState<Receiving | null>(null);
   const [counters, setCounters] = useState<Counters>(EMPTY);
@@ -69,8 +68,9 @@ const ReceivingDaily = () => {
           setReceiving(d.receiving);
           setCounters(d.counters);
           setItems(d.items);
-          // Вернулись со складов — переспрашивать незачем, работа продолжается.
-          setStage(resume ? "work" : "ask");
+          // Незакрытая приёмка есть — сразу в работу. Спрашивать нечего:
+          // одна открытая приёмка на мастера, выбора между ними не бывает.
+          setStage("work");
         } else {
           start();
         }
@@ -83,18 +83,7 @@ const ReceivingDaily = () => {
     return () => {
       alive = false;
     };
-  }, [kind, resume]);
-
-  // Работа началась — закрепляем это в адресе. Иначе системная стрелка «назад»
-  // из закрытой приёмки откатывалась бы на адрес без resume и снова спрашивала,
-  // продолжать или создавать новую.
-  useEffect(() => {
-    if (stage === "work" && !resume && KIND_TITLES[kind]) {
-      navigate(`/admin/receiving-daily?kind=${encodeURIComponent(kind)}&resume=1`, {
-        replace: true,
-      });
-    }
-  }, [stage, resume, kind, navigate]);
+  }, [kind]);
 
   const start = async () => {
     try {
@@ -202,31 +191,6 @@ const ReceivingDaily = () => {
           <p className="font-medium mb-1">Не получилось открыть</p>
           <p className="text-sm text-muted-foreground mb-4">{error}</p>
           <Button onClick={goBack}>К приёмкам</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (stage === "ask") {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="rounded-xl border border-white/[0.08] bg-card p-6 max-w-sm w-full">
-          <Icon name="History" size={28} className="mb-3 text-violet-400" />
-          <p className="font-medium mb-1">У вас уже есть сегодня приёмка</p>
-          <p className="text-sm text-muted-foreground mb-4">
-            {title} · проверено единиц: {counters.total}
-          </p>
-          <div className="space-y-2">
-            <Button className="w-full" onClick={() => setStage("work")}>
-              Продолжить
-            </Button>
-            <Button variant="outline" className="w-full" onClick={start}>
-              Создать новую
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={goBack}>
-              Назад
-            </Button>
-          </div>
         </div>
       </div>
     );
@@ -357,7 +321,7 @@ const ReceivingDaily = () => {
 
         <PastReceivings
           excludeId={receiving?.id}
-          backTo={`/admin/receiving-daily?kind=${encodeURIComponent(kind)}&resume=1`}
+          backTo={`/admin/receiving-daily?kind=${encodeURIComponent(kind)}`}
         />
       </main>
 
