@@ -23,10 +23,15 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
 
   return (
     <div
-      className={`px-4 py-2 flex items-start gap-2 ${
-        moved ? "border-l-2 border-amber-500/70 bg-amber-500/[0.04]" : ""
+      className={`relative px-4 py-2 flex items-start gap-2 ${
+        moved ? "bg-amber-500/[0.07]" : ""
       }`}
     >
+      {/* Полоса отдельным элементом: divide-y у списка перебивает цвет border-l. */}
+      {moved && (
+        <span className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500" />
+      )}
+
       <div className="flex-1 min-w-0">
         <button
           className="w-full text-left"
