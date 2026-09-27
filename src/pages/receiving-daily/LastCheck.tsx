@@ -23,11 +23,11 @@ const LastCheck = ({ item, busy, onUndo }: Props) => {
   };
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-card p-3 flex items-center gap-3">
+    <div className="rounded-xl border border-white/[0.08] bg-card px-3 py-1 flex items-center gap-3">
       <Icon name="CircleCheck" size={20} className="text-emerald-400 shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className={`text-sm font-medium ${label.cls}`}>{label.text}</div>
-        <div className="text-xs text-muted-foreground truncate">
+        <div className={`text-sm leading-5 font-medium ${label.cls}`}>{label.text}</div>
+        <div className="text-xs leading-4 text-muted-foreground line-clamp-2 break-words">
           {item.tech_name}
         </div>
       </div>

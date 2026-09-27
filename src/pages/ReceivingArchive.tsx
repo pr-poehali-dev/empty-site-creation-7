@@ -229,14 +229,14 @@ const ReceivingArchive = () => {
                 <button
                   key={it.id}
                   onClick={() => setOpen(it)}
-                  className={`w-full rounded-lg p-2.5 text-left transition-colors flex items-center gap-3 ${
+                  className={`w-full rounded-lg px-2.5 py-1 text-left transition-colors flex items-center gap-3 ${
                     isMoved(it)
                       ? "border-2 border-amber-500 bg-amber-950/25"
                       : "border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.04]"
                   }`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm break-words">{it.tech_name}</div>
+                    <div className="text-[13px] leading-4 min-h-8 line-clamp-2 break-words">{it.tech_name}</div>
                     <div className="text-xs text-muted-foreground break-all">
                       {it.supplier_barcode}
                       {it.warehouse ? ` · ${it.warehouse}` : ""}

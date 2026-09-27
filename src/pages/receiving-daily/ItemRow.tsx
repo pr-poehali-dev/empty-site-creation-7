@@ -23,7 +23,7 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
 
   return (
     <div
-      className={`rounded-lg p-2.5 flex items-start gap-2 ${
+      className={`rounded-lg px-2.5 py-1 flex items-center gap-2 ${
         moved
           ? "border-2 border-amber-500 bg-amber-950/25"
           : "border border-white/[0.07] bg-white/[0.02]"
@@ -34,7 +34,7 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
           className="w-full text-left"
           onClick={() => setOpen((v) => !v)}
         >
-          <div className="text-sm truncate">{item.tech_name}</div>
+          <div className="text-[13px] leading-4 min-h-8 line-clamp-2 break-words">{item.tech_name}</div>
           <div className="text-xs text-muted-foreground">
             {item.supplier_barcode}
             {item.warehouse ? ` · ${item.warehouse}` : ""}

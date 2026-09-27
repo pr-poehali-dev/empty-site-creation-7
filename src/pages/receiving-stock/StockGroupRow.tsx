@@ -44,7 +44,7 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
     <div>
       <button
         onClick={toggle}
-        className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/[0.03] transition-colors"
+        className="w-full px-4 py-1.5 flex items-center gap-3 text-left hover:bg-white/[0.03] transition-colors"
       >
         <Icon
           name={open ? "ChevronDown" : "ChevronRight"}
@@ -52,7 +52,7 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
           className="text-muted-foreground shrink-0"
         />
         <span className="flex-1 min-w-0">
-          <span className="block text-sm break-words">{group.name}</span>
+          <span className="block text-[13px] leading-4 min-h-8 line-clamp-2 break-words">{group.name}</span>
           {factory && (
             <span className="block text-xs text-sky-300/80 break-all mt-0.5">
               <Icon name="Barcode" size={12} className="inline mr-1 -mt-0.5" />
@@ -81,7 +81,7 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
                   className="mt-0.5 shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs break-words">{u.tech_name}</div>
+                  <div className="text-xs leading-4 line-clamp-2 break-words">{u.tech_name}</div>
                   <div className="text-[11px] text-muted-foreground break-all">
                     {u.supplier_barcode}
                   </div>

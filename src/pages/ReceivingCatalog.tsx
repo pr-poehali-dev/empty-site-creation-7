@@ -231,10 +231,10 @@ const ReceivingCatalog = () => {
               <button
                 key={`${g.product_group}|${g.brand}|${g.model}`}
                 onClick={() => setOpen(g)}
-                className="w-full rounded-xl border border-white/[0.08] bg-card p-3 flex items-center gap-3 text-left hover:bg-white/[0.04] transition-colors"
+                className="w-full rounded-xl border border-white/[0.08] bg-card px-3 py-1.5 flex items-center gap-3 text-left hover:bg-white/[0.04] transition-colors"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{g.name}</div>
+                  <div className="font-medium text-[13px] leading-4 min-h-8 line-clamp-2 break-words">{g.name}</div>
                   <div className="text-xs text-muted-foreground truncate">
                     {g.direction || "без направления"}
                     {seePrice && priceLabel(g) ? ` · ${priceLabel(g)} ₽` : ""}
