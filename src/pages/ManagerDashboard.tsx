@@ -4,10 +4,29 @@ import { Badge } from "@/components/ui/badge";
 import Icon from "@/components/ui/icon";
 import DebugToggle from "@/components/DebugToggle";
 import DebugBadge from "@/components/DebugBadge";
+import { useReceivingPerms } from "@/hooks/useReceivingPerms";
+
+/** Любое из этих прав означает, что человеку есть что делать в приёмке. */
+const RECEIVING_KEYS = [
+  "kind_plain",
+  "kind_check",
+  "kind_repair",
+  "wh_sgp",
+  "wh_wipe",
+  "wh_repair",
+  "wh_scrap",
+  "upload_files",
+  "catalog_edit",
+  "manage_perms",
+];
 
 const ManagerDashboard = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
+  // Вход в приёмку даётся по правам, а не по должности: выдали право —
+  // кнопка появилась. Без этого права были, а войти было некуда.
+  const { can } = useReceivingPerms();
+  const canSeeReceiving = RECEIVING_KEYS.some((k) => can(k));
 
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
@@ -54,6 +73,18 @@ const ManagerDashboard = () => {
         </div>
 
         <div className="flex gap-2 mb-5 flex-wrap">
+          {canSeeReceiving && (
+            <DebugBadge id="Manager:nav.receipts" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+                onClick={() => navigate("/admin/receipts")}
+              >
+                <Icon name="PackageCheck" size={20} />
+                <span className="font-medium">Приёмка</span>
+              </Button>
+            </DebugBadge>
+          )}
           <DebugBadge id="Manager:nav.catalog" className="flex-1">
             <Button
               variant="outline"
