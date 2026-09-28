@@ -4,6 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
+import CameraSetupWizard from "@/pages/scan-camera/CameraSetupWizard";
+import {
+  loadSavedCamera,
+  clearSavedCamera,
+  isMissingCameraError,
+  openCamera,
+} from "@/pages/scan-camera/cameraStore";
+
+const FAILS_BEFORE_HINT = 3;
 
 const MAX_VISIBLE = 5;
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -72,6 +81,11 @@ const ScanBarcode = () => {
   const [status, setStatus] = useState<"initializing" | "scanning" | "unsupported">("initializing");
   const [flashCapture, setFlashCapture] = useState(false);
   const [flashError, setFlashError] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [cameraKey, setCameraKey] = useState(0);
+  const [useDefaultCamera, setUseDefaultCamera] = useState(false);
+  const [suggestSetup, setSuggestSetup] = useState(false);
+  const failCountRef = useRef(0);
   const [collected, setCollected] = useState<CollectedEntry[]>([]);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastFlash, setLastFlash] = useState<string | null>(null);
@@ -238,8 +252,12 @@ const ScanBarcode = () => {
 
       const results = await detectorRef.current.detect(canvas);
       if (results && results.length > 0) {
+        failCountRef.current = 0;
+        setSuggestSetup(false);
         processScan(results[0].rawValue);
       } else {
+        failCountRef.current += 1;
+        if (failCountRef.current >= FAILS_BEFORE_HINT) setSuggestSetup(true);
         showError("Штрихкод не распознан");
       }
     } catch (e) {
@@ -455,22 +473,51 @@ const ScanBarcode = () => {
       return;
     }
 
+    const saved = useDefaultCamera ? null : loadSavedCamera();
+    if (!saved && !useDefaultCamera) {
+      setSetupOpen(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const openDefault = async () => {
+      const backDeviceId = await pickBackCamera();
+      const videoConstraints: MediaTrackConstraints = backDeviceId
+        ? {
+            deviceId: { exact: backDeviceId },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          }
+        : {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          };
+      return navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+    };
+
     const start = async () => {
       try {
-        const backDeviceId = await pickBackCamera();
-        const videoConstraints: MediaTrackConstraints = backDeviceId
-          ? {
-              deviceId: { exact: backDeviceId },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
+        let stream: MediaStream;
+        if (saved) {
+          try {
+            stream = await openCamera(saved.deviceId);
+          } catch (camErr) {
+            if (isMissingCameraError(camErr)) {
+              clearSavedCamera();
+              if (!cancelled) setSetupOpen(true);
+              return;
             }
-          : {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            };
-
-        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+            throw camErr;
+          }
+        } else {
+          stream = await openDefault();
+        }
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         streamRef.current = stream;
 
         const track = stream.getVideoTracks()[0];
@@ -513,14 +560,43 @@ const ScanBarcode = () => {
     start();
 
     return () => {
+      cancelled = true;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
       }
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
     };
-  }, []);
+  }, [cameraKey, useDefaultCamera]);
+
+  const openSetup = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    clearSavedCamera();
+    setSuggestSetup(false);
+    failCountRef.current = 0;
+    setSetupOpen(true);
+  };
+
+  const onSetupDone = () => {
+    setSetupOpen(false);
+    setUseDefaultCamera(false);
+    setError(null);
+    setStatus("initializing");
+    setCameraKey((k) => k + 1);
+  };
+
+  const onSetupCancel = () => {
+    setSetupOpen(false);
+    setError(null);
+    setStatus("initializing");
+    setUseDefaultCamera(true);
+    setCameraKey((k) => k + 1);
+  };
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col">
@@ -534,7 +610,19 @@ const ScanBarcode = () => {
           <Icon name="ArrowLeft" size={18} />
           <span className="ml-1">Назад</span>
         </Button>
-        <p className="text-white text-sm font-medium">Сканирование</p>
+        <div className="flex items-center gap-1">
+          <p className="text-white text-sm font-medium">Сканирование</p>
+          {status !== "unsupported" && (
+            <button
+              className="w-9 h-9 flex items-center justify-center rounded-md text-white/70 hover:bg-white/20"
+              onClick={openSetup}
+              aria-label="Настроить камеру"
+              title="Настроить камеру"
+            >
+              <Icon name="Settings" size={18} />
+            </button>
+          )}
+        </div>
         <DebugBadge id="Scan:doneBtn">
           <Button
             size="sm"
@@ -616,6 +704,29 @@ const ScanBarcode = () => {
             )}
 
             {flashError && <div className="absolute inset-0 bg-red-500/40 pointer-events-none" />}
+
+            {suggestSetup && !error && (
+              <div className="absolute bottom-2 left-2 right-2 z-10 rounded-xl bg-black/85 border border-amber-500/50 px-3 py-2 flex items-center gap-2">
+                <Icon name="Camera" size={16} className="text-amber-400 shrink-0" />
+                <p className="flex-1 text-xs text-white">Камера плохо читает?</p>
+                <button
+                  className="text-xs font-semibold text-amber-300 px-2 py-1 rounded-md hover:bg-white/10"
+                  onClick={openSetup}
+                >
+                  Перенастроить
+                </button>
+                <button
+                  className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-white/10"
+                  onClick={() => {
+                    setSuggestSetup(false);
+                    failCountRef.current = 0;
+                  }}
+                  aria-label="Скрыть"
+                >
+                  <Icon name="X" size={12} className="text-white/50" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 bg-black/95 flex flex-col min-h-0">
@@ -877,6 +988,8 @@ const ScanBarcode = () => {
           </div>
         </div>
       )}
+
+      {setupOpen && <CameraSetupWizard onDone={onSetupDone} onCancel={onSetupCancel} />}
     </div>
   );
 };
