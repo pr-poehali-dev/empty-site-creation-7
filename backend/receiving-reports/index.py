@@ -155,17 +155,41 @@ def collect(cur, params):
 
     tech = "COALESCE(NULLIF(btrim(tech_name),''),'без наименования')"
     order = "COALESCE(NULLIF(btrim(order_number),''),'—')"
-    cur.execute(
-        f"SELECT {tech} AS name, {order} AS ord, "
-        + ', '.join(f"COUNT(*) FILTER (WHERE check_result='{o}') AS {o}" for o in OUTCOMES)
-        + f", COUNT(*) AS total FROM receiving_items WHERE {where} "
-        f"GROUP BY 1,2 ORDER BY lower({tech}), 2"
+    # Дефекты — только у ремонта и как есть: подтверждённый заявленный — текст
+    # поставщика, новый — текст мастера. Разные тексты — разные строки.
+    confirmed = (
+        "CASE WHEN check_result='repair' AND defect_confirmed IS TRUE "
+        "THEN COALESCE(btrim(declared_defect),'') ELSE '' END"
     )
-    checked = [
-        {'name': r['name'], 'order': r['ord'], 'total': int(r['total']),
-         **{o: int(r[o]) for o in OUTCOMES}}
-        for r in cur.fetchall()
-    ]
+    new_def = (
+        "CASE WHEN check_result='repair' AND new_defect IS TRUE "
+        "THEN COALESCE(btrim(new_defect_text),'') ELSE '' END"
+    )
+    cur.execute(
+        f"SELECT check_result AS outcome, {tech} AS name, {order} AS ord, "
+        f"{confirmed} AS confirmed, {new_def} AS new_defect, COUNT(*) AS n "
+        f"FROM receiving_items WHERE {where} GROUP BY 1,2,3,4,5"
+    )
+    rank = {o: i for i, o in enumerate(OUTCOMES)}
+    rows = sorted(
+        cur.fetchall(),
+        key=lambda r: (rank.get(r['outcome'], 99), r['name'].lower(), r['ord'],
+                       r['confirmed'], r['new_defect']),
+    )
+    checked = []
+    for o in OUTCOMES:
+        part = [r for r in rows if r['outcome'] == o]
+        if not part:
+            continue
+        checked.append({
+            'outcome': o,
+            'qty': sum(int(r['n']) for r in part),
+            'rows': [
+                {'name': r['name'], 'order': r['ord'], 'qty': int(r['n']),
+                 'confirmed': r['confirmed'], 'new_defect': r['new_defect']}
+                for r in part
+            ],
+        })
 
     names = ','.join(f"'{_esc(w)}'" for w in WAREHOUSES)
     cur.execute(

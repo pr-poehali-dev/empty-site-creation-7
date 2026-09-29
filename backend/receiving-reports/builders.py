@@ -48,6 +48,8 @@ def build_xlsx(data, meta):
     ws.column_dimensions['B'].width = 18
     for col in 'CDEFG':
         ws.column_dimensions[col].width = 14
+    for col in 'HI':
+        ws.column_dimensions[col].width = 36
 
     r = 1
     ws.cell(r, 1, 'Сводка за период + содержание складов').font = Font(bold=True, size=15)
@@ -87,27 +89,40 @@ def build_xlsx(data, meta):
 
     ws.cell(r, 1, '2. Проверенный товар за период').font = sec_font
     r += 1
-    heads = ['Техническое наименование', 'Заказ-наряд'] + [t for _, t in COLS] + ['Всего']
+    heads = (['Техническое наименование', 'Заказ-наряд'] + [t for _, t in COLS]
+             + ['Всего', 'Заявленный дефект подтвердился', 'Новый дефект'])
     for i, h in enumerate(heads, 1):
         c = ws.cell(r, i, h)
         c.fill, c.font, c.border = head_fill, head_font, border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     r += 1
-    sums = {k: 0 for k, _ in COLS}
-    for row in data['checked']:
-        vals = [row['name'], row['order']] + [row[k] or None for k, _ in COLS] + [row['total']]
-        for i, v in enumerate(vals, 1):
-            c = ws.cell(r, i, v)
+    keys = [k for k, _ in COLS]
+    for g in data['checked']:
+        _, color, bg = TILES[OUT_WH[g['outcome']]]
+        for i in range(1, len(heads) + 1):
+            c = ws.cell(r, i)
+            c.fill = PatternFill('solid', fgColor=bg)
             c.border = border
-            c.alignment = Alignment(wrap_text=(i == 1), vertical='top',
-                                    horizontal='left' if i <= 2 else 'center')
-        for k, _ in COLS:
-            sums[k] += row[k]
+        c = ws.cell(r, 1, f"{TITLE[g['outcome']]} — {g['qty']} шт.")
+        c.font = Font(bold=True, color='333333')
+        c.border = Border(left=Side(style='thick', color=color), right=thin, top=thin, bottom=thin)
         r += 1
+        for row in g['rows']:
+            vals = ([row['name'], row['order']]
+                    + [row['qty'] if k == g['outcome'] else None for k in keys]
+                    + [row['qty'], row['confirmed'] or None, row['new_defect'] or None])
+            for i, v in enumerate(vals, 1):
+                c = ws.cell(r, i, v)
+                c.border = border
+                wrap = i in (1, 8, 9)
+                c.alignment = Alignment(wrap_text=wrap, vertical='top',
+                                        horizontal='left' if i <= 2 or i >= 8 else 'center')
+            r += 1
     if not data['checked']:
         ws.cell(r, 1, 'За период ничего не проверено').font = Font(italic=True, color='777777')
         r += 1
-    tot = ['Итого', ''] + [sums[k] for k, _ in COLS] + [data['total']]
+    sums = {s['key']: s['qty'] for s in data['split']}
+    tot = ['Итого', ''] + [sums.get(k, 0) for k in keys] + [data['total'], '', '']
     for i, v in enumerate(tot, 1):
         c = ws.cell(r, i, v)
         c.font, c.border = Font(bold=True), border
@@ -254,31 +269,44 @@ def build_pdf(data, meta):
                                 ('TOPPADDING', (0, 0), (-1, -1), 3)]))
     story += [total_box, indent, p('2. Проверенный товар за период', 'sec')]
 
-    num_w = 22 * mm
-    name_w = width - 35 * mm - num_w * 5
-    rows = [[p(h, 'head') for h in
-             ['Техническое наименование', 'Заказ-наряд'] + [t for _, t in COLS] + ['Всего']]]
-    sums = {k: 0 for k, _ in COLS}
-    for row in data['checked']:
-        rows.append([p(row['name'], 'cell'), p(row['order'], 'cell')]
-                    + [str(row[k] or '') for k, _ in COLS] + [str(row['total'])])
-        for k, _ in COLS:
-            sums[k] += row[k]
-    if not data['checked']:
-        rows.append([p('За период ничего не проверено', 'cell'), '', '', '', '', '', ''])
-    rows.append([p('Итого', 'cellb'), ''] + [str(sums[k]) for k, _ in COLS] + [str(data['total'])])
-    t = Table(rows, colWidths=[name_w, 35 * mm] + [num_w] * 5, repeatRows=1)
-    t.setStyle(TableStyle([
+    num_w = 18 * mm
+    order_w = 24 * mm
+    def_w = 42 * mm
+    name_w = width - order_w - num_w * 5 - def_w * 2
+    keys = [k for k, _ in COLS]
+    heads = (['Техническое наименование', 'Заказ-наряд'] + [t for _, t in COLS]
+             + ['Всего', 'Заявленный дефект подтвердился', 'Новый дефект'])
+    rows = [[Paragraph(h, ParagraphStyle('h2', parent=st['head'], fontSize=7.5, leading=9))
+             for h in heads]]
+    style = [
         ('BACKGROUND', (0, 0), (-1, 0), _hex(ACCENT)),
         ('GRID', (0, 0), (-1, -1), 0.4, _hex('D0D0D0')),
         ('FONTNAME', (0, 1), (-1, -1), 'DV'),
-        ('FONTSIZE', (0, 1), (-1, -1), 8.5),
-        ('ALIGN', (2, 1), (-1, -1), 'CENTER'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ALIGN', (2, 1), (6, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, _hex('F7F7F9')]),
-        ('BACKGROUND', (0, -1), (-1, -1), _hex('EEEAF7')),
-        ('FONTNAME', (0, -1), (-1, -1), 'DVB'),
-    ]))
+        ('LEFTPADDING', (0, 0), (-1, -1), 3), ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+    ]
+    for g in data['checked']:
+        _, color, bg = TILES[OUT_WH[g['outcome']]]
+        i = len(rows)
+        rows.append([p(f"{TITLE[g['outcome']]} — {g['qty']} шт.", 'cellb')] + [''] * 8)
+        style += [('SPAN', (0, i), (-1, i)),
+                  ('BACKGROUND', (0, i), (-1, i), _hex(bg)),
+                  ('LINEBEFORE', (0, i), (0, i), 3, _hex(color))]
+        for row in g['rows']:
+            rows.append([p(row['name'], 'cell'), p(row['order'], 'cell')]
+                        + [str(row['qty']) if k == g['outcome'] else '' for k in keys]
+                        + [str(row['qty']), p(row['confirmed'], 'cell'), p(row['new_defect'], 'cell')])
+    if not data['checked']:
+        rows.append([p('За период ничего не проверено', 'cell')] + [''] * 8)
+    sums = {s['key']: s['qty'] for s in data['split']}
+    rows.append([p('Итого', 'cellb'), ''] + [str(sums.get(k, 0)) for k in keys]
+                + [str(data['total']), '', ''])
+    style += [('BACKGROUND', (0, -1), (-1, -1), _hex('EEEAF7')),
+              ('FONTNAME', (0, -1), (-1, -1), 'DVB')]
+    t = Table(rows, colWidths=[name_w, order_w] + [num_w] * 5 + [def_w] * 2, repeatRows=1)
+    t.setStyle(TableStyle(style))
     story += [t, p('3. Склады сейчас', 'sec')]
 
     tiles = []
