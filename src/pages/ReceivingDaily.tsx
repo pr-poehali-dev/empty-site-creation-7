@@ -34,7 +34,8 @@ const ReceivingDaily = () => {
   const [sp] = useSearchParams();
   const kind = sp.get("kind") || "";
 
-  const [stage, setStage] = useState<"loading" | "work" | "error">("loading");
+  const [stage, setStage] = useState<"loading" | "work" | "done" | "error">("loading");
+  const [finished, setFinished] = useState<Counters>(EMPTY);
   const [error, setError] = useState("");
   const [receiving, setReceiving] = useState<Receiving | null>(null);
   const [counters, setCounters] = useState<Counters>(EMPTY);
@@ -71,17 +72,15 @@ const ReceivingDaily = () => {
     findCurrent(kind)
       .then((d) => {
         if (!alive) return;
+        loaded.current = true;
         if (d.found) {
-          loaded.current = true;
           setReceiving(d.receiving);
           setCounters(d.counters);
           setItems(d.items);
-          // Незакрытая приёмка есть — сразу в работу. Спрашивать нечего:
-          // одна открытая приёмка на мастера, выбора между ними не бывает.
-          setStage("work");
-        } else {
-          start();
         }
+        // Открытой нет — экран готов к работе, но в базе ничего не создаём:
+        // приёмка появится при первой проверенной единице. Зашёл и ушёл — пустой не будет.
+        setStage("work");
       })
       .catch((e) => {
         if (!alive) return;
@@ -93,18 +92,35 @@ const ReceivingDaily = () => {
     };
   }, [kind]);
 
-  const start = async () => {
-    try {
-      const r = await openReceiving(kind);
-      loaded.current = true;
-      setReceiving(r);
-      setCounters(EMPTY);
-      setItems([]);
-      setStage("work");
-    } catch (e) {
-      setError((e as Error).message);
-      setStage("error");
+  const receivingRef = useRef<Receiving | null>(null);
+  receivingRef.current = receiving;
+  const opening = useRef<Promise<Receiving> | null>(null);
+
+  /** Приёмка заводится первой проверкой. Два быстрых пика не создадут две —
+   *  ждут одно и то же открытие, а сервер и так отдаёт уже открытую. */
+  const ensureReceiving = useCallback(async () => {
+    if (receivingRef.current) return receivingRef.current.id;
+    if (!opening.current) {
+      opening.current = openReceiving(kind).finally(() => {
+        opening.current = null;
+      });
     }
+    const r = await opening.current;
+    receivingRef.current = r;
+    setReceiving(r);
+    return r.id;
+  }, [kind]);
+
+  const startNew = () => {
+    setReceiving(null);
+    receivingRef.current = null;
+    setCounters(EMPTY);
+    setItems([]);
+    setLast(null);
+    setNotFound("");
+    setListOpen(false);
+    setClosing(false);
+    setStage("work");
   };
 
   const refresh = useCallback(async (id: number) => {
@@ -143,13 +159,13 @@ const ReceivingDaily = () => {
   // Вернулись с камеры, которую открывали из шага заводского кода, —
   // открываем окно проверки заново на том же шаге.
   useEffect(() => {
-    if (stage !== "work" || !receiving) return;
+    if (stage !== "work") return;
     const raw = sessionStorage.getItem(FACTORY_RESUME_KEY);
     if (!raw) return;
     sessionStorage.removeItem(FACTORY_RESUME_KEY);
     try {
       const saved = JSON.parse(raw) as { receivingId: number; item: DailyItem };
-      if (saved.receivingId === receiving.id) {
+      if (saved.receivingId === (receiving?.id ?? 0)) {
         setResumeFactory(true);
         setCurrent(saved.item);
         return;
@@ -162,10 +178,10 @@ const ReceivingDaily = () => {
   }, [stage, receiving]);
 
   const rememberFactory = () => {
-    if (!current || !receiving) return;
+    if (!current) return;
     sessionStorage.setItem(
       FACTORY_RESUME_KEY,
-      JSON.stringify({ receivingId: receiving.id, item: current })
+      JSON.stringify({ receivingId: receiving?.id ?? 0, item: current })
     );
   };
 
@@ -178,7 +194,7 @@ const ReceivingDaily = () => {
     setCounters(c);
     setCurrent(null);
     setLast(item);
-    if (receiving && listOpen) refresh(receiving.id);
+    if (receivingRef.current && listOpen) refresh(receivingRef.current.id);
   };
 
   const undoLast = async () => {
@@ -219,8 +235,11 @@ const ReceivingDaily = () => {
     setClosing(true);
     try {
       await closeReceiving(receiving.id);
-      toast({ title: "Приёмка закрыта" });
-      goBack();
+      // Остаёмся здесь: возврат на «Приёмки» у мастера с одним видом
+      // сразу снова открывал экран приёмки.
+      setFinished(counters);
+      setAskFinish(false);
+      setStage("done");
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
       setClosing(false);
@@ -234,6 +253,45 @@ const ReceivingDaily = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Icon name="Loader2" size={28} className="animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (stage === "done") {
+    const rows = [
+      { label: "На продажу", n: finished.sale, color: "text-emerald-400" },
+      { label: "На протирку", n: finished.wipe, color: "text-sky-400" },
+      { label: "Под ремонт", n: finished.repair, color: "text-amber-400" },
+      { label: "В утиль", n: finished.scrap, color: "text-rose-400" },
+    ];
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-sm rounded-xl border border-white/[0.08] bg-card p-6">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/15 flex items-center justify-center mx-auto mb-3">
+            <Icon name="CircleCheck" size={26} className="text-emerald-400" />
+          </div>
+          <p className="font-semibold text-center mb-1">Приёмка закрыта</p>
+          <p className="text-sm text-muted-foreground text-center mb-4">
+            {title} · проверено {finished.total} шт.
+          </p>
+          <div className="rounded-lg bg-white/[0.03] divide-y divide-white/[0.06] mb-5">
+            {rows.map((r) => (
+              <div key={r.label} className="flex items-center px-3 py-2 text-sm">
+                <span className="flex-1">{r.label}</span>
+                <span className={`font-medium ${r.color}`}>{r.n}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <Button className="w-full h-11" onClick={startNew}>
+              <Icon name="Plus" size={16} className="mr-1.5" />
+              Начать новую
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={goBack}>
+              Назад
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -277,7 +335,7 @@ const ReceivingDaily = () => {
             variant="outline"
             size="sm"
             className="h-9"
-            disabled={closing}
+            disabled={closing || !receiving}
             onClick={() => setAskFinish(true)}
           >
             <Icon name="CheckCheck" size={16} className="mr-1" />
@@ -388,10 +446,10 @@ const ReceivingDaily = () => {
         />
       )}
 
-      {current && receiving && (
+      {current && (
         <CheckDialog
           item={current}
-          receivingId={receiving.id}
+          getReceivingId={ensureReceiving}
           onDone={afterCheck}
           onClose={() => setCurrent(null)}
           resumeFactory={resumeFactory}

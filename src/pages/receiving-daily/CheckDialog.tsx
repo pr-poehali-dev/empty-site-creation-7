@@ -15,7 +15,8 @@ import {
 
 interface Props {
   item: DailyItem;
-  receivingId: number;
+  /** Приёмку в базе заводим только при первой проверке — пустых не бывает. */
+  getReceivingId: () => Promise<number>;
   onDone: (counters: Counters, item: DailyItem) => void;
   onClose: () => void;
   resumeFactory?: boolean;
@@ -25,7 +26,14 @@ interface Props {
 type Stage = "package" | "factory" | "outcome";
 
 /** Порядок жёсткий: упаковка → заводской код (если есть откуда взять) → исход. */
-const CheckDialog = ({ item, receivingId, onDone, onClose, resumeFactory, onCameraOpen }: Props) => {
+const CheckDialog = ({
+  item,
+  getReceivingId,
+  onDone,
+  onClose,
+  resumeFactory,
+  onCameraOpen,
+}: Props) => {
   const noFactoryYet = !item.factory_barcode?.trim();
   const [stage, setStage] = useState<Stage>(resumeFactory ? "factory" : "package");
   const [hasPackage, setHasPackage] = useState<boolean | null>(resumeFactory ? true : null);
@@ -59,6 +67,7 @@ const CheckDialog = ({ item, receivingId, onDone, onClose, resumeFactory, onCame
   ) => {
     setBusy(true);
     try {
+      const receivingId = await getReceivingId();
       const r = await saveCheck({
         item_id: item.id,
         receiving_id: receivingId,
