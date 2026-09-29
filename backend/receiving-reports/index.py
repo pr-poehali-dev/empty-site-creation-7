@@ -223,6 +223,26 @@ def _ru(d):
     return datetime.strptime(d, '%Y-%m-%d').strftime('%d.%m.%Y') if d else ''
 
 
+def file_name(date_from, date_to, master):
+    """Имя файла говорит, за какой период и по кому отчёт — чтобы не путались и не перезаписывались."""
+    a, b = _ru(date_from), _ru(date_to)
+    if a and b:
+        period = a if a == b else f'{a}-{b}'
+    elif a:
+        period = f'с_{a}'
+    elif b:
+        period = f'по_{b}'
+    else:
+        period = 'за_всё_время'
+    name = f'Сводка_приёмки_{period}'
+    if master:
+        surname = master.split()[-1]
+        surname = re.sub(r'[^0-9A-Za-zА-Яа-яЁё\-]', '', surname)
+        if surname:
+            name += f'_{surname}'
+    return name
+
+
 def handler(event: dict, context) -> dict:
     """Отчёты приёмки: сводка проверенного товара за период (по мастеру или всем) и актуальное содержание складов — файлом Excel или PDF."""
     method = event.get('httpMethod', 'GET')
@@ -273,8 +293,7 @@ def handler(event: dict, context) -> dict:
         raw = build_xlsx(data, meta)
     else:
         raw = build_pdf(data, meta)
-    stamp = now.strftime('%Y-%m-%d')
     return _resp(200, {
         'file': base64.b64encode(raw).decode(),
-        'filename': f'Сводка_приёмки_{stamp}.{fmt}',
+        'filename': f"{file_name(data['date_from'], data['date_to'], data['master'])}.{fmt}",
     })
