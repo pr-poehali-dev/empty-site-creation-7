@@ -1,5 +1,5 @@
+import base64
 import io
-import os
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -13,8 +13,11 @@ from reportlab.platypus import (
     Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ASSETS = os.path.join(HERE, 'assets')
+from embedded import FILES
+
+
+def _asset(name):
+    return io.BytesIO(base64.b64decode(FILES[name]))
 
 COLS = [('sale', 'На продажу'), ('wipe', 'На протирку'), ('repair', 'Под ремонт'), ('scrap', 'В утиль')]
 
@@ -142,8 +145,8 @@ _fonts_ready = False
 def _fonts():
     global _fonts_ready
     if not _fonts_ready:
-        pdfmetrics.registerFont(TTFont('DV', os.path.join(ASSETS, 'DejaVuSans.ttf')))
-        pdfmetrics.registerFont(TTFont('DVB', os.path.join(ASSETS, 'DejaVuSans-Bold.ttf')))
+        pdfmetrics.registerFont(TTFont('DV', _asset('DejaVuSans.ttf')))
+        pdfmetrics.registerFont(TTFont('DVB', _asset('DejaVuSans-Bold.ttf')))
         _fonts_ready = True
 
 
@@ -234,7 +237,7 @@ def build_pdf(data, meta):
     for w in data['warehouses']:
         icon, color, bg = TILES[w['name']]
         inner = Table(
-            [[Image(os.path.join(ASSETS, icon), 12 * mm, 12 * mm),
+            [[Image(_asset(icon), 12 * mm, 12 * mm),
               [Paragraph(w['name'], ParagraphStyle('tn', fontName='DV', fontSize=10, leading=12,
                                                    textColor=_hex('555555'))),
                Paragraph(f"{w['qty']} шт.", ParagraphStyle('tq', fontName='DVB', fontSize=18,
