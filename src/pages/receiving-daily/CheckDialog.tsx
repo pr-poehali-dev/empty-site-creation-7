@@ -18,15 +18,17 @@ interface Props {
   receivingId: number;
   onDone: (counters: Counters, item: DailyItem) => void;
   onClose: () => void;
+  resumeFactory?: boolean;
+  onCameraOpen?: () => void;
 }
 
 type Stage = "package" | "factory" | "outcome";
 
 /** Порядок жёсткий: упаковка → заводской код (если есть откуда взять) → исход. */
-const CheckDialog = ({ item, receivingId, onDone, onClose }: Props) => {
+const CheckDialog = ({ item, receivingId, onDone, onClose, resumeFactory, onCameraOpen }: Props) => {
   const noFactoryYet = !item.factory_barcode?.trim();
-  const [stage, setStage] = useState<Stage>("package");
-  const [hasPackage, setHasPackage] = useState<boolean | null>(null);
+  const [stage, setStage] = useState<Stage>(resumeFactory ? "factory" : "package");
+  const [hasPackage, setHasPackage] = useState<boolean | null>(resumeFactory ? true : null);
   const [busy, setBusy] = useState(false);
 
   const pickPackage = (value: boolean) => {
@@ -120,6 +122,7 @@ const CheckDialog = ({ item, receivingId, onDone, onClose }: Props) => {
                 item={item}
                 onDone={pickFactory}
                 onSkip={() => setStage("outcome")}
+                onCameraOpen={() => onCameraOpen?.()}
               />
             )}
             {stage === "outcome" && (

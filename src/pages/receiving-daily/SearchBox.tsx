@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { searchItems, type DailyItem } from "./dailyApi";
 
 interface Props {
   onPick: (item: DailyItem) => void;
+  onCameraCode: (code: string) => void;
 }
 
 /** Поиск по мере ввода, без Enter — как в заявках и инвентаризации. */
-const SearchBox = ({ onPick }: Props) => {
+const SearchBox = ({ onPick, onCameraCode }: Props) => {
   const [value, setValue] = useState("");
   const [rows, setRows] = useState<DailyItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,8 @@ const SearchBox = ({ onPick }: Props) => {
 
   return (
     <div className="space-y-2">
-      <div className="relative">
+      <div className="flex gap-2">
+      <div className="relative flex-1">
         <Icon
           name="Search"
           size={16}
@@ -70,6 +73,8 @@ const SearchBox = ({ onPick }: Props) => {
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin"
           />
         )}
+      </div>
+      <CameraScanButton fieldKey="daily_main" onCode={onCameraCode} />
       </div>
 
       {rows.length > 0 && (

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import type { DailyItem } from "./dailyApi";
 
@@ -9,13 +10,14 @@ interface Props {
   item: DailyItem;
   onDone: (code: string) => void;
   onSkip: () => void;
+  onCameraOpen: () => void;
 }
 
 /**
  * Заводской код спрашиваем один раз на модель. Наклейка бывает мятая и стёртая —
  * поэтому рядом со сканером всегда есть поле для ручного ввода.
  */
-const CheckFactoryStep = ({ item, onDone, onSkip }: Props) => {
+const CheckFactoryStep = ({ item, onDone, onSkip, onCameraOpen }: Props) => {
   const [value, setValue] = useState("");
 
   useBarcodeScanner({ enabled: true, onScan: (code) => onDone(code) });
@@ -46,6 +48,11 @@ const CheckFactoryStep = ({ item, onDone, onSkip }: Props) => {
           onKeyDown={(e) => e.key === "Enter" && submit()}
           placeholder="Или введите вручную"
           className="h-11"
+        />
+        <CameraScanButton
+          fieldKey="daily_factory"
+          onCode={(code) => setValue(code)}
+          onOpen={onCameraOpen}
         />
         <Button className="h-11 px-4" disabled={!value.trim()} onClick={submit}>
           <Icon name="Check" size={18} />

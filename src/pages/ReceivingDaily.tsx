@@ -27,6 +27,7 @@ import {
 } from "./receiving-daily/dailyApi";
 
 const EMPTY: Counters = { sale: 0, wipe: 0, repair: 0, scrap: 0, total: 0 };
+const FACTORY_RESUME_KEY = "receiving_factory_resume";
 
 const ReceivingDaily = () => {
   const navigate = useNavigate();
@@ -46,6 +47,7 @@ const ReceivingDaily = () => {
   const [closing, setClosing] = useState(false);
   const [askFinish, setAskFinish] = useState(false);
   const [removingId, setRemovingId] = useState(0);
+  const [resumeFactory, setResumeFactory] = useState(false);
   const loaded = useRef(false);
   const { can } = useReceivingPerms();
   const canRemove = can("item_remove");
@@ -117,6 +119,7 @@ const ReceivingDaily = () => {
 
   const takeItem = useCallback((item: DailyItem) => {
     setNotFound("");
+    setResumeFactory(false);
     setCurrent(item);
   }, []);
 
@@ -136,6 +139,35 @@ const ReceivingDaily = () => {
     },
     [takeItem]
   );
+
+  // Вернулись с камеры, которую открывали из шага заводского кода, —
+  // открываем окно проверки заново на том же шаге.
+  useEffect(() => {
+    if (stage !== "work" || !receiving) return;
+    const raw = sessionStorage.getItem(FACTORY_RESUME_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(FACTORY_RESUME_KEY);
+    try {
+      const saved = JSON.parse(raw) as { receivingId: number; item: DailyItem };
+      if (saved.receivingId === receiving.id) {
+        setResumeFactory(true);
+        setCurrent(saved.item);
+        return;
+      }
+    } catch {
+      /* битая запись — просто не восстанавливаем */
+    }
+    // Окно не восстановили — код с камеры не должен всплыть у другой единицы.
+    localStorage.removeItem("receiving_scan_daily_factory");
+  }, [stage, receiving]);
+
+  const rememberFactory = () => {
+    if (!current || !receiving) return;
+    sessionStorage.setItem(
+      FACTORY_RESUME_KEY,
+      JSON.stringify({ receivingId: receiving.id, item: current })
+    );
+  };
 
   useBarcodeScanner({
     enabled: stage === "work" && !current && !askFinish,
@@ -267,7 +299,7 @@ const ReceivingDaily = () => {
           </div>
         </div>
 
-        <SearchBox onPick={takeItem} />
+        <SearchBox onPick={takeItem} onCameraCode={handleScan} />
 
         {notFound && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-4">
@@ -362,6 +394,8 @@ const ReceivingDaily = () => {
           receivingId={receiving.id}
           onDone={afterCheck}
           onClose={() => setCurrent(null)}
+          resumeFactory={resumeFactory}
+          onCameraOpen={rememberFactory}
         />
       )}
     </div>
