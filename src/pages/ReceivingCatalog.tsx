@@ -12,6 +12,8 @@ import {
 import Icon from "@/components/ui/icon";
 import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
 import CameraScanButton from "@/components/receiving/CameraScanButton";
+import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
+import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import { permHeaders } from "@/hooks/useReceivingPerms";
 import CatalogItemCard from "@/components/receiving/CatalogItemCard";
 import {
@@ -33,12 +35,16 @@ const ReceivingCatalog = () => {
   const navigate = useNavigate();
   const [meta, setMeta] = useState<CatalogMeta | null>(null);
   const [denied, setDenied] = useState(false);
-  const snap = useScanSnapshot<{ mode: "beauty" | "tech"; direction: string; brand: string }>(
-    "catalog_search"
-  );
+  const snap = useScanSnapshot<{
+    mode: "beauty" | "tech";
+    direction: string;
+    brand: string;
+    q: string;
+  }>("catalog_search");
+  const similar = useSimilarCodes("catalog");
   const [mode, setMode] = useState<"beauty" | "tech">("beauty");
-  const [q, setQ] = useState("");
-  const [search, setSearch] = useState("");
+  const [q, setQ] = useState(snap.q || "");
+  const [search, setSearch] = useState(snap.q || "");
   const [direction, setDirection] = useState(snap.direction || ALL);
   const [brand, setBrand] = useState(snap.brand || ALL);
   const [groups, setGroups] = useState<GroupRow[]>([]);
@@ -118,6 +124,9 @@ const ReceivingCatalog = () => {
   }, [meta, load]);
 
   const shown = mode === "beauty" ? groups.length : items.length;
+
+  const rememberScreen = () =>
+    saveScanSnapshot("catalog_search", { mode, direction, brand, q });
   const cols = TECH_COLUMNS.filter((f) => meta?.visible.includes(f));
 
   if (denied) {
@@ -195,7 +204,7 @@ const ReceivingCatalog = () => {
             <CameraScanButton
               fieldKey="catalog_search"
               onCode={setQ}
-              onOpen={() => saveScanSnapshot("catalog_search", { mode, direction, brand })}
+              onOpen={rememberScreen}
               className="h-9 w-9"
             />
             </div>
@@ -236,6 +245,16 @@ const ReceivingCatalog = () => {
           <div className="rounded-xl border border-white/[0.08] bg-card p-8 text-center">
             <Icon name="PackageSearch" size={36} className="mx-auto mb-3 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Ничего не нашлось</p>
+            {/^\d{8,}$/.test(search) && (
+              <Button
+                variant="outline"
+                className="mt-4 h-11 border-amber-500/40 text-amber-200"
+                onClick={() => similar.open(search)}
+              >
+                <Icon name="SearchCheck" size={16} className="mr-1.5" />
+                Найти похожие коды
+              </Button>
+            )}
           </div>
         )}
 
@@ -314,6 +333,20 @@ const ReceivingCatalog = () => {
           meta={meta}
           onClose={() => setOpen(null)}
           onChanged={() => load(0)}
+        />
+      )}
+      {similar.code && (
+        <SimilarCodesDialog
+          code={similar.code}
+          place="catalog"
+          onClose={similar.close}
+          onCameraOpen={rememberScreen}
+          onReplaced={(code) => {
+            similar.close();
+            setQ(code);
+            setSearch(code);
+            load(0);
+          }}
         />
       )}
     </div>

@@ -26,6 +26,7 @@ const ACTIONS = [
   { key: "upload_files", icon: "Upload", label: "Загрузка файла поставщика" },
   { key: "catalog_edit", icon: "BookOpen", label: "Каталог приёмки" },
   { key: "_stock", icon: "Warehouse", label: "Склады и остатки" },
+  { key: "_barcodes", icon: "ScanBarcode", label: "Контроль штрихкодов" },
 ];
 
 const Receipts = () => {
@@ -40,7 +41,13 @@ const Receipts = () => {
   // Список приёмок открыт каждому мастеру: свои он видит всегда,
   // чужие — только по праву, и это решает сервер.
   const myActions = ACTIONS.filter((a) =>
-    a.key === "_stock" ? hasStock : a.key === "_list" ? myKinds.length > 0 : can(a.key)
+    a.key === "_stock"
+      ? hasStock
+      : a.key === "_list"
+        ? myKinds.length > 0
+        : a.key === "_barcodes"
+          ? isOwner
+          : can(a.key)
   );
   const realActions = myActions.filter((a) => a.key !== "_list");
 
@@ -82,6 +89,7 @@ const Receipts = () => {
       if (a.key === "manage_perms") return setScreen("perms");
       if (a.key === "upload_files") return navigate("/admin/receiving-upload");
       if (a.key === "_stock") return navigate("/admin/receiving-stock");
+      if (a.key === "_barcodes") return navigate("/admin/barcode-control");
       return navigate("/admin/receiving-catalog");
     },
   }));

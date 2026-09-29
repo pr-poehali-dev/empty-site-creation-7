@@ -26,11 +26,13 @@ interface Props {
   onReplaced: (newCode: string, updated: number) => void;
   /** Перед уходом на камеру — запомнить фильтры экрана. */
   onCameraOpen?: () => void;
+  /** Ошибочный код, который исправляем заведомо (страница владельца) — показываем первым. */
+  pinned?: CodeSummary | null;
 }
 
 interface Confirm {
   old: CodeSummary;
-  source: "similar" | "supplier";
+  source: "similar" | "supplier" | "owner";
 }
 
 /** Разметка цифр кандидата: какие совпадают с отсканированным кодом, а какие нет. */
@@ -87,7 +89,14 @@ const unitsText = (n: number) => `${n} шт.`;
  * когда-то ошибся в цифрах при ручном вводе. Предлагаем близкие коды или
  * определяем товар точно — по этикетке поставщика. Заменяет человек, с подтверждением.
  */
-const SimilarCodesDialog = ({ code, place, onClose, onReplaced, onCameraOpen }: Props) => {
+const SimilarCodesDialog = ({
+  code,
+  place,
+  onClose,
+  onReplaced,
+  onCameraOpen,
+  pinned,
+}: Props) => {
   const [data, setData] = useState<SimilarResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -140,6 +149,12 @@ const SimilarCodesDialog = ({ code, place, onClose, onReplaced, onCameraOpen }: 
       setSaving(false);
     }
   };
+
+  const candidates: CodeSummary[] = data
+    ? pinned && pinned.code !== code
+      ? [pinned, ...data.candidates.filter((c) => c.code !== pinned.code)]
+      : data.candidates
+    : [];
 
   const supplierFactory = supplier?.found ? supplier.factory : null;
   const supplierSame = supplierFactory?.code === code;
@@ -240,21 +255,27 @@ const SimilarCodesDialog = ({ code, place, onClose, onReplaced, onCameraOpen }: 
                   этикетке поставщика ниже.
                 </p>
               )}
-              {data && !data.too_short && data.candidates.length === 0 && (
+              {data && !data.too_short && candidates.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   Похожих кодов нет. Определите товар по этикетке поставщика ниже.
                 </p>
               )}
-              {data?.candidates.map((c) => (
+              {candidates.map((c) => (
                 <button
                   key={c.code}
-                  onClick={() => setConfirm({ old: c, source: "similar" })}
+                  onClick={() =>
+                    setConfirm({ old: c, source: pinned?.code === c.code ? "owner" : "similar" })
+                  }
                   className="w-full text-left rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] px-3 py-2 space-y-0.5 transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <Digits target={code} code={c.code} />
                     <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
-                      {c.distance === 1 ? "1 цифра" : `${c.distance} цифры`}
+                      {pinned?.code === c.code
+                        ? "исправляемый"
+                        : c.distance === 1
+                          ? "1 цифра"
+                          : `${c.distance} цифры`}
                     </span>
                   </div>
                   <div className="text-sm break-words">{c.name || "без наименования"}</div>

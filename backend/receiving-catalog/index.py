@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -115,7 +116,16 @@ def _where(params, extra=''):
         parts.append(f"COALESCE(direction,'')='{_esc(direction)}'")
     if brand:
         parts.append(f"COALESCE(brand,'')='{_esc(brand)}'")
-    if q:
+    if q and re.fullmatch(r'\d{8,}', q):
+        # Похоже на штрихкод — ищем точно: по заводскому (оба поля) и по поставщика.
+        e = _esc(q)
+        parts.append(
+            f"(btrim(COALESCE(factory_barcode,''))='{e}' "
+            f"OR btrim(COALESCE(factory_barcode_2,''))='{e}' "
+            f"OR btrim(COALESCE(supplier_barcode,''))='{e}' "
+            f"OR supplier_barcode ILIKE '%{e}%' OR order_number ILIKE '%{e}%')"
+        )
+    elif q:
         e = _esc(q)
         if extra == 'tech':
             parts.append(
