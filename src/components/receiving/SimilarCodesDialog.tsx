@@ -227,6 +227,13 @@ const SimilarCodesDialog = ({ code, place, onClose, onReplaced, onCameraOpen }: 
                 </div>
               )}
               {loadError && <p className="text-sm text-rose-300">{loadError}</p>}
+              {data?.exists && (
+                <p className="text-sm text-emerald-300 flex items-start gap-1.5">
+                  <Icon name="CircleCheck" size={16} className="shrink-0 mt-0.5" />
+                  Этот код в базе есть — ошибки в нём нет. Скорее всего, товар лежит на
+                  другом складе или ещё не прошёл приёмку.
+                </p>
+              )}
               {data?.too_short && (
                 <p className="text-sm text-muted-foreground">
                   Код слишком короткий — похожих будет слишком много. Определите товар по

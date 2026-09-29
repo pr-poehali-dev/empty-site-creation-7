@@ -8,8 +8,14 @@ import { findByCode, moveItems, undoMove } from "./stockApi";
 interface Props {
   warehouses: { key: string; name: string }[];
   selected: Set<number>;
+  target: string;
+  onTarget: (name: string) => void;
   onDone: () => void;
   onClear: () => void;
+  /** Код не нашёлся нигде в базе — возможно, заводской код записан с ошибкой. */
+  onUnknown: (code: string) => void;
+  /** Окно «Похожие коды» открыто — сканер переноса молчит. */
+  paused?: boolean;
 }
 
 const REASONS: Record<string, string> = {
@@ -18,8 +24,16 @@ const REASONS: Record<string, string> = {
 };
 
 /** Перемещение без документов: выбрал куда, перенёс. Сканером или галочками. */
-const MovePanel = ({ warehouses, selected, onDone, onClear }: Props) => {
-  const [target, setTarget] = useState("");
+const MovePanel = ({
+  warehouses,
+  selected,
+  target,
+  onTarget,
+  onDone,
+  onClear,
+  onUnknown,
+  paused,
+}: Props) => {
   const [busy, setBusy] = useState(false);
   const [lastMove, setLastMove] = useState<{ ids: number[]; text: string } | null>(null);
 
@@ -28,6 +42,10 @@ const MovePanel = ({ warehouses, selected, onDone, onClear }: Props) => {
     setBusy(true);
     try {
       const f = await findByCode(code);
+      if (!f.found && !f.reason) {
+        onUnknown(code);
+        return;
+      }
       if (!f.found || !f.item) {
         toast({
           title: REASONS[f.reason || ""] || "Не нашли такую единицу",
@@ -52,7 +70,7 @@ const MovePanel = ({ warehouses, selected, onDone, onClear }: Props) => {
     }
   };
 
-  useBarcodeScanner({ enabled: !!target, onScan: scanMove });
+  useBarcodeScanner({ enabled: !!target && !paused, onScan: scanMove });
 
   const moveSelected = async () => {
     if (!target || selected.size === 0) return;
@@ -104,7 +122,7 @@ const MovePanel = ({ warehouses, selected, onDone, onClear }: Props) => {
         {warehouses.map((w) => (
           <button
             key={w.key}
-            onClick={() => setTarget(target === w.name ? "" : w.name)}
+            onClick={() => onTarget(target === w.name ? "" : w.name)}
             className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
               target === w.name
                 ? "border-sky-500/50 bg-sky-500/20 text-sky-200"

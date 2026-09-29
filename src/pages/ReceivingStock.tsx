@@ -6,6 +6,8 @@ import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
 import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
 import CameraScanButton from "@/components/receiving/CameraScanButton";
+import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
+import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import MovePanel from "./receiving-stock/MovePanel";
 import StockGroupRow from "./receiving-stock/StockGroupRow";
 import {
@@ -29,14 +31,20 @@ const ReceivingStock = () => {
         : "/admin/receipts"
     );
 
-  const snap = useScanSnapshot<{ active: string; selected: number[]; moveOpen: boolean }>(
-    "stock_search"
-  );
+  const snap = useScanSnapshot<{
+    active: string;
+    selected: number[];
+    moveOpen: boolean;
+    target: string;
+    query: string;
+  }>("stock_search");
+  const similar = useSimilarCodes("stock");
   const [warehouses, setWarehouses] = useState<{ key: string; name: string }[]>([]);
   const [totals, setTotals] = useState<WarehouseTotal[]>([]);
   const [active, setActive] = useState("");
   const [groups, setGroups] = useState<StockGroup[]>([]);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(snap.query || "");
+  const [target, setTarget] = useState(snap.target || "");
   const [selected, setSelected] = useState<Set<number>>(() => new Set(snap.selected || []));
   const [moveOpen, setMoveOpen] = useState(Boolean(snap.moveOpen));
   const [stage, setStage] = useState<"loading" | "ready" | "empty" | "error">("loading");
@@ -104,6 +112,15 @@ const ReceivingStock = () => {
     refreshGroups();
   }, [refreshTotals, refreshGroups]);
 
+  const rememberScreen = () =>
+    saveScanSnapshot("stock_search", {
+      active,
+      selected: Array.from(selected),
+      moveOpen,
+      target,
+      query,
+    });
+
   const toggleUnit = (id: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -146,6 +163,8 @@ const ReceivingStock = () => {
       </div>
     );
   }
+
+  const looksLikeCode = /^\d{8,}$/.test(query.trim());
 
   const totalOf = (name: string) => totals.find((t) => t.name === name)?.qty ?? 0;
 
@@ -203,8 +222,12 @@ const ReceivingStock = () => {
           <MovePanel
             warehouses={warehouses}
             selected={selected}
+            target={target}
+            onTarget={setTarget}
             onDone={reloadAll}
             onClear={() => setSelected(new Set())}
+            onUnknown={similar.open}
+            paused={Boolean(similar.code)}
           />
         )}
 
@@ -232,13 +255,7 @@ const ReceivingStock = () => {
           <CameraScanButton
             fieldKey="stock_search"
             onCode={setQuery}
-            onOpen={() =>
-              saveScanSnapshot("stock_search", {
-                active,
-                selected: Array.from(selected),
-                moveOpen,
-              })
-            }
+            onOpen={rememberScreen}
           />
         </div>
 
@@ -267,6 +284,16 @@ const ReceivingStock = () => {
               <p className="text-sm text-muted-foreground">
                 {query ? "Ничего не нашли" : `На складе «${active}» пока пусто`}
               </p>
+              {looksLikeCode && (
+                <Button
+                  variant="outline"
+                  className="mt-3 h-10 border-amber-500/40 text-amber-200"
+                  onClick={() => similar.open(query.trim())}
+                >
+                  <Icon name="SearchCheck" size={16} className="mr-1.5" />
+                  Найти похожие коды
+                </Button>
+              )}
             </div>
           ) : (
             groups.map((g) => (
@@ -282,6 +309,21 @@ const ReceivingStock = () => {
           )}
         </div>
       </main>
+
+      {similar.code && (
+        <SimilarCodesDialog
+          code={similar.code}
+          place="stock"
+          onClose={similar.close}
+          onCameraOpen={rememberScreen}
+          onReplaced={(code) => {
+            similar.close();
+            if (query.trim() === code) refreshGroups();
+            else if (query) setQuery(code);
+            reloadAll();
+          }}
+        />
+      )}
     </div>
   );
 };
