@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
+import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import MovePanel from "./receiving-stock/MovePanel";
 import StockGroupRow from "./receiving-stock/StockGroupRow";
 import {
@@ -27,13 +29,16 @@ const ReceivingStock = () => {
         : "/admin/receipts"
     );
 
+  const snap = useScanSnapshot<{ active: string; selected: number[]; moveOpen: boolean }>(
+    "stock_search"
+  );
   const [warehouses, setWarehouses] = useState<{ key: string; name: string }[]>([]);
   const [totals, setTotals] = useState<WarehouseTotal[]>([]);
   const [active, setActive] = useState("");
   const [groups, setGroups] = useState<StockGroup[]>([]);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [moveOpen, setMoveOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(snap.selected || []));
+  const [moveOpen, setMoveOpen] = useState(Boolean(snap.moveOpen));
   const [stage, setStage] = useState<"loading" | "ready" | "empty" | "error">("loading");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,7 +53,8 @@ const ReceivingStock = () => {
           setStage("empty");
           return;
         }
-        setActive(d.warehouses[0].name);
+        const back = d.warehouses.find((w) => w.name === snap.active);
+        setActive(back ? back.name : d.warehouses[0].name);
         setStage("ready");
       })
       .catch((e) => {
@@ -202,25 +208,38 @@ const ReceivingStock = () => {
           />
         )}
 
-        <div className="relative">
-          <Icon
-            name="Search"
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Модель, бренд, группа или штрихкод"
-            className="pl-9 h-11"
-          />
-          {busy && (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
             <Icon
-              name="Loader2"
+              name="Search"
               size={16}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
             />
-          )}
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Модель, бренд, группа или штрихкод"
+              className="pl-9 h-11"
+            />
+            {busy && (
+              <Icon
+                name="Loader2"
+                size={16}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin"
+              />
+            )}
+          </div>
+          <CameraScanButton
+            fieldKey="stock_search"
+            onCode={setQuery}
+            onOpen={() =>
+              saveScanSnapshot("stock_search", {
+                active,
+                selected: Array.from(selected),
+                moveOpen,
+              })
+            }
+          />
         </div>
 
         {selected.size > 0 && (

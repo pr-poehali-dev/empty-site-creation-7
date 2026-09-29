@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { toast } from "@/hooks/use-toast";
 import DeleteDialog from "./DeleteDialog";
 import ReceivingRowItem from "./ReceivingRowItem";
@@ -22,8 +24,9 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
   const [rows, setRows] = useState<ReceivingRow[]>([]);
   const [total, setTotal] = useState(0);
   const [shown, setShown] = useState(PAGE);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const snap = useScanSnapshot<{ from: string; to: string }>("past_search");
+  const [from, setFrom] = useState(snap.from || "");
+  const [to, setTo] = useState(snap.to || "");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [toDelete, setToDelete] = useState<ReceivingRow | null>(null);
@@ -124,17 +127,25 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
             aria-label="Дата до"
           />
         </div>
-        <div className="relative">
-          <Icon
-            name="Search"
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Товар: модель, наименование, штрихкод"
-            className="pl-9 h-9 text-xs"
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Icon
+              name="Search"
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Товар: модель, наименование, штрихкод"
+              className="pl-9 h-9 text-xs"
+            />
+          </div>
+          <CameraScanButton
+            fieldKey="past_search"
+            onCode={setQ}
+            onOpen={() => saveScanSnapshot("past_search", { from, to })}
+            className="h-9 w-9"
           />
         </div>
         {filtered && (

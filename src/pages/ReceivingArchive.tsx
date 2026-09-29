@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { toast } from "@/hooks/use-toast";
 import ArchiveItemCard from "./receiving-daily/ArchiveItemCard";
 import DailyCounters from "./receiving-daily/DailyCounters";
@@ -189,25 +190,28 @@ const ReceivingArchive = () => {
 
         <DailyCounters counters={counters} />
 
-        <div className="relative">
-          <Icon
-            name="Search"
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Модель, наименование, штрихкод, заказ-наряд"
-            className="pl-9 h-11"
-          />
-          {busy && (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
             <Icon
-              name="Loader2"
+              name="Search"
               size={16}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
             />
-          )}
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Модель, наименование, штрихкод, заказ-наряд"
+              className="pl-9 h-11"
+            />
+            {busy && (
+              <Icon
+                name="Loader2"
+                size={16}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin"
+              />
+            )}
+          </div>
+          <CameraScanButton fieldKey="archive_search" onCode={setQuery} />
         </div>
 
         <div className="rounded-xl border border-white/[0.08] bg-card overflow-hidden">

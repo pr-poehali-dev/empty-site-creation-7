@@ -10,6 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
+import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { permHeaders } from "@/hooks/useReceivingPerms";
 import CatalogItemCard from "@/components/receiving/CatalogItemCard";
 import {
@@ -31,11 +33,14 @@ const ReceivingCatalog = () => {
   const navigate = useNavigate();
   const [meta, setMeta] = useState<CatalogMeta | null>(null);
   const [denied, setDenied] = useState(false);
+  const snap = useScanSnapshot<{ mode: "beauty" | "tech"; direction: string; brand: string }>(
+    "catalog_search"
+  );
   const [mode, setMode] = useState<"beauty" | "tech">("beauty");
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
-  const [direction, setDirection] = useState(ALL);
-  const [brand, setBrand] = useState(ALL);
+  const [direction, setDirection] = useState(snap.direction || ALL);
+  const [brand, setBrand] = useState(snap.brand || ALL);
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -58,7 +63,8 @@ const ReceivingCatalog = () => {
       .then((d: CatalogMeta | null) => {
         if (!d) return;
         setMeta(d);
-        setMode(d.modes.beauty ? "beauty" : "tech");
+        const back = snap.mode && d.modes[snap.mode] ? snap.mode : null;
+        setMode(back || (d.modes.beauty ? "beauty" : "tech"));
       })
       .catch(() => {
         setDenied(true);
@@ -170,7 +176,8 @@ const ReceivingCatalog = () => {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <div className="relative flex-1 min-w-[180px]">
+            <div className="flex gap-2 flex-1 min-w-[180px]">
+            <div className="relative flex-1">
               <Icon
                 name="Search"
                 size={15}
@@ -184,6 +191,13 @@ const ReceivingCatalog = () => {
                 }
                 className="h-9 pl-9"
               />
+            </div>
+            <CameraScanButton
+              fieldKey="catalog_search"
+              onCode={setQ}
+              onOpen={() => saveScanSnapshot("catalog_search", { mode, direction, brand })}
+              className="h-9 w-9"
+            />
             </div>
             <Select value={direction} onValueChange={setDirection}>
               <SelectTrigger className="h-9 w-[170px]">

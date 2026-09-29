@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
+import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { toast } from "@/hooks/use-toast";
 import DeleteDialog from "./receiving-daily/DeleteDialog";
 import ReceivingRowItem from "./receiving-daily/ReceivingRowItem";
@@ -30,10 +32,13 @@ const ReceivingList = () => {
   const [total, setTotal] = useState(0);
   const [seeAll, setSeeAll] = useState(false);
   const [shown, setShown] = useState(PAGE);
-  const [mine, setMine] = useState(false);
-  const [kind, setKind] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const snap = useScanSnapshot<{ mine: boolean; kind: string; from: string; to: string }>(
+    "list_search"
+  );
+  const [mine, setMine] = useState(Boolean(snap.mine));
+  const [kind, setKind] = useState(snap.kind || "");
+  const [from, setFrom] = useState(snap.from || "");
+  const [to, setTo] = useState(snap.to || "");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -188,17 +193,25 @@ const ReceivingList = () => {
             />
           </div>
 
-          <div className="relative">
-            <Icon
-              name="Search"
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Товар: модель, наименование, штрихкод"
-              className="pl-9 h-9 text-xs"
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Icon
+                name="Search"
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Товар: модель, наименование, штрихкод"
+                className="pl-9 h-9 text-xs"
+              />
+            </div>
+            <CameraScanButton
+              fieldKey="list_search"
+              onCode={setQ}
+              onOpen={() => saveScanSnapshot("list_search", { mine, kind, from, to })}
+              className="h-9 w-9"
             />
           </div>
 

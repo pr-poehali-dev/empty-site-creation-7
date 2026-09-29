@@ -1,7 +1,34 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const PREFIX = "receiving_scan_";
+const SNAP_PREFIX = "receiving_scan_snap_";
+
+/** Запомнить фильтры экрана перед уходом на камеру. */
+export const saveScanSnapshot = (fieldKey: string, data: unknown) => {
+  sessionStorage.setItem(SNAP_PREFIX + fieldKey, JSON.stringify(data));
+};
+
+/**
+ * Фильтры, запомненные перед уходом на камеру. Читать при создании экрана
+ * (в начальном состоянии) — запись стирается при первом показе экрана.
+ */
+export const useScanSnapshot = <T>(fieldKey: string): Partial<T> => {
+  const key = SNAP_PREFIX + fieldKey;
+  const [snap] = useState<Partial<T>>(() => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw) as Partial<T>;
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    sessionStorage.removeItem(key);
+  }, [key]);
+  return snap;
+};
 
 /**
  * Сканер камерой в режиме «один код»: открывает /admin/scan и при возврате
