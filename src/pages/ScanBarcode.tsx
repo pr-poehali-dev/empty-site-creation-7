@@ -68,6 +68,8 @@ const ScanBarcode = () => {
   const returnTo = searchParams.get("returnTo") || "/admin/catalog";
   const storageKey = searchParams.get("key") || "scanned_barcodes";
   const wholesalerIdParam = searchParams.get("wholesalerId");
+  const singleMode = searchParams.get("mode") === "single";
+  const singleDoneRef = useRef(false);
 
   const pricingRulesRef = useRef<PricingRule[]>([]);
 
@@ -152,6 +154,10 @@ const ScanBarcode = () => {
       .catch(() => {});
   }, [wholesalerIdParam]);
 
+  useEffect(() => {
+    if (singleMode) localStorage.removeItem(storageKey);
+  }, [singleMode, storageKey]);
+
   const saveCollected = (next: CollectedEntry[]) => {
     setCollected(next);
     localStorage.setItem(storageKey, JSON.stringify(next));
@@ -173,6 +179,16 @@ const ScanBarcode = () => {
   };
 
   const processScan = async (code: string) => {
+    if (singleMode) {
+      if (singleDoneRef.current) return;
+      singleDoneRef.current = true;
+      if (navigator.vibrate) navigator.vibrate(100);
+      setLastFlash(code);
+      localStorage.setItem(storageKey, code);
+      setTimeout(() => navigate(returnTo, { replace: true }), 500);
+      return;
+    }
+
     if (navigator.vibrate) navigator.vibrate(100);
     setLastFlash(code);
     setTimeout(() => setLastFlash(null), 1200);
@@ -623,16 +639,20 @@ const ScanBarcode = () => {
             </button>
           )}
         </div>
-        <DebugBadge id="Scan:doneBtn">
-          <Button
-            size="sm"
-            className="h-9"
-            onClick={goBack}
-          >
-            <Icon name="Check" size={16} />
-            <span className="ml-1">Готово{collected.length > 0 ? ` (${collected.length})` : ""}</span>
-          </Button>
-        </DebugBadge>
+        {singleMode ? (
+          <div className="w-[88px]" />
+        ) : (
+          <DebugBadge id="Scan:doneBtn">
+            <Button
+              size="sm"
+              className="h-9"
+              onClick={goBack}
+            >
+              <Icon name="Check" size={16} />
+              <span className="ml-1">Готово{collected.length > 0 ? ` (${collected.length})` : ""}</span>
+            </Button>
+          </DebugBadge>
+        )}
       </div>
 
       {status === "unsupported" ? (
@@ -732,7 +752,9 @@ const ScanBarcode = () => {
           <div className="flex-1 bg-black/95 flex flex-col min-h-0">
             <div className="px-4 py-2.5 border-b border-white/10 flex-shrink-0">
               <p className="text-white/50 text-xs font-medium">
-                {collected.length > 0
+                {singleMode
+                  ? "Наведите на штрихкод и нажмите «Сканировать» — код сразу вернётся"
+                  : collected.length > 0
                   ? `Распознано: ${collected.length}`
                   : "Наведите на штрихкод и нажмите «Сканировать»"}
               </p>
