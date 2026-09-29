@@ -125,11 +125,33 @@ def act_masters(cur):
     return {'masters': [r['n'] for r in cur.fetchall()]}
 
 
+def shares(counts, total):
+    """Доли в целых процентах, в сумме ровно 100: лишний процент — строке
+    с самым большим остатком. Ушло хоть что-то, а вышло 0% — пишем «<1%»."""
+    if not total:
+        return [{'key': k, 'qty': 0, 'pct': 0, 'label': '0%'} for k in counts]
+    exact = {k: n * 100 / total for k, n in counts.items()}
+    pct = {k: int(v) for k, v in exact.items()}
+    rest = 100 - sum(pct.values())
+    for k in sorted(counts, key=lambda k: exact[k] - pct[k], reverse=True)[:rest]:
+        pct[k] += 1
+    out = []
+    for k, n in counts.items():
+        label = '<1%' if n and pct[k] == 0 else f'{pct[k]}%'
+        out.append({'key': k, 'qty': n, 'pct': pct[k], 'label': label})
+    return out
+
+
 def collect(cur, params):
     where, date_from, date_to, master = period_where(params)
 
-    cur.execute(f"SELECT COUNT(*) AS n FROM receiving_items WHERE {where}")
-    total = int(cur.fetchone()['n'])
+    cur.execute(
+        f"SELECT COALESCE(check_result,'') AS r, COUNT(*) AS n FROM receiving_items "
+        f"WHERE {where} GROUP BY 1"
+    )
+    by = {r['r']: int(r['n']) for r in cur.fetchall()}
+    total = sum(by.values())
+    split = shares({o: by.get(o, 0) for o in OUTCOMES}, total)
 
     tech = "COALESCE(NULLIF(btrim(tech_name),''),'без наименования')"
     order = "COALESCE(NULLIF(btrim(order_number),''),'—')"
@@ -167,6 +189,7 @@ def collect(cur, params):
         'date_to': date_to,
         'master': master,
         'total': total,
+        'split': split,
         'checked': checked,
         'warehouses': warehouses,
     }

@@ -20,6 +20,9 @@ def _asset(name):
     return io.BytesIO(base64.b64decode(FILES[name]))
 
 COLS = [('sale', 'На продажу'), ('wipe', 'На протирку'), ('repair', 'Под ремонт'), ('scrap', 'В утиль')]
+TITLE = dict(COLS)
+# Куда ушло при проверке → тот же склад и цвет, что в плашках ниже.
+OUT_WH = {'sale': 'СГП', 'wipe': 'Протирка', 'repair': 'Под ремонт', 'scrap': 'Утиль'}
 
 TILES = {
     'СГП': ('package-check.png', '34D399', 'E8FBF3'),
@@ -59,7 +62,28 @@ def build_xlsx(data, meta):
     ws.cell(r, 1, 'Проверено единиц')
     c = ws.cell(r, 2, data['total'])
     c.font = Font(bold=True, size=14)
-    r += 2
+    c.alignment = Alignment(horizontal='center')
+    r += 1
+    for s in data['split']:
+        _, color, bg = TILES[OUT_WH[s['key']]]
+        a = ws.cell(r, 1, TITLE[s['key']])
+        a.alignment = Alignment(indent=2)
+        b = ws.cell(r, 2, s['qty'])
+        b.alignment = Alignment(horizontal='center')
+        if s['label'] == '<1%':
+            c = ws.cell(r, 3, s['qty'] / data['total'])
+            c.number_format = '"<1%"'
+        else:
+            c = ws.cell(r, 3, s['pct'] / 100)
+            c.number_format = '0%'
+        c.alignment = Alignment(horizontal='center')
+        for x in (a, b, c):
+            x.fill = PatternFill('solid', fgColor=bg)
+            x.border = border
+        a.border = Border(left=Side(style='thick', color=color), right=thin, top=thin, bottom=thin)
+        b.font = Font(bold=True, color='333333')
+        r += 1
+    r += 1
 
     ws.cell(r, 1, '2. Проверенный товар за период').font = sec_font
     r += 1
@@ -203,7 +227,32 @@ def build_pdf(data, meta):
         ('LEFTPADDING', (0, 0), (-1, -1), 8), ('TOPPADDING', (0, 0), (-1, -1), 6),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
     ]))
-    story += [total_box, p('2. Проверенный товар за период', 'sec')]
+    split_rows = []
+    for s in data['split']:
+        icon, color, bg = TILES[OUT_WH[s['key']]]
+        split_rows.append([
+            Image(_asset(icon), 5.5 * mm, 5.5 * mm),
+            Paragraph(TITLE[s['key']], ParagraphStyle('sn', fontName='DV', fontSize=10, leading=13)),
+            Paragraph(str(s['qty']), ParagraphStyle('sq', fontName='DVB', fontSize=11, leading=13,
+                                                    alignment=2, textColor=_hex(color))),
+            Paragraph(s['label'], ParagraphStyle('sp', fontName='DV', fontSize=10, leading=13,
+                                                 alignment=2, textColor=_hex('555555'))),
+        ])
+    split = Table(split_rows, colWidths=[9 * mm, 45 * mm, 22 * mm, 18 * mm], hAlign='LEFT')
+    style = [
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ]
+    for i, s in enumerate(data['split']):
+        _, color, bg = TILES[OUT_WH[s['key']]]
+        style += [('BACKGROUND', (0, i), (-1, i), _hex(bg)),
+                  ('LINEBEFORE', (0, i), (0, i), 3, _hex(color)),
+                  ('LINEBELOW', (0, i), (-1, i), 1.5, colors.white)]
+    split.setStyle(TableStyle(style))
+    indent = Table([['', split]], colWidths=[8 * mm, 96 * mm], hAlign='LEFT')
+    indent.setStyle(TableStyle([('LEFTPADDING', (0, 0), (-1, -1), 0),
+                                ('TOPPADDING', (0, 0), (-1, -1), 3)]))
+    story += [total_box, indent, p('2. Проверенный товар за период', 'sec')]
 
     num_w = 22 * mm
     name_w = width - 35 * mm - num_w * 5
