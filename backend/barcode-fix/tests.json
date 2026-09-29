@@ -1,0 +1,39 @@
+{
+  "tests": [
+    {
+      "name": "Проверка живости",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Похожие коды без токена нельзя",
+      "method": "GET",
+      "path": "/?action=similar&code=4006381333931",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Замена без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "replace", "old_code": "1", "new_code": "2"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Откат с чужим токеном нельзя",
+      "method": "POST",
+      "path": "/",
+      "headers": {"X-Authorization": "Bearer ffffffffffffffffffffffffffffffff"},
+      "body": {"action": "revert", "id": 1},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
