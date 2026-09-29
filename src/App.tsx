@@ -18,6 +18,7 @@ import PriceList from "./pages/PriceList";
 import ConvertedFiles from "./pages/ConvertedFiles";
 import Receipts from "./pages/Receipts";
 import BarcodeControl from "./pages/BarcodeControl";
+import ReceivingReports from "./pages/ReceivingReports";
 import OrderPayments from "./pages/OrderPayments";
 import OrderCreatePage from "./pages/wholesale-orders/OrderCreatePage";
 import UnknownBarcodePage from "./pages/wholesale-orders/UnknownBarcodePage";
@@ -99,6 +100,7 @@ const App = () => (
           <Route path="/admin/orders" element={<NotForWholesaler><WholesaleOrders /></NotForWholesaler>} />
           <Route path="/admin/receipts" element={<NotForWholesaler><Receipts /></NotForWholesaler>} />
           <Route path="/admin/barcode-control" element={<NotForWholesaler><BarcodeControl /></NotForWholesaler>} />
+          <Route path="/admin/receiving-reports" element={<NotForWholesaler><ReceivingReports /></NotForWholesaler>} />
           <Route path="/admin/orders/:orderId/payments" element={<NotForWholesaler><OrderPayments /></NotForWholesaler>} />
           <Route path="/admin/orders/price-list" element={<NotForWholesaler><PriceList /></NotForWholesaler>} />
           <Route path="/admin/converted-files" element={<NotForWholesaler><ConvertedFiles /></NotForWholesaler>} />

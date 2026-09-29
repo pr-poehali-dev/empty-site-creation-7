@@ -27,6 +27,7 @@ const ACTIONS = [
   { key: "catalog_edit", icon: "BookOpen", label: "Каталог приёмки" },
   { key: "_stock", icon: "Warehouse", label: "Склады и остатки" },
   { key: "_barcodes", icon: "ScanBarcode", label: "Контроль штрихкодов" },
+  { key: "report_summary", icon: "FileBarChart", label: "Отчёты" },
 ];
 
 const Receipts = () => {
@@ -90,6 +91,7 @@ const Receipts = () => {
       if (a.key === "upload_files") return navigate("/admin/receiving-upload");
       if (a.key === "_stock") return navigate("/admin/receiving-stock");
       if (a.key === "_barcodes") return navigate("/admin/barcode-control");
+      if (a.key === "report_summary") return navigate("/admin/receiving-reports");
       return navigate("/admin/receiving-catalog");
     },
   }));

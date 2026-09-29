@@ -1,4 +1,5 @@
 {
+  "receiving-reports": "https://functions.poehali.dev/233695d1-59d6-48a4-9203-271a80cd499b",
   "barcode-fix": "https://functions.poehali.dev/3acf6666-511e-4d8b-a467-b7e861f3b813",
   "receiving-stock": "https://functions.poehali.dev/410d241c-4a40-4286-b45a-93f8c8332a14",
   "receiving-daily": "https://functions.poehali.dev/afeafd1b-f066-4048-8588-e5879958220e",

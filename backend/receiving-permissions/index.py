@@ -20,6 +20,7 @@ PERMS = [
     {'key': 'delete_data', 'group': 'Действия', 'title': 'Удаление загрузок и позиций'},
     {'key': 'item_remove', 'group': 'Действия', 'title': 'Удаление товаров из приёмки'},
     {'key': 'manage_perms', 'group': 'Действия', 'title': 'Настройка приёмочных прав'},
+    {'key': 'report_summary', 'group': 'Отчёты', 'title': 'Сводка за период + содержание складов'},
     {'key': 'wh_sgp', 'group': 'Склады', 'title': 'СГП'},
     {'key': 'wh_wipe', 'group': 'Склады', 'title': 'Протирка'},
     {'key': 'wh_repair', 'group': 'Склады', 'title': 'Под ремонт'},
@@ -71,6 +72,9 @@ for _k, _t in PRICE_FIELDS:
     PERMS.append({'key': f'cat_edit_{_k}', 'group': 'Цены: правит', 'title': _t})
 
 PERM_KEYS = {p['key'] for p in PERMS}
+
+# Отчёт показывает весь склад и работу всех мастеров — раздаёт его только владелец.
+OWNER_ONLY = {'report_summary'}
 HIDDEN_ROLES = ('Оптовик',)
 
 
@@ -203,6 +207,8 @@ def set_perm(token, role_id, manager_id, perm_key, enabled):
         perms = effective(cur, actor)
         if not actor['is_owner'] and not perms.get('manage_perms'):
             return None, 'Нет доступа к настройке прав'
+        if perm_key in OWNER_ONLY and not actor['is_owner']:
+            return None, 'Это право выдаёт только владелец'
 
         flag = 'true' if enabled else 'false'
         if role_id:

@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Проверка живости",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Без входа отчёт не отдаётся",
+      "method": "GET",
+      "path": "/?action=summary&format=pdf",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
