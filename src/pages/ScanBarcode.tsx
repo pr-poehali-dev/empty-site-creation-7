@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
+import { useTorch } from "@/hooks/useTorch";
 import CameraSetupWizard from "@/pages/scan-camera/CameraSetupWizard";
 import {
   loadSavedCamera,
@@ -88,6 +89,7 @@ const ScanBarcode = () => {
   const [useDefaultCamera, setUseDefaultCamera] = useState(false);
   const [suggestSetup, setSuggestSetup] = useState(false);
   const failCountRef = useRef(0);
+  const torch = useTorch();
   const [collected, setCollected] = useState<CollectedEntry[]>([]);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastFlash, setLastFlash] = useState<string | null>(null);
@@ -538,6 +540,7 @@ const ScanBarcode = () => {
 
         const track = stream.getVideoTracks()[0];
         if (track) await applyAutoSettings(track);
+        if (!cancelled) await torch.attach(track);
 
         if (!videoRef.current) return;
         videoRef.current.srcObject = stream;
@@ -577,6 +580,7 @@ const ScanBarcode = () => {
 
     return () => {
       cancelled = true;
+      torch.detach();
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
@@ -588,6 +592,7 @@ const ScanBarcode = () => {
   }, [cameraKey, useDefaultCamera]);
 
   const openSetup = () => {
+    torch.detach();
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -724,6 +729,20 @@ const ScanBarcode = () => {
             )}
 
             {flashError && <div className="absolute inset-0 bg-red-500/40 pointer-events-none" />}
+
+            {torch.available && !error && (
+              <button
+                onClick={torch.toggle}
+                aria-label={torch.on ? "Выключить фонарик" : "Включить фонарик"}
+                className={`absolute top-3 right-3 z-20 w-12 h-12 rounded-full flex items-center justify-center border transition-colors ${
+                  torch.on
+                    ? "bg-yellow-400 border-yellow-300 text-black"
+                    : "bg-black/60 border-white/20 text-white"
+                }`}
+              >
+                <Icon name={torch.on ? "Flashlight" : "FlashlightOff"} size={22} />
+              </button>
+            )}
 
             {suggestSetup && !error && (
               <div className="absolute bottom-2 left-2 right-2 z-10 rounded-xl bg-black/85 border border-amber-500/50 px-3 py-2 flex items-center gap-2">

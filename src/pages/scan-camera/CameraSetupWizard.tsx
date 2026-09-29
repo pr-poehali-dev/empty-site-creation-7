@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
+import { useTorch } from "@/hooks/useTorch";
 import {
   SavedCamera,
   Detector,
@@ -36,8 +37,10 @@ const CameraSetupWizard = ({ onDone, onCancel }: Props) => {
   const [checking, setChecking] = useState(false);
   const [chosen, setChosen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const torch = useTorch();
 
   const stopStream = () => {
+    torch.detach();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -85,6 +88,7 @@ const CameraSetupWizard = ({ onDone, onCancel }: Props) => {
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
         if (track) await applyAutoFocus(track);
+        if (!cancelled) await torch.attach(track);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
@@ -214,6 +218,19 @@ const CameraSetupWizard = ({ onDone, onCancel }: Props) => {
               muted
               autoPlay
             />
+            {torch.available && (
+              <button
+                onClick={torch.toggle}
+                aria-label={torch.on ? "Выключить фонарик" : "Включить фонарик"}
+                className={`absolute top-3 right-3 z-20 w-12 h-12 rounded-full flex items-center justify-center border transition-colors ${
+                  torch.on
+                    ? "bg-yellow-400 border-yellow-300 text-black"
+                    : "bg-black/60 border-white/20 text-white"
+                }`}
+              >
+                <Icon name={torch.on ? "Flashlight" : "FlashlightOff"} size={22} />
+              </button>
+            )}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-[80%] max-w-xs h-20 border-2 border-orange-500/80 rounded-2xl" />
             </div>
