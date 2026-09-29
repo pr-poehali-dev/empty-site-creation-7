@@ -25,6 +25,13 @@ interface Props {
 
 type Stage = "package" | "factory" | "outcome";
 
+const PREV_RESULT: Record<string, string> = {
+  sale: "Рабочее, на продажу, склад «СГП»",
+  wipe: "Рабочее, на протирку, склад «Протирка»",
+  repair: "Не работает, склад «Под ремонт»",
+  scrap: "Утиль, склад «Утиль»",
+};
+
 /** Порядок жёсткий: упаковка → заводской код (если есть откуда взять) → исход. */
 const CheckDialog = ({
   item,
@@ -117,8 +124,14 @@ const CheckDialog = ({
             <div className="rounded-lg bg-amber-500/15 border border-amber-500/30 p-2.5 text-xs text-amber-200">
               <Icon name="TriangleAlert" size={14} className="inline mr-1 -mt-0.5" />
               Уже проверена
-              {item.checked_by_name ? `: ${item.checked_by_name}` : ""}. Новый
-              выбор перезапишет прежний результат.
+              {item.checked_by_name ? `: ${item.checked_by_name}` : ""}
+              {PREV_RESULT[item.check_result] && (
+                <>
+                  {" — "}
+                  <b className="font-semibold text-amber-100">{PREV_RESULT[item.check_result]}</b>
+                </>
+              )}
+              . Новый выбор перезапишет прежний результат.
             </div>
           )}
 
