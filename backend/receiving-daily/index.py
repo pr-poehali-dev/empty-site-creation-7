@@ -223,8 +223,13 @@ def attach_moves(cur, items):
     return items
 
 
-def checked_list(cur, receiving_id, limit=30, q=''):
+RESULTS = ('sale', 'wipe', 'repair', 'scrap')
+
+
+def checked_list(cur, receiving_id, limit=30, q='', result=''):
     where = f"daily_receiving_id={int(receiving_id)}"
+    if result in RESULTS:
+        where += f" AND check_result='{result}'"
     match = goods_match(q)
     if match:
         where += f" AND {match}"
@@ -235,11 +240,11 @@ def checked_list(cur, receiving_id, limit=30, q=''):
     return attach_moves(cur, [dict(r) for r in cur.fetchall()])
 
 
-def state(cur, receiving, limit=30, q=''):
+def state(cur, receiving, limit=30, q='', result=''):
     return {
         'receiving': receiving,
         'counters': counters(cur, receiving['id']),
-        'items': checked_list(cur, receiving['id'], limit, q),
+        'items': checked_list(cur, receiving['id'], limit, q, result),
     }
 
 
@@ -307,8 +312,11 @@ def act_state(cur, actor, params):
     if not own and not actor['_see_all']:
         return None, 'Это чужая приёмка'
     # Закрытую смотрят целиком, в открытой список — для контроля последних пиков.
-    limit = min(int(params.get('limit') or (500 if row['closed'] else 30)), 500)
-    data = state(cur, row, limit, params.get('q') or '')
+    # Фильтр по плитке показывает всю группу — число в списке совпадает с плиткой.
+    result = params.get('result') or ''
+    full = row['closed'] or result in RESULTS
+    limit = min(int(params.get('limit') or (500 if full else 30)), 500)
+    data = state(cur, row, limit, params.get('q') or '', result)
     # Чужую приёмку удалить нельзя — экран не должен показывать кнопку впустую.
     data['can_delete'] = bool(own or actor['is_owner'])
     return data, None

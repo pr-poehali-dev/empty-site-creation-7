@@ -6,7 +6,7 @@ import Icon from "@/components/ui/icon";
 import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { toast } from "@/hooks/use-toast";
 import ArchiveItemCard from "./receiving-daily/ArchiveItemCard";
-import DailyCounters from "./receiving-daily/DailyCounters";
+import DailyCounters, { counterTitle } from "./receiving-daily/DailyCounters";
 import DeleteDialog from "./receiving-daily/DeleteDialog";
 import {
   KIND_TITLES,
@@ -44,6 +44,7 @@ const ReceivingArchive = () => {
   const [counters, setCounters] = useState<Counters>(EMPTY);
   const [items, setItems] = useState<DailyItem[]>([]);
   const [query, setQuery] = useState("");
+  const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<DailyItem | null>(null);
   const [mayDelete, setMayDelete] = useState(false);
@@ -72,10 +73,10 @@ const ReceivingArchive = () => {
   };
 
   const fetchData = useCallback(
-    async (q: string) => {
+    async (q: string, r: string) => {
       setBusy(true);
       try {
-        const d = await loadArchive(rid, q);
+        const d = await loadArchive(rid, q, r);
         setReceiving(d.receiving);
         setCounters(d.counters);
         setItems(d.items);
@@ -99,12 +100,12 @@ const ReceivingArchive = () => {
     }
     if (first.current) {
       first.current = false;
-      fetchData("");
+      fetchData("", "");
       return;
     }
-    const t = setTimeout(() => fetchData(query), 300);
+    const t = setTimeout(() => fetchData(query, result), 300);
     return () => clearTimeout(t);
-  }, [rid, query, fetchData]);
+  }, [rid, query, result, fetchData]);
 
   if (stage === "loading") {
     return (
@@ -188,7 +189,7 @@ const ReceivingArchive = () => {
           </div>
         )}
 
-        <DailyCounters counters={counters} />
+        <DailyCounters counters={counters} active={result} onPick={setResult} />
 
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -217,9 +218,20 @@ const ReceivingArchive = () => {
         <div className="rounded-xl border border-white/[0.08] bg-card overflow-hidden">
           <div className="px-4 py-3 flex items-center gap-2 border-b border-white/[0.06]">
             <Icon name="List" size={16} className="text-muted-foreground" />
-            <span className="text-sm font-medium flex-1">Проверенный товар</span>
+            <span className="text-sm font-medium flex-1">
+              {result ? `${counterTitle(result)}: ${counters[result] ?? 0}` : "Проверенный товар"}
+            </span>
+            {result && (
+              <button
+                type="button"
+                onClick={() => setResult("")}
+                className="text-xs text-primary hover:underline"
+              >
+                показать все
+              </button>
+            )}
             <span className="text-xs text-muted-foreground">
-              {query ? `нашли ${items.length}` : counters.total}
+              {query ? `нашли ${items.length}` : result ? "" : counters.total}
             </span>
           </div>
 

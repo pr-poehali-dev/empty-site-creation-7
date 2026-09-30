@@ -180,11 +180,14 @@ export const findCurrent = (kind: string) =>
 export const openReceiving = (kind: string) =>
   post<Receiving>({ action: "open", kind, work_date: todayLocal() });
 
-export const loadState = (id: number) => get<DailyState>(`action=state&id=${id}`);
+export const loadState = (id: number, result = "") =>
+  get<DailyState>(`action=state&id=${id}${result ? `&result=${result}` : ""}`);
 
 /** Просмотр закрытой приёмки: список целиком, с отбором по товару. */
-export const loadArchive = (id: number, q = "") =>
-  get<DailyState>(`action=state&id=${id}&limit=500&q=${encodeURIComponent(q)}`);
+export const loadArchive = (id: number, q = "", result = "") =>
+  get<DailyState>(
+    `action=state&id=${id}&limit=500&q=${encodeURIComponent(q)}${result ? `&result=${result}` : ""}`
+  );
 
 export const closeReceiving = (id: number) => post<{ ok: boolean }>({ action: "close", id });
 

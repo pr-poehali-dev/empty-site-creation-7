@@ -6,7 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { useReceivingPerms } from "@/hooks/useReceivingPerms";
 import CheckDialog from "./receiving-daily/CheckDialog";
-import DailyCounters from "./receiving-daily/DailyCounters";
+import DailyCounters, { counterTitle } from "./receiving-daily/DailyCounters";
 import FinishDialog from "./receiving-daily/FinishDialog";
 import ItemRow from "./receiving-daily/ItemRow";
 import LastCheck from "./receiving-daily/LastCheck";
@@ -45,6 +45,9 @@ const ReceivingDaily = () => {
   const [undoing, setUndoing] = useState(false);
   const [notFound, setNotFound] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const [result, setResult] = useState("");
+  const resultRef = useRef("");
+  resultRef.current = result;
   const [closing, setClosing] = useState(false);
   const [askFinish, setAskFinish] = useState(false);
   const [removingId, setRemovingId] = useState(0);
@@ -119,13 +122,14 @@ const ReceivingDaily = () => {
     setLast(null);
     setNotFound("");
     setListOpen(false);
+    setResult("");
     setClosing(false);
     setStage("work");
   };
 
-  const refresh = useCallback(async (id: number) => {
+  const refresh = useCallback(async (id: number, r?: string) => {
     try {
-      const d = await loadState(id);
+      const d = await loadState(id, r ?? resultRef.current);
       setCounters(d.counters);
       setItems(d.items);
     } catch {
@@ -389,7 +393,15 @@ const ReceivingDaily = () => {
           <LastCheck item={last} busy={undoing} onUndo={undoLast} />
         )}
 
-        <DailyCounters counters={counters} />
+        <DailyCounters
+          counters={counters}
+          active={result}
+          onPick={(k) => {
+            setResult(k);
+            setListOpen(true);
+            if (receiving) refresh(receiving.id, k);
+          }}
+        />
 
         <div className="rounded-xl border border-white/[0.08] bg-card overflow-hidden">
           <button
@@ -401,8 +413,26 @@ const ReceivingDaily = () => {
             }}
           >
             <Icon name="List" size={16} className="text-muted-foreground" />
-            <span className="text-sm font-medium flex-1">Проверено в этой приёмке</span>
-            <span className="text-xs text-muted-foreground">{counters.total}</span>
+            <span className="text-sm font-medium flex-1">
+              {result
+                ? `${counterTitle(result)}: ${counters[result] ?? 0}`
+                : "Проверено в этой приёмке"}
+            </span>
+            {result ? (
+              <span
+                role="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setResult("");
+                  if (receiving) refresh(receiving.id, "");
+                }}
+                className="text-xs text-primary hover:underline"
+              >
+                показать все
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">{counters.total}</span>
+            )}
             <Icon
               name={listOpen ? "ChevronUp" : "ChevronDown"}
               size={16}
