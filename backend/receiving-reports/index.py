@@ -9,7 +9,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from builders import build_pdf, build_xlsx
-from workdays import count_workdays, plural_days
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -103,6 +102,47 @@ def _tz(v):
 
 # Первый день приёмки. Раньше него отчёт не считаем: любая более ранняя дата становится этой.
 FIRST_DAY = '2026-09-21'
+# С этого дня приёмки ведутся в программе. До него (21–29.09) принимали без неё —
+# каждому мастеру засчитываем все будние дни этого отрезка, попавшие в период.
+PROGRAM_DAY = '2026-09-30'
+
+
+def _d(v):
+    return datetime.strptime(v, '%Y-%m-%d').date()
+
+
+def offline_days(date_from, date_to):
+    """Будние дни с FIRST_DAY по день перед PROGRAM_DAY, попавшие в период."""
+    a = max(_d(date_from), _d(FIRST_DAY))
+    b = min(_d(date_to), _d(PROGRAM_DAY) - timedelta(days=1))
+    n = 0
+    while a <= b:
+        n += a.weekday() < 5
+        a += timedelta(days=1)
+    return n
+
+
+def master_days(cur, where, date_from, date_to, tz):
+    """Средние дни на мастера: будни до программы + (сумма дней с приёмками с 30.09) / число мастеров.
+    Несколько приёмок мастера в один день — один день."""
+    local = f"(checked_at AT TIME ZONE '{tz}')::date"
+    cur.execute(
+        f"SELECT btrim(checked_by_name) AS m, "
+        f"COUNT(DISTINCT {local}) FILTER (WHERE {local} >= '{PROGRAM_DAY}') AS n "
+        f"FROM receiving_items WHERE {where} AND btrim(COALESCE(checked_by_name,''))<>'' GROUP BY 1"
+    )
+    rows = cur.fetchall()
+    base = offline_days(date_from, date_to)
+    if not rows:
+        return base
+    return base + sum(int(r['n']) for r in rows) / len(rows)
+
+
+def fmt_days(v):
+    """До десятых, половина — вверх: 5,33 → 5,3; 5,35 → 5,4; 12,0 → 12."""
+    r = int(v * 10 + 0.5 + 1e-9) / 10
+    txt = f'{r:.1f}'.rstrip('0').rstrip('.').replace('.', ',')
+    return f'{txt} дн.'
 
 
 def period_dates(params):
@@ -221,7 +261,11 @@ def collect(cur, params):
             dirs.append({'name': d, 'qty': sum(n for _, n in items), 'items': items})
         warehouses.append({'name': w, 'qty': sum(d['qty'] for d in dirs), 'dirs': dirs})
 
+    today = (datetime.now(timezone.utc) + timedelta(minutes=int(params.get('offset') or 180))).strftime('%Y-%m-%d')
+    days = master_days(cur, where, date_from, date_to or today, _tz(params.get('tz')))
     return {
+        'days': days,
+        'today': today,
         'date_from': date_from,
         'date_to': date_to,
         'master': master,
@@ -301,10 +345,8 @@ def handler(event: dict, context) -> dict:
     now = datetime.now(timezone.utc) + timedelta(minutes=tz_offset)
     # В шапке — даты, по которым отчёт реально посчитан (после поправки на первый день).
     d_from = data['date_from']
-    d_to = data['date_to'] or now.strftime('%Y-%m-%d')
-    days = count_workdays(datetime.strptime(d_from, '%Y-%m-%d').date(),
-                          datetime.strptime(d_to, '%Y-%m-%d').date())
-    period = f"{_ru(d_from)} — {_ru(d_to)} ({plural_days(days)})"
+    d_to = data['date_to'] or data['today']
+    period = f"{_ru(d_from)} — {_ru(d_to)} ({fmt_days(data['days'])})"
     meta = {
         'period': period,
         'master': data['master'] or 'Все мастера',
