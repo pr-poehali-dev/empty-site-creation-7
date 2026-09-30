@@ -9,6 +9,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from builders import build_pdf, build_xlsx
+from workdays import count_workdays, plural_days
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -208,7 +209,11 @@ def collect(cur, params):
             dirs.append({'name': d, 'qty': sum(n for _, n in items), 'items': items})
         warehouses.append({'name': w, 'qty': sum(d['qty'] for d in dirs), 'dirs': dirs})
 
+    # Дата «с» не выбрана — рабочие дни считаем с первой приёмки.
+    cur.execute("SELECT MIN(work_date) AS d FROM daily_receivings")
+    first = cur.fetchone()['d']
     return {
+        'first_day': first.isoformat() if first else '',
         'date_from': date_from,
         'date_to': date_to,
         'master': master,
@@ -284,6 +289,12 @@ def handler(event: dict, context) -> dict:
     tz_offset = int(params.get('offset') or 180)
     now = datetime.now(timezone.utc) + timedelta(minutes=tz_offset)
     period = f"{_ru(data['date_from']) or 'начало'} — {_ru(data['date_to']) or 'сегодня'}"
+    d_from = data['date_from'] or data['first_day']
+    d_to = data['date_to'] or now.strftime('%Y-%m-%d')
+    if d_from:
+        days = count_workdays(datetime.strptime(d_from, '%Y-%m-%d').date(),
+                              datetime.strptime(d_to, '%Y-%m-%d').date())
+        period += f" ({plural_days(days)})"
     meta = {
         'period': period,
         'master': data['master'] or 'Все мастера',
