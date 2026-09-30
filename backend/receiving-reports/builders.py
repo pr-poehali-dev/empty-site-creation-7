@@ -3,6 +3,7 @@ import io
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
@@ -114,8 +115,7 @@ def build_xlsx(data, meta):
             for i, v in enumerate(vals, 1):
                 c = ws.cell(r, i, v)
                 c.border = border
-                wrap = i in (1, 8, 9)
-                c.alignment = Alignment(wrap_text=wrap, vertical='top',
+                c.alignment = Alignment(wrap_text=False, vertical='top',
                                         horizontal='left' if i <= 2 or i >= 8 else 'center')
             r += 1
     if not data['checked']:
@@ -168,7 +168,7 @@ def build_xlsx(data, meta):
             r += 1
             for name, n in d['items']:
                 c = ws.cell(r, 1, name)
-                c.alignment = Alignment(indent=5, wrap_text=True)
+                c.alignment = Alignment(indent=5, wrap_text=False)
                 ws.cell(r, 2, n)
                 r += 1
         r += 1
@@ -221,6 +221,23 @@ def build_pdf(data, meta):
 
     def p(text, style):
         return Paragraph(str(text).replace('&', '&amp;').replace('<', '&lt;'), st[style])
+
+    def fit(text, style, col_w, pad):
+        """Одна строка: не влезает в колонку — режем и ставим «…», чтобы все строки были одной высоты."""
+        s = st[style]
+        text = ' '.join(str(text or '').split())
+        avail = col_w - pad - s.leftIndent - 1
+        w = lambda t: stringWidth(t, s.fontName, s.fontSize)
+        if w(text) <= avail:
+            return p(text, style)
+        lo, hi = 0, len(text)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if w(text[:mid].rstrip() + '…') <= avail:
+                lo = mid
+            else:
+                hi = mid - 1
+        return p(text[:lo].rstrip() + '…', style)
 
     story = [
         p('Сводка за период + содержание складов', 'title'),
@@ -295,9 +312,10 @@ def build_pdf(data, meta):
                   ('BACKGROUND', (0, i), (-1, i), _hex(bg)),
                   ('LINEBEFORE', (0, i), (0, i), 3, _hex(color))]
         for row in g['rows']:
-            rows.append([p(row['name'], 'cell'), p(row['order'], 'cell')]
+            rows.append([fit(row['name'], 'cell', name_w, 6), fit(row['order'], 'cell', order_w, 6)]
                         + [str(row['qty']) if k == g['outcome'] else '' for k in keys]
-                        + [str(row['qty']), p(row['confirmed'], 'cell'), p(row['new_defect'], 'cell')])
+                        + [str(row['qty']), fit(row['confirmed'], 'cell', def_w, 6),
+                           fit(row['new_defect'], 'cell', def_w, 6)])
     if not data['checked']:
         rows.append([p('За период ничего не проверено', 'cell')] + [''] * 8)
     sums = {s['key']: s['qty'] for s in data['split']}
@@ -347,8 +365,8 @@ def build_pdf(data, meta):
             block.append(p('пусто', 'empty'))
         story.append(KeepTogether(block))
         for d in w['dirs']:
-            lines = [[p(d['name'], 'dir'), p(str(d['qty']), 'cellb')]]
-            lines += [[p(name, 'item'), p(str(n), 'cell')] for name, n in d['items']]
+            lines = [[fit(d['name'], 'dir', width - 35 * mm, 12), p(str(d['qty']), 'cellb')]]
+            lines += [[fit(name, 'item', width - 35 * mm, 12), p(str(n), 'cell')] for name, n in d['items']]
             dt = Table(lines, colWidths=[width - 35 * mm, 35 * mm])
             dt.setStyle(TableStyle([
                 ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
