@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -32,6 +32,8 @@ const ACTIONS = [
 
 const Receipts = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const cameBack = Boolean((location.state as { back?: boolean } | null)?.back);
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const isOwner = user.role === "owner";
   const { perms, loading, can, expired } = useReceivingPerms();
@@ -56,9 +58,14 @@ const Receipts = () => {
   // лишний тап в цеху это лишний тап.
   useEffect(() => {
     if (!loading && screen === "home" && myKinds.length === 1 && realActions.length === 0) {
+      // Вернулись из приёмки — выбирать нечего, идём в кабинет, иначе замкнутый круг.
+      if (cameBack) {
+        navigate(isOwner ? "/admin/dashboard" : "/admin/manager", { replace: true });
+        return;
+      }
       navigate(`/admin/receiving-daily?kind=${myKinds[0].key}`, { replace: true });
     }
-  }, [loading, screen, myKinds.length, realActions.length]);
+  }, [loading, screen, myKinds.length, realActions.length, cameBack]);
 
   const goBack = () => {
     if (screen !== "home") {

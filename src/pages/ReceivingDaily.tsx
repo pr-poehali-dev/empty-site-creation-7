@@ -56,7 +56,8 @@ const ReceivingDaily = () => {
   const { can } = useReceivingPerms();
   const canRemove = can("item_remove");
 
-  const goBack = () => navigate("/admin/receipts");
+  // Пометка «назад»: у кого один вид приёмки, страница приёмок не кинет его обратно сюда.
+  const goBack = () => navigate("/admin/receipts", { state: { back: true } });
 
   // Сменили вид приёмки — это другая работа, грузим заново.
   useEffect(() => {
