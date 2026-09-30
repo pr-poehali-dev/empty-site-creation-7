@@ -122,14 +122,32 @@ def offline_days(date_from, date_to):
     return n
 
 
-def master_days(cur, where, date_from, date_to, tz):
+# Владелец и тестовые пользователи в отчёт не попадают ни в каких цифрах.
+TEST_USERS = ('Владелец', 'Александр Орёл', 'Александр Орел')
+_TEST_SQL = ','.join(f"'{n}'" for n in TEST_USERS)
+REAL_ITEM = (
+    f"btrim(COALESCE(checked_by_name,'')) NOT IN ({_TEST_SQL}) "
+    "AND COALESCE(daily_receiving_id, 0) NOT IN (SELECT id FROM daily_receivings WHERE is_owner)"
+)
+
+
+def master_days(cur, date_from, date_to, master):
     """Средние дни на мастера: будни до программы + (сумма дней с приёмками с 30.09) / число мастеров.
-    Несколько приёмок мастера в один день — один день."""
-    local = f"(checked_at AT TIME ZONE '{tz}')::date"
+    День мастера — дата его приёмки (открытой или закрытой), в которой проверена хоть одна единица.
+    Несколько приёмок в один день — один день. Владелец и тестовые — не считаются."""
+    parts = [
+        "NOT r.is_owner",
+        f"btrim(COALESCE(r.employee_name,'')) NOT IN ({_TEST_SQL})",
+        f"r.work_date >= '{max(date_from, PROGRAM_DAY)}'",
+        f"r.work_date <= '{date_to}'",
+        "EXISTS (SELECT 1 FROM receiving_items i WHERE i.daily_receiving_id = r.id "
+        "AND i.check_result IS NOT NULL AND i.checked_at IS NOT NULL)",
+    ]
+    if master:
+        parts.append(f"btrim(r.employee_name)='{_esc(master)}'")
     cur.execute(
-        f"SELECT btrim(checked_by_name) AS m, "
-        f"COUNT(DISTINCT {local}) FILTER (WHERE {local} >= '{PROGRAM_DAY}') AS n "
-        f"FROM receiving_items WHERE {where} AND btrim(COALESCE(checked_by_name,''))<>'' GROUP BY 1"
+        "SELECT btrim(r.employee_name) AS m, COUNT(DISTINCT r.work_date) AS n "
+        f"FROM daily_receivings r WHERE {' AND '.join(parts)} GROUP BY 1"
     )
     rows = cur.fetchall()
     base = offline_days(date_from, date_to)
@@ -160,7 +178,7 @@ def period_where(params):
     tz = _tz(params.get('tz'))
     master = (params.get('master') or '').strip()
     local = f"(checked_at AT TIME ZONE '{tz}')::date"
-    parts = ["check_result IS NOT NULL", "checked_at IS NOT NULL"]
+    parts = ["check_result IS NOT NULL", "checked_at IS NOT NULL", REAL_ITEM]
     if date_from:
         parts.append(f"{local} >= '{date_from}'")
     if date_to:
@@ -173,7 +191,7 @@ def period_where(params):
 def act_masters(cur):
     cur.execute(
         "SELECT DISTINCT btrim(checked_by_name) AS n FROM receiving_items "
-        "WHERE btrim(COALESCE(checked_by_name,''))<>'' ORDER BY 1"
+        f"WHERE btrim(COALESCE(checked_by_name,''))<>'' AND {REAL_ITEM} ORDER BY 1"
     )
     return {'masters': [r['n'] for r in cur.fetchall()]}
 
@@ -247,7 +265,7 @@ def collect(cur, params):
     names = ','.join(f"'{_esc(w)}'" for w in WAREHOUSES)
     cur.execute(
         f"SELECT warehouse, {DIR_SQL} AS dir, {NAME_SQL} AS name, COUNT(*) AS n "
-        f"FROM receiving_items WHERE warehouse IN ({names}) GROUP BY 1,2,3"
+        f"FROM receiving_items WHERE warehouse IN ({names}) AND {REAL_ITEM} GROUP BY 1,2,3"
     )
     stock = {w: {} for w in WAREHOUSES}
     for r in cur.fetchall():
@@ -262,7 +280,7 @@ def collect(cur, params):
         warehouses.append({'name': w, 'qty': sum(d['qty'] for d in dirs), 'dirs': dirs})
 
     today = (datetime.now(timezone.utc) + timedelta(minutes=int(params.get('offset') or 180))).strftime('%Y-%m-%d')
-    days = master_days(cur, where, date_from, date_to or today, _tz(params.get('tz')))
+    days = master_days(cur, date_from, date_to or today, master)
     return {
         'days': days,
         'today': today,
