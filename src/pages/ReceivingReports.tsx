@@ -17,6 +17,10 @@ const iso = (d: Date) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
+/** Первый день приёмки: раньше него отчёт не строится. Такая же дата на сервере. */
+const FIRST_DAY = "2026-09-21";
+const notBefore = (d: string, min: string) => (d && d < min ? min : d);
+
 const ReceivingReports = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
@@ -25,8 +29,18 @@ const ReceivingReports = () => {
   const access = isOwner || can("report_summary");
 
   const now = new Date();
-  const [from, setFrom] = useState(iso(new Date(now.getFullYear(), now.getMonth(), 1)));
-  const [to, setTo] = useState(iso(now));
+  const [from, setFromRaw] = useState(
+    notBefore(iso(new Date(now.getFullYear(), now.getMonth(), 1)), FIRST_DAY)
+  );
+  const [to, setToRaw] = useState(notBefore(iso(now), FIRST_DAY));
+
+  // Раньше первого дня — ставим первый день; «с» позже «по» — двигаем «по» следом.
+  const setFrom = (v: string) => {
+    const f = notBefore(v, FIRST_DAY);
+    setFromRaw(f);
+    if (f && to && to < f) setToRaw(f);
+  };
+  const setTo = (v: string) => setToRaw(notBefore(v, from || FIRST_DAY));
   const [master, setMaster] = useState("");
   const [masters, setMasters] = useState<string[]>([]);
   const [busy, setBusy] = useState<"" | "xlsx" | "pdf">("");
@@ -139,11 +153,23 @@ const ReceivingReports = () => {
           <div className="grid grid-cols-2 gap-2">
             <label className="space-y-1">
               <span className="text-xs text-muted-foreground">С</span>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10" />
+              <Input
+                type="date"
+                value={from}
+                min={FIRST_DAY}
+                onChange={(e) => setFrom(e.target.value)}
+                className="h-10"
+              />
             </label>
             <label className="space-y-1">
               <span className="text-xs text-muted-foreground">По</span>
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10" />
+              <Input
+                type="date"
+                value={to}
+                min={from || FIRST_DAY}
+                onChange={(e) => setTo(e.target.value)}
+                className="h-10"
+              />
             </label>
           </div>
 

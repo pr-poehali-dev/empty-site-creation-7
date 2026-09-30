@@ -101,10 +101,22 @@ def _tz(v):
     return v if re.fullmatch(r'[A-Za-z_]+(/[A-Za-z_\-+0-9]+){0,2}', v) else 'Europe/Moscow'
 
 
+# Первый день приёмки. Раньше него отчёт не считаем: любая более ранняя дата становится этой.
+FIRST_DAY = '2026-09-21'
+
+
+def period_dates(params):
+    """«С» не выбрана или раньше первого дня — первый день; «по» раньше первого дня — тоже он."""
+    date_from = max(_date(params.get('from')) or FIRST_DAY, FIRST_DAY)
+    date_to = _date(params.get('to'))
+    if date_to and date_to < FIRST_DAY:
+        date_to = FIRST_DAY
+    return date_from, date_to
+
+
 def period_where(params):
     """Период — в часовом поясе того, кто строит отчёт: «29 сентября» у мастера и у отчёта одно и то же."""
-    date_from = _date(params.get('from'))
-    date_to = _date(params.get('to'))
+    date_from, date_to = period_dates(params)
     tz = _tz(params.get('tz'))
     master = (params.get('master') or '').strip()
     local = f"(checked_at AT TIME ZONE '{tz}')::date"
@@ -209,11 +221,7 @@ def collect(cur, params):
             dirs.append({'name': d, 'qty': sum(n for _, n in items), 'items': items})
         warehouses.append({'name': w, 'qty': sum(d['qty'] for d in dirs), 'dirs': dirs})
 
-    # Дата «с» не выбрана — рабочие дни считаем с первой приёмки.
-    cur.execute("SELECT MIN(work_date) AS d FROM daily_receivings")
-    first = cur.fetchone()['d']
     return {
-        'first_day': first.isoformat() if first else '',
         'date_from': date_from,
         'date_to': date_to,
         'master': master,
@@ -279,6 +287,9 @@ def handler(event: dict, context) -> dict:
                 fmt = params.get('format') or 'xlsx'
                 if fmt not in ('xlsx', 'pdf'):
                     return _resp(400, {'error': 'Неизвестный формат'})
+                d_from, d_to = period_dates(params)
+                if d_to and d_from > d_to:
+                    return _resp(400, {'error': 'Начало периода позже конца'})
                 data = collect(cur, params)
     finally:
         conn.close()
@@ -288,13 +299,12 @@ def handler(event: dict, context) -> dict:
 
     tz_offset = int(params.get('offset') or 180)
     now = datetime.now(timezone.utc) + timedelta(minutes=tz_offset)
-    period = f"{_ru(data['date_from']) or 'начало'} — {_ru(data['date_to']) or 'сегодня'}"
-    d_from = data['date_from'] or data['first_day']
+    # В шапке — даты, по которым отчёт реально посчитан (после поправки на первый день).
+    d_from = data['date_from']
     d_to = data['date_to'] or now.strftime('%Y-%m-%d')
-    if d_from:
-        days = count_workdays(datetime.strptime(d_from, '%Y-%m-%d').date(),
-                              datetime.strptime(d_to, '%Y-%m-%d').date())
-        period += f" ({plural_days(days)})"
+    days = count_workdays(datetime.strptime(d_from, '%Y-%m-%d').date(),
+                          datetime.strptime(d_to, '%Y-%m-%d').date())
+    period = f"{_ru(d_from)} — {_ru(d_to)} ({plural_days(days)})"
     meta = {
         'period': period,
         'master': data['master'] or 'Все мастера',
