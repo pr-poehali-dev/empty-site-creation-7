@@ -1,6 +1,12 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 export const WHOLESALER_ROLE = "Оптовик";
+export const RECEIVING_ROLE = "Приёмка";
+
+/** Куда пускаем роль «Приёмка»: кабинет с одной кнопкой, приёмки и камера для них. */
+const RECEIVING_PATHS = ["/admin/manager", "/admin/receipts", "/admin/receiving-", "/admin/scan"];
+
+export const isReceivingOnly = () => getAuthUser().role_name === RECEIVING_ROLE;
 
 /** Роль текущего пользователя из сохранённых данных входа. */
 export const getAuthUser = () => {
@@ -27,9 +33,13 @@ export const inventoriesPath = () =>
 
 /** Страница для всех, кроме оптовика: его уводим на свою страницу. */
 export const NotForWholesaler = ({ children }: { children: React.ReactNode }) => {
+  const { pathname } = useLocation();
   const token = localStorage.getItem("auth_token");
   if (!token) return <Navigate to="/admin" replace />;
   if (isWholesaler()) return <Navigate to="/wholesaler" replace />;
+  if (isReceivingOnly() && !RECEIVING_PATHS.some((p) => pathname.startsWith(p))) {
+    return <Navigate to="/admin/manager" replace />;
+  }
   return <>{children}</>;
 };
 

@@ -5,6 +5,7 @@ import Icon from "@/components/ui/icon";
 import DebugToggle from "@/components/DebugToggle";
 import DebugBadge from "@/components/DebugBadge";
 import { useReceivingPerms } from "@/hooks/useReceivingPerms";
+import { RECEIVING_ROLE } from "@/components/WholesalerRoute";
 
 /** Любое из этих прав означает, что человеку есть что делать в приёмке. */
 const RECEIVING_KEYS = [
@@ -26,7 +27,9 @@ const ManagerDashboard = () => {
   // Вход в приёмку даётся по правам, а не по должности: выдали право —
   // кнопка появилась. Без этого права были, а войти было некуда.
   const { can } = useReceivingPerms();
-  const canSeeReceiving = RECEIVING_KEYS.some((k) => can(k));
+  // Роль «Приёмка» — одна кнопка всегда; без прав внутри будет «Доступ не выдан».
+  const receivingOnly = user.role_name === RECEIVING_ROLE;
+  const canSeeReceiving = receivingOnly || RECEIVING_KEYS.some((k) => can(k));
 
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
@@ -39,6 +42,7 @@ const ManagerDashboard = () => {
     : user.phone;
 
   const canSeeOrders = ["Управляющий", "Менеджер опта"].includes(user.role_name);
+  const canSeeCommon = !receivingOnly;
 
   return (
     <div className="min-h-screen">
@@ -85,16 +89,18 @@ const ManagerDashboard = () => {
               </Button>
             </DebugBadge>
           )}
-          <DebugBadge id="Manager:nav.catalog" className="flex-1">
-            <Button
-              variant="outline"
-              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-              onClick={() => navigate("/admin/catalog")}
-            >
-              <Icon name="Package" size={20} />
-              <span className="font-medium">Каталог</span>
-            </Button>
-          </DebugBadge>
+          {canSeeCommon && (
+            <DebugBadge id="Manager:nav.catalog" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+                onClick={() => navigate("/admin/catalog")}
+              >
+                <Icon name="Package" size={20} />
+                <span className="font-medium">Каталог</span>
+              </Button>
+            </DebugBadge>
+          )}
           {canSeeOrders && (
             <DebugBadge id="Manager:nav.orders" className="flex-1">
               <Button
@@ -131,16 +137,18 @@ const ManagerDashboard = () => {
               </Button>
             </DebugBadge>
           )}
-          <DebugBadge id="Manager:nav.labels" className="flex-1">
-            <Button
-              variant="outline"
-              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-              onClick={() => navigate("/admin/labels")}
-            >
-              <Icon name="Tag" size={20} />
-              <span className="font-medium">Этикетки</span>
-            </Button>
-          </DebugBadge>
+          {canSeeCommon && (
+            <DebugBadge id="Manager:nav.labels" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+                onClick={() => navigate("/admin/labels")}
+              >
+                <Icon name="Tag" size={20} />
+                <span className="font-medium">Этикетки</span>
+              </Button>
+            </DebugBadge>
+          )}
         </div>
       </main>
     </div>

@@ -48,7 +48,7 @@ def handler(event: dict, context) -> dict:
 
     # GET /roles — список ролей
     if method == 'GET' and path.endswith('/roles'):
-        cur.execute('SELECT id, name, description FROM roles ORDER BY id')
+        cur.execute('SELECT id, name, description FROM roles WHERE NOT is_hidden ORDER BY id')
         rows = cur.fetchall()
         roles = [{'id': r[0], 'name': r[1], 'description': r[2]} for r in rows]
         cur.close()

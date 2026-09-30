@@ -168,7 +168,7 @@ def matrix(token):
             return None, 'Нет доступа к настройке прав'
 
         hidden = ','.join("'" + _esc(x) + "'" for x in HIDDEN_ROLES)
-        cur.execute(f"SELECT id, name, description FROM roles WHERE name NOT IN ({hidden}) ORDER BY id")
+        cur.execute(f"SELECT id, name, description FROM roles WHERE name NOT IN ({hidden}) AND NOT is_hidden ORDER BY id")
         roles = [dict(r) for r in cur.fetchall()]
 
         cur.execute(

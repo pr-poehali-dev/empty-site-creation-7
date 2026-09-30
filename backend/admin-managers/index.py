@@ -94,7 +94,7 @@ def handler(event: dict, context) -> dict:
             for r in rows
         ]
 
-        cur.execute("SELECT id, name FROM roles ORDER BY id")
+        cur.execute("SELECT id, name FROM roles WHERE NOT is_hidden ORDER BY id")
         roles = [{'id': r[0], 'name': r[1]} for r in cur.fetchall()]
 
         cur.execute("SELECT id, name FROM wholesalers ORDER BY name")
@@ -179,7 +179,7 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Некорректный доступ к аукциону'})}
 
-        cur.execute("SELECT id, name FROM roles WHERE id = %s", (role_id,))
+        cur.execute("SELECT id, name FROM roles WHERE id = %s AND NOT is_hidden", (role_id,))
         role_row = cur.fetchone()
         if not role_row:
             cur.close()
