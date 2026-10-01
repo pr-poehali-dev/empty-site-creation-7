@@ -1006,7 +1006,7 @@ const OrderCreatePage = () => {
   // Load brands for temp product form
   const loadBrands = useCallback(async () => {
     try {
-      const resp = await fetch(`https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe?names_only=1`, { headers: authHeaders });
+      const resp = await fetch(`https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=brands&names_only=1`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok && Array.isArray(data.items)) {
         setAllBrands(data.items);

@@ -7,7 +7,7 @@ import Icon from "@/components/ui/icon";
 
 const BULK_RESOLVE_URL = "https://functions.poehali.dev/793352cf-67e1-4127-8a2a-a47efa5e2630";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
-const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
+const BRANDS_URL = "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=brands";
 
 interface RowInput {
   article: string;
@@ -94,7 +94,7 @@ const BulkPastePage = () => {
   }, []);
 
   useEffect(() => {
-    fetch(`${BRANDS_URL}?names_only=1`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${BRANDS_URL}&names_only=1`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.items)) setAllBrands(d.items); })
       .catch(() => { /* ignore */ });

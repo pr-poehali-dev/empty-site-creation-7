@@ -17,7 +17,7 @@ import { matchesTransliterated, transliterateVariants } from "@/lib/translit";
 
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
-const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
+const CATEGORIES_URL = "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=categories";
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 
 interface UsedOrder {

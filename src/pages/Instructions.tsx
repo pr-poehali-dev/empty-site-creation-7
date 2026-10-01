@@ -479,8 +479,7 @@ const TAB_ABOUT = `# О проекте «Мир Техники Плюс»
 | admin-managers | CRUD менеджеров и ролей | managers, roles |
 | owner-employees | Сотрудники | employees |
 | catalog-products | Товары: CRUD, фото на S3 (Pillow→webp) | products, product_images, product_barcodes |
-| catalog-categories | Категории (дерево parent_id) | categories |
-| brands | Бренды (DISTINCT) | products, temp_products |
+| dictionaries | Справочники: section=brands — бренды (brands.py), section=categories — категории-дерево (categories.py), section=labels — шаблоны этикеток и выбор пользователя (labels.py) | brands, products, temp_products, categories, label_templates, label_user_prefs |
 | temp-products | Временные товары | temp_products |
 | new-barcodes | Новые штрихкоды | new_barcodes |
 | wholesale-orders | Заявки: позиции, блокировки, авто-цены | wholesale_orders, wholesale_order_items, pricing_rules, order_locks |
@@ -491,7 +490,6 @@ const TAB_ABOUT = `# О проекте «Мир Техники Плюс»
 | wholesalers | Оптовики | wholesalers |
 | 1c-exchange | Обмен с 1С (товары, цены) | products, categories |
 | wholesale-excel | Excel для оптовиков: kind=order — заявка с формулами (order_excel.py, образец openpyxl: merge, стили, формулы, base64), kind=price — прайс-лист (price_list.py) | wholesale_orders, wholesale_order_items, products, temp_products, product_barcodes |
-| label-templates | Шаблоны этикеток | label_templates |
 | app-settings, data-backup | Настройки, бэкапы БД | app_settings, backups, backup_settings |
 
 **Общие правила функций:** OPTIONS/CORS в начале; \`DATABASE_URL\` из env; токен из \`X-Authorization\`; ответ JSON \`{statusCode, headers, body}\`.

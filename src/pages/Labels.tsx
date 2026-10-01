@@ -35,11 +35,11 @@ import {
 const PRODUCTS_URL =
   "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
 const TEMPLATES_URL =
-  "https://functions.poehali.dev/c834571a-6ed5-44eb-a98b-a0f6eaabd7d0";
+  "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=labels";
 const TEMP_PRODUCTS_URL =
   "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
 const BRANDS_URL =
-  "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
+  "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=brands";
 
 export interface LabelProduct {
   id: number;
@@ -224,7 +224,7 @@ const Labels = () => {
 
   // Загрузка брендов для автоподстановки
   useEffect(() => {
-    fetch(`${BRANDS_URL}?names_only=1`, { headers: authHeaders })
+    fetch(`${BRANDS_URL}&names_only=1`, { headers: authHeaders })
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.items)) setAllBrands(d.items);
@@ -420,7 +420,7 @@ const Labels = () => {
       setPresetIdx("3");
       if (!isOwner && t.id !== myTplId) {
         setMyTplId(t.id);
-        fetch(`${TEMPLATES_URL}?action=pref`, {
+        fetch(`${TEMPLATES_URL}&action=pref`, {
           method: "POST",
           headers: { ...authHeaders, "Content-Type": "application/json" },
           body: JSON.stringify({ template_id: t.id }),
@@ -454,7 +454,7 @@ const Labels = () => {
     try {
       const isUpdate = !!targetTemplate;
       const url = isUpdate
-        ? `${TEMPLATES_URL}?id=${targetTemplate!.id}`
+        ? `${TEMPLATES_URL}&id=${targetTemplate!.id}`
         : TEMPLATES_URL;
       const resp = await fetch(url, {
         method: isUpdate ? "PUT" : "POST",
@@ -489,7 +489,7 @@ const Labels = () => {
   const deleteTemplate = async () => {
     if (!selectedTplId) return;
     try {
-      const resp = await fetch(`${TEMPLATES_URL}?id=${selectedTplId}`, {
+      const resp = await fetch(`${TEMPLATES_URL}&id=${selectedTplId}`, {
         method: "DELETE",
         headers: authHeaders,
       });

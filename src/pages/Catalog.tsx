@@ -31,9 +31,9 @@ import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 import compressImage from "@/lib/compressImage";
 
-const CATEGORIES_URL = "https://functions.poehali.dev/2a93326d-2932-4f08-9867-b7d3f441d846";
+const CATEGORIES_URL = "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=categories";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
-const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
+const BRANDS_URL = "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=brands";
 
 interface Category {
   id: number;
@@ -185,7 +185,7 @@ const Catalog = () => {
 
   const fetchBrands = useCallback(async () => {
     try {
-      const resp = await fetch(`${BRANDS_URL}?names_only=1`, { headers: authHeaders });
+      const resp = await fetch(`${BRANDS_URL}&names_only=1`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok && Array.isArray(data.items)) setAllBrands(data.items);
     } catch { /* ignore */ }

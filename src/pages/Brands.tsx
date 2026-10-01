@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 
-const BRANDS_URL = "https://functions.poehali.dev/6406512c-44db-46fe-bc84-7ab460f71dfe";
+const BRANDS_URL = "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=brands";
 
 interface Brand {
   name: string;

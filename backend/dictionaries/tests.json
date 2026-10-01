@@ -1,0 +1,6 @@
+{"tests": [
+{"name": "Без раздела — ошибка", "method": "GET", "path": "/", "expectedStatus": 400, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
+{"name": "Бренды без токена — отказ", "method": "GET", "path": "/?section=brands&names_only=1", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
+{"name": "Категории без токена — отказ", "method": "GET", "path": "/?section=categories", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
+{"name": "Шаблоны без токена — отказ", "method": "GET", "path": "/?section=labels", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"}
+]}
