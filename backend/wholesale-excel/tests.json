@@ -1,0 +1,7 @@
+{
+  "tests": [
+    {"name": "Заявка без токена — отказ", "method": "GET", "path": "/?kind=order&id=1", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
+    {"name": "Прайс: фирмы без токена — отказ", "method": "GET", "path": "/?kind=price", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
+    {"name": "Прайс: сборка без токена — отказ", "method": "POST", "path": "/?kind=price", "body": {"order_ids": [1]}, "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"}
+  ]
+}

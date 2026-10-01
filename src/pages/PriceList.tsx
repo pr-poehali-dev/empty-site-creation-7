@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 
-const PRICE_URL = "https://functions.poehali.dev/f0c7f8e2-5238-412f-b509-3a51d808a1df";
+const PRICE_URL = "https://functions.poehali.dev/0a20fb2e-2a13-4ae4-a0dc-905222ac831d?kind=price";
 
 interface PriceItem {
   brand: string;

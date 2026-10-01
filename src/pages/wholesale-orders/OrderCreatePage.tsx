@@ -34,7 +34,7 @@ const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac
 const WHOLESALERS_URL = "https://functions.poehali.dev/03df983f-e7e9-4cd5-9427-e61b88d1171f";
 const PRICING_URL = "https://functions.poehali.dev/8b1df5ee-7914-4801-aa0f-3bd851bdb4a0";
 const TEMP_PRODUCTS_URL = "https://functions.poehali.dev/ff99d086-44a7-4bda-9977-abd1d352fb63";
-const EXPORT_URL = "https://functions.poehali.dev/9a93a221-e083-4f2d-9e96-1d086b30243b";
+const EXPORT_URL = "https://functions.poehali.dev/0a20fb2e-2a13-4ae4-a0dc-905222ac831d?kind=order";
 const RETURNS_URL = "https://functions.poehali.dev/57193003-9226-4238-83dd-4f87ff8cd5ad";
 
 interface OrderLine {
@@ -1775,7 +1775,7 @@ const OrderCreatePage = () => {
     if (!editId) return;
     setExporting(true);
     try {
-      const resp = await fetch(`${EXPORT_URL}?id=${editId}`, { headers: authHeaders });
+      const resp = await fetch(`${EXPORT_URL}&id=${editId}`, { headers: authHeaders });
       const data = await resp.json();
       if (resp.ok && data.file) {
         const byteChars = atob(data.file);
