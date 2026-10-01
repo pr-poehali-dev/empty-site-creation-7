@@ -251,7 +251,7 @@ const NewProducts = () => {
     try {
       const resp = await fetch(CATEGORIES_URL, { headers: authHeaders });
       const data = await resp.json();
-      if (resp.ok) setCategories(data.items || []);
+      if (resp.ok) setCategories(data.categories || []);
     } catch { /* ignore */ }
   }, [token]);
 
