@@ -140,30 +140,73 @@ def _stock_where(wh, q):
     return where
 
 
+PAGE = 200
+DIR_SQL = "COALESCE(NULLIF(btrim(direction),''),'')"
+
+
+def _page(params):
+    """Порция по 200 строк: offset — сколько уже показано."""
+    try:
+        return max(int(params.get('offset') or 0), 0)
+    except ValueError:
+        return 0
+
+
+def _dir_where(params):
+    """Направление как есть; пустое — «Без направления». Не передано — без фильтра."""
+    if 'direction' not in params or params.get('direction') is None:
+        return ''
+    return f" AND {DIR_SQL}='{_esc(params.get('direction') or '')}'"
+
+
+def act_dirs(cur, allowed, params):
+    """Первый уровень склада: направления с числом единиц и позиций.
+    По алфавиту, «Без направления» — последним."""
+    wh = (params.get('warehouse') or '').strip()
+    if wh not in allowed:
+        return None, 'Этот склад вам не открыт'
+    where = _stock_where(wh, (params.get('q') or '').strip())
+    off = _page(params)
+    cur.execute(
+        f"SELECT {DIR_SQL} AS direction, COUNT(*) AS qty, "
+        f"COUNT(DISTINCT ({G},{B},{M})) AS positions, COUNT(*) OVER () AS total "
+        f"FROM receiving_items WHERE {where} GROUP BY 1 "
+        f"ORDER BY ({DIR_SQL}='') , lower({DIR_SQL}) LIMIT {PAGE} OFFSET {off}"
+    )
+    rows = cur.fetchall()
+    total = int(rows[0]['total']) if rows else 0
+    out = [{'direction': r['direction'], 'qty': int(r['qty']), 'positions': int(r['positions'])} for r in rows]
+    return {'rows': out, 'total': total, 'warehouse': wh}, None
+
+
 def act_groups(cur, allowed, params):
-    """Остаток склада — по позициям: группа + бренд + модель.
+    """Остаток склада — по позициям: группа + бренд + модель, внутри направления.
     По техническому наименованию группировать нельзя: поставщик дописывает
     слэш с номером, и каждая единица становится отдельной строкой."""
     wh = (params.get('warehouse') or '').strip()
     if wh not in allowed:
         return None, 'Этот склад вам не открыт'
     q = (params.get('q') or '').strip()
-    where = _stock_where(wh, q)
+    where = _stock_where(wh, q) + _dir_where(params)
+    off = _page(params)
     cur.execute(
         f"SELECT {NAME_SQL} AS name, {G} AS product_group, {B} AS brand, {M} AS model, "
         f"COUNT(*) AS qty, "
         f"MIN(NULLIF(btrim(factory_barcode),'')) AS factory_barcode, "
-        f"COUNT(DISTINCT NULLIF(btrim(factory_barcode),'')) AS factory_variants "
+        f"COUNT(DISTINCT NULLIF(btrim(factory_barcode),'')) AS factory_variants, "
+        f"COUNT(*) OVER () AS total "
         f"FROM receiving_items WHERE {where} "
-        f"GROUP BY 1,2,3,4 ORDER BY qty DESC, 1 LIMIT 200"
+        f"GROUP BY 1,2,3,4 ORDER BY qty DESC, 1 LIMIT {PAGE} OFFSET {off}"
     )
     rows = []
+    total = 0
     for r in cur.fetchall():
         d = dict(r)
+        total = int(d.pop('total'))
         d['qty'] = int(d['qty'])
         d['factory_variants'] = int(d['factory_variants'] or 0)
         rows.append(d)
-    return {'rows': rows, 'warehouse': wh}, None
+    return {'rows': rows, 'total': total, 'warehouse': wh}, None
 
 
 def act_units(cur, allowed, params):
@@ -177,13 +220,18 @@ def act_units(cur, allowed, params):
     q = (params.get('q') or '').strip()
     if not (g or b or m):
         return None, 'Не указана позиция'
-    where = _stock_where(wh, q)
+    where = _stock_where(wh, q) + _dir_where(params)
+    off = _page(params)
     cur.execute(
-        f"SELECT {ITEM_COLS} FROM receiving_items "
+        f"SELECT {ITEM_COLS}, COUNT(*) OVER () AS total FROM receiving_items "
         f"WHERE {where} AND {G}='{_esc(g)}' AND {B}='{_esc(b)}' AND {M}='{_esc(m)}' "
-        f"ORDER BY id LIMIT 300"
+        f"ORDER BY id LIMIT {PAGE} OFFSET {off}"
     )
-    return {'rows': [dict(r) for r in cur.fetchall()]}, None
+    rows = [dict(r) for r in cur.fetchall()]
+    total = int(rows[0]['total']) if rows else 0
+    for r in rows:
+        r.pop('total', None)
+    return {'rows': rows, 'total': total}, None
 
 
 def act_find(cur, allowed, params):
@@ -322,7 +370,7 @@ def act_history(cur, params):
 
 
 def handler(event: dict, context) -> dict:
-    """Склады приёмки: остатки по техническим наименованиям, раскрытие до конкретных единиц, перемещение сканером или списком без накладных, отмена последнего перемещения и история пути каждой единицы."""
+    """Склады приёмки: остатки по направлениям и позициям (по 200 строк с догрузкой), раскрытие до конкретных единиц, перемещение сканером или списком без накладных, отмена последнего перемещения и история пути каждой единицы."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -355,6 +403,7 @@ def handler(event: dict, context) -> dict:
             return _resp(403, {'error': 'Склады вам не открыты'})
 
         handlers = {
+            'dirs': lambda: act_dirs(cur, allowed, params),
             'groups': lambda: act_groups(cur, allowed, params),
             'units': lambda: act_units(cur, allowed, params),
             'find': lambda: act_find(cur, allowed, params),

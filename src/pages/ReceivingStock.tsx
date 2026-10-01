@@ -9,12 +9,13 @@ import CameraScanButton from "@/components/receiving/CameraScanButton";
 import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
 import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import MovePanel from "./receiving-stock/MovePanel";
-import StockGroupRow from "./receiving-stock/StockGroupRow";
+import ShowMore from "./receiving-stock/ShowMore";
+import StockDirRow from "./receiving-stock/StockDirRow";
 import {
-  loadGroups,
+  loadDirs,
   loadTotals,
   loadWarehouses,
-  type StockGroup,
+  type StockDir,
   type WarehouseTotal,
 } from "./receiving-stock/stockApi";
 
@@ -42,7 +43,11 @@ const ReceivingStock = () => {
   const [warehouses, setWarehouses] = useState<{ key: string; name: string }[]>([]);
   const [totals, setTotals] = useState<WarehouseTotal[]>([]);
   const [active, setActive] = useState("");
-  const [groups, setGroups] = useState<StockGroup[]>([]);
+  const [dirs, setDirs] = useState<StockDir[]>([]);
+  const [dirsTotal, setDirsTotal] = useState(0);
+  const [moreBusy, setMoreBusy] = useState(false);
+  /** Меняется при каждой перезагрузке — раскрытые направления перечитываются заново. */
+  const [version, setVersion] = useState(0);
   const [query, setQuery] = useState(snap.query || "");
   const [target, setTarget] = useState(snap.target || "");
   const [selected, setSelected] = useState<Set<number>>(() => new Set(snap.selected || []));
@@ -88,8 +93,10 @@ const ReceivingStock = () => {
     if (!active) return;
     setBusy(true);
     try {
-      const d = await loadGroups(active, query);
-      setGroups(d.rows);
+      const d = await loadDirs(active, query);
+      setDirs(d.rows);
+      setDirsTotal(d.total);
+      setVersion((v) => v + 1);
     } catch (e) {
       toast({ title: (e as Error).message, variant: "destructive" });
     } finally {
@@ -106,6 +113,19 @@ const ReceivingStock = () => {
     const t = setTimeout(refreshGroups, query ? 300 : 0);
     return () => clearTimeout(t);
   }, [active, query, refreshGroups]);
+
+  const moreDirs = async () => {
+    setMoreBusy(true);
+    try {
+      const d = await loadDirs(active, query, dirs.length);
+      setDirs((prev) => [...prev, ...d.rows]);
+      setDirsTotal(d.total);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setMoreBusy(false);
+    }
+  };
 
   const reloadAll = useCallback(() => {
     refreshTotals();
@@ -274,7 +294,7 @@ const ReceivingStock = () => {
         )}
 
         <div className="rounded-xl border border-white/[0.08] bg-card divide-y divide-white/[0.06] overflow-hidden">
-          {groups.length === 0 && !busy ? (
+          {dirs.length === 0 && !busy ? (
             <div className="px-4 py-10 text-center">
               <Icon
                 name="PackageOpen"
@@ -296,16 +316,20 @@ const ReceivingStock = () => {
               )}
             </div>
           ) : (
-            groups.map((g) => (
-              <StockGroupRow
-                key={`${g.product_group}|${g.brand}|${g.model}`}
-                group={g}
-                warehouse={active}
-                query={query}
-                selected={selected}
-                onToggle={toggleUnit}
-              />
-            ))
+            <>
+              {dirs.map((d) => (
+                <StockDirRow
+                  key={`${version}|${d.direction}`}
+                  dir={d}
+                  warehouse={active}
+                  query={query}
+                  initiallyOpen={query.trim().length >= 2}
+                  selected={selected}
+                  onToggle={toggleUnit}
+                />
+              ))}
+              <ShowMore shown={dirs.length} total={dirsTotal} busy={moreBusy} onMore={moreDirs} />
+            </>
           )}
         </div>
       </main>

@@ -1,21 +1,25 @@
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import Icon from "@/components/ui/icon";
+import ShowMore from "./ShowMore";
 import UnitHistory from "./UnitHistory";
 import { loadUnits, type StockGroup, type StockUnit } from "./stockApi";
 
 interface Props {
   group: StockGroup;
   warehouse: string;
+  direction: string;
   query?: string;
   selected: Set<number>;
   onToggle: (id: number) => void;
 }
 
 /** Строка остатка: позиция и количество, по тапу — конкретные единицы. */
-const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Props) => {
+const StockGroupRow = ({ group, warehouse, direction, query = "", selected, onToggle }: Props) => {
   const [open, setOpen] = useState(false);
   const [units, setUnits] = useState<StockUnit[]>([]);
+  const [total, setTotal] = useState(0);
+  const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [historyOf, setHistoryOf] = useState<number | null>(null);
 
@@ -30,8 +34,9 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
     if (next && units.length === 0) {
       setBusy(true);
       try {
-        const d = await loadUnits(warehouse, group, query);
+        const d = await loadUnits(warehouse, direction, group, query);
         setUnits(d.rows);
+        setTotal(d.total);
       } catch {
         setUnits([]);
       } finally {
@@ -40,11 +45,24 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
     }
   };
 
+  const loadMore = async () => {
+    setMore(true);
+    try {
+      const d = await loadUnits(warehouse, direction, group, query, units.length);
+      setUnits((prev) => [...prev, ...d.rows]);
+      setTotal(d.total);
+    } catch {
+      /* кнопка останется — можно нажать ещё раз */
+    } finally {
+      setMore(false);
+    }
+  };
+
   return (
     <div>
       <button
         onClick={toggle}
-        className="w-full px-4 py-1.5 flex items-center gap-3 text-left hover:bg-white/[0.03] transition-colors"
+        className="w-full pl-8 pr-4 py-1.5 flex items-center gap-3 text-left hover:bg-white/[0.03] transition-colors"
       >
         <Icon
           name={open ? "ChevronDown" : "ChevronRight"}
@@ -74,7 +92,7 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
 
           {units.map((u) => (
             <div key={u.id} className="border-b border-white/[0.05] last:border-0">
-              <div className="px-4 py-2 flex items-start gap-3">
+              <div className="pl-12 pr-4 py-2 flex items-start gap-3">
                 <Checkbox
                   checked={selected.has(u.id)}
                   onCheckedChange={() => onToggle(u.id)}
@@ -111,6 +129,7 @@ const StockGroupRow = ({ group, warehouse, query = "", selected, onToggle }: Pro
               {historyOf === u.id && <UnitHistory itemId={u.id} />}
             </div>
           ))}
+          <ShowMore shown={units.length} total={total} busy={more} onMore={loadMore} indent="pl-12" />
         </div>
       )}
     </div>

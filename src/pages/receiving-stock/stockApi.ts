@@ -76,18 +76,49 @@ export const loadWarehouses = () =>
 
 export const loadTotals = () => get<{ totals: WarehouseTotal[] }>("action=totals");
 
-export const loadGroups = (warehouse: string, q = "") =>
-  get<{ rows: StockGroup[]; warehouse: string }>(
-    `action=groups&warehouse=${encodeURIComponent(warehouse)}&q=${encodeURIComponent(q)}`
+export interface StockDir {
+  /** Как пришло от поставщика; пустая строка — «Без направления». */
+  direction: string;
+  qty: number;
+  positions: number;
+}
+
+export interface Page<T> {
+  rows: T[];
+  /** Сколько строк всего — для «Показать ещё». */
+  total: number;
+}
+
+export const PAGE = 200;
+
+export const dirTitle = (d: string) => d || "Без направления";
+
+const enc = encodeURIComponent;
+
+export const loadDirs = (warehouse: string, q = "", offset = 0) =>
+  get<Page<StockDir>>(
+    `action=dirs&warehouse=${enc(warehouse)}&q=${enc(q)}&offset=${offset}`
   );
 
-export const loadUnits = (warehouse: string, group: StockGroup, q = "") =>
-  get<{ rows: StockUnit[] }>(
-    `action=units&warehouse=${encodeURIComponent(warehouse)}` +
-      `&product_group=${encodeURIComponent(group.product_group)}` +
-      `&brand=${encodeURIComponent(group.brand)}` +
-      `&model=${encodeURIComponent(group.model)}` +
-      `&q=${encodeURIComponent(q)}`
+export const loadGroups = (warehouse: string, direction: string, q = "", offset = 0) =>
+  get<Page<StockGroup>>(
+    `action=groups&warehouse=${enc(warehouse)}&direction=${enc(direction)}` +
+      `&q=${enc(q)}&offset=${offset}`
+  );
+
+export const loadUnits = (
+  warehouse: string,
+  direction: string,
+  group: StockGroup,
+  q = "",
+  offset = 0
+) =>
+  get<Page<StockUnit>>(
+    `action=units&warehouse=${enc(warehouse)}&direction=${enc(direction)}` +
+      `&product_group=${enc(group.product_group)}` +
+      `&brand=${enc(group.brand)}` +
+      `&model=${enc(group.model)}` +
+      `&q=${enc(q)}&offset=${offset}`
   );
 
 export const findByCode = (code: string) =>
