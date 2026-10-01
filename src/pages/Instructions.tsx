@@ -490,7 +490,7 @@ const TAB_ABOUT = `# О проекте «Мир Техники Плюс»
 | pricing-rules | Правила цен (фильтр + формула) | pricing_rules |
 | wholesalers | Оптовики | wholesalers |
 | 1c-exchange | Обмен с 1С (товары, цены) | products, categories |
-| export-order | ВАЖНО: экспорт заявки в Excel через openpyxl (заголовок, таблица, формулы, merge, base64) | wholesale_orders, wholesale_order_items, products, temp_products, product_barcodes |
+| wholesale-excel | Excel для оптовиков: kind=order — заявка с формулами (order_excel.py, образец openpyxl: merge, стили, формулы, base64), kind=price — прайс-лист (price_list.py) | wholesale_orders, wholesale_order_items, products, temp_products, product_barcodes |
 | label-templates | Шаблоны этикеток | label_templates |
 | app-settings, data-backup | Настройки, бэкапы БД | app_settings, backups, backup_settings |
 
@@ -503,7 +503,7 @@ const TAB_ABOUT = `# О проекте «Мир Техники Плюс»
 - **Прочее:** label_templates, app_settings, settings, backups, backup_settings.
 
 ## 7. Особенности и подводные камни
-- **export-order = готовый образец генерации Excel** (openpyxl: merge, стили, формулы \`=E*F\`, \`=SUM\`, отдача base64).
+- **wholesale-excel/order_excel.py = готовый образец генерации Excel** (openpyxl: merge, стили, формулы \`=E*F\`, \`=SUM\`, отдача base64).
 - **Блокировка заявок:** при правке заявка лочится на сессию (\`order_locks\` + heartbeat), чтобы двое не правили одновременно. Есть версионирование.
 - **Цены по правилам:** \`pricing_rules\` = фильтр (по группе товара) + формула (\`+10\`, \`*1.2\`); при добавлении товара цена подставляется автоматически.
 - **Временные товары:** отсканировали штрихкод, которого нет в каталоге → создаётся \`temp_product\` (бренд+артикул), позже сопоставляется с реальной номенклатурой.
