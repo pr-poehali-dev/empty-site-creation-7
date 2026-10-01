@@ -18,6 +18,7 @@ import {
   findCurrent,
   loadState,
   openReceiving,
+  receivingDate,
   removeItem,
   scanCode,
   undoCheck,
@@ -324,6 +325,9 @@ const ReceivingDaily = () => {
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-semibold truncate">{title}</h1>
             <p className="text-xs text-muted-foreground truncate">
+              {receiving
+                ? `№${receiving.id} · ${receivingDate(receiving.work_date)}${receiving.employee_name ? ` · ${receiving.employee_name}` : ""} · `
+                : ""}
               Проверено: {counters.total}
             </p>
           </div>

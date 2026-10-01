@@ -1,6 +1,6 @@
 import Icon from "@/components/ui/icon";
 import OutcomeChips from "./OutcomeChips";
-import { KIND_SHORT, KIND_TITLES, type ReceivingRow } from "./dailyApi";
+import { KIND_SHORT, KIND_TITLES, receivingDate, type ReceivingRow } from "./dailyApi";
 
 interface Props {
   row: ReceivingRow;
@@ -11,9 +11,6 @@ interface Props {
   onDelete: () => void;
 }
 
-const dateRu = (v: string) =>
-  new Date(v).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "2-digit" });
-
 /** Строка приёмки. Удаление — отдельной кнопкой, чтобы не стереть вместо открытия. */
 const ReceivingRowItem = ({ row, full = false, deleting, onOpen, onDelete }: Props) => (
   <div className="flex items-center hover:bg-white/[0.03] transition-colors">
@@ -23,7 +20,9 @@ const ReceivingRowItem = ({ row, full = false, deleting, onOpen, onDelete }: Pro
     >
       <div className="flex-1 min-w-0">
         <div className="text-sm flex items-center gap-2 flex-wrap">
-          <span>{dateRu(row.work_date)}</span>
+          <span className="text-muted-foreground">№{row.id}</span>
+          <span className="text-muted-foreground">·</span>
+          <span>{receivingDate(row.work_date)}</span>
           {full && (
             <>
               <span className="text-muted-foreground">·</span>

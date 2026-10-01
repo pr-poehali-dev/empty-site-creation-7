@@ -273,6 +273,7 @@ const ReceivingList = () => {
 
       {toDelete && (
         <DeleteDialog
+          id={toDelete.id}
           workDate={toDelete.work_date}
           kind={toDelete.kind}
           busy={deleting}

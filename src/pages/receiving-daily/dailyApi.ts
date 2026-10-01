@@ -223,3 +223,8 @@ export const removeItem = (item_id: number, receiving_id: number) =>
 
 export const searchItems = (q: string) =>
   get<{ rows: DailyItem[] }>(`action=search&q=${encodeURIComponent(q)}`);
+/** «30.09.26 г.» — дата приёмки во всех списках и шапках. */
+export const receivingDate = (v: string) => {
+  const [y, m, d] = v.slice(0, 10).split("-");
+  return `${d}.${m}.${y.slice(2)} г.`;
+};

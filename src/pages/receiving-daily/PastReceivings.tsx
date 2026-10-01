@@ -190,6 +190,7 @@ const PastReceivings = ({ excludeId, backTo }: Props) => {
 
       {toDelete && (
         <DeleteDialog
+          id={toDelete.id}
           workDate={toDelete.work_date}
           kind={toDelete.kind}
           busy={deleting}

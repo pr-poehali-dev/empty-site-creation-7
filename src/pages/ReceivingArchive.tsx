@@ -11,6 +11,7 @@ import DeleteDialog from "./receiving-daily/DeleteDialog";
 import {
   KIND_TITLES,
   OUTCOME_WAREHOUSE,
+  receivingDate,
   deleteReceiving,
   isMoved,
   loadArchive,
@@ -27,9 +28,6 @@ const RESULT_CLS: Record<string, string> = {
   repair: "text-amber-300",
   scrap: "text-rose-300",
 };
-
-const dateRu = (v: string) =>
-  new Date(v).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
 
 /** Закрытая приёмка: смотреть можно, править нельзя. Сканер тут не нужен. */
 const ReceivingArchive = () => {
@@ -140,7 +138,7 @@ const ReceivingArchive = () => {
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-semibold truncate">{title}</h1>
             <p className="text-xs text-muted-foreground truncate">
-              {receiving ? dateRu(receiving.work_date) : ""}
+              {receiving ? `№${receiving.id} · ${receivingDate(receiving.work_date)}` : ""}
               {receiving?.employee_name ? ` · ${receiving.employee_name}` : ""}
             </p>
           </div>
@@ -278,6 +276,7 @@ const ReceivingArchive = () => {
 
       {askDelete && receiving && (
         <DeleteDialog
+          id={receiving.id}
           workDate={receiving.work_date}
           kind={receiving.kind}
           busy={deleting}
