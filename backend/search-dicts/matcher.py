@@ -1,7 +1,8 @@
 """Сопоставление строк счёта с каталогом по наименованию.
 Строка счёта разбирается тем же parse_name, что и карточки каталога."""
 import json
-from parser import parse_name, find_brand, squash
+import re
+from parser import parse_name, find_brand, squash, TAIL_BU
 
 FIELDS = (
     "p.id, p.name, p.article, p.product_group, p.brand, p.price_base, p.price_retail, "
@@ -47,6 +48,25 @@ def load_catalog(cur, brand_ids):
         idx = by_brand.setdefault(r[12], {})
         idx.setdefault(squash(r[9]), []).append(c)
     return by_brand
+
+
+def norm_text(s):
+    """Для сравнения признаков и наименований: без б/у, регистра, ё/е, пробелов и знаков."""
+    s = TAIL_BU.sub('', s or '').lower().replace('ё', 'е')
+    return re.sub(r'[^0-9a-zа-я]', '', s)
+
+
+def pick_exact(p, row_name, cands):
+    """Из товаров с той же моделью выбирает единственный по признаку или по полному наименованию."""
+    f = norm_text(p.get('feature'))
+    same = [c for c in cands if norm_text(c.get('feature')) == f]
+    if len(same) == 1:
+        return same[0], 'exact_feature'
+    n = norm_text(row_name)
+    same_name = [c for c in cands if norm_text(c.get('name')) == n]
+    if len(same_name) == 1:
+        return same_name[0], 'exact_name'
+    return None, None
 
 
 def words(s):
@@ -122,7 +142,7 @@ def match_by_name(cur, rows, brand_id=None):
     out = []
     for r, (b, implied, p) in zip(rows, parsed_rows):
         row = {k: v for k, v in r.items()
-               if k not in ('candidates', 'product_id', 'match_type', 'match_reason', 'chosen_name', 'match_status', 'prev_status')}
+               if k not in ('candidates', 'product_id', 'match_type', 'match_reason', 'chosen_name', 'match_status', 'prev_status', 'catalog_features')}
         row['parsed'] = {
             'brand': b['name'] if b else None,
             'brand_implied': implied,
@@ -146,11 +166,23 @@ def match_by_name(cur, rows, brand_id=None):
             if exact:
                 cands = sorted(exact, key=lambda c: -closeness(ref, c))
                 row['match_type'] = 'exact'
-                if len(cands) == 1:
+                hit, how = pick_exact(p, r.get('name'), cands)
+                if hit:
                     row['match_status'] = 'matched'
-                    row['product_id'] = cands[0]['id']
+                    row['match_type'] = how
+                    row['product_id'] = hit['id']
+                    row['chosen_name'] = hit['name']
+                    cands = [hit] + [c for c in cands if c['id'] != hit['id']]
                 else:
                     row['match_status'] = 'ambiguous'
+                    f = norm_text(p.get('feature'))
+                    if len(cands) == 1:
+                        row['match_reason'] = 'feature_differs'
+                    elif any(norm_text(c.get('feature')) == f for c in cands):
+                        row['match_reason'] = 'feature_many'
+                    else:
+                        row['match_reason'] = 'feature_not_found'
+                    row['catalog_features'] = sorted({c.get('feature') or '—' for c in cands})
                 row['candidates'] = cands[:30]
             else:
                 cands = fuzzy(key, index) if key else []

@@ -41,6 +41,7 @@ export interface MatchRow {
   product_id?: number;
   chosen_name?: string;
   prev_status?: MatchStatus;
+  catalog_features?: string[];
   candidates: Candidate[];
   parsed?: {
     brand: string | null;

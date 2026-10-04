@@ -76,8 +76,17 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
           <p className="text-sm font-medium text-amber-400">
             {r.match_status === "suggested"
               ? "Точной модели нет — похожие варианты"
-              : "Нужен выбор — несколько подходящих товаров"}
+              : r.match_reason === "feature_differs"
+                ? "Модель есть, но признак другой"
+                : r.match_reason === "feature_not_found"
+                  ? "Такого признака у модели нет"
+                  : "Нужен выбор — несколько подходящих товаров"}
           </p>
+          {r.catalog_features && r.catalog_features.length > 0 && r.match_reason !== "feature_many" && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              В счёте: <span className="text-foreground">{p?.feature || "—"}</span> · в каталоге: {r.catalog_features.join(", ")}
+            </p>
+          )}
           <div className="mt-2 space-y-1">
             {list.map((c, idx) => (
               <div key={c.id} className="flex items-stretch gap-1">
@@ -143,7 +152,13 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
       {resolved && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <p className="text-sm text-emerald-400 flex-1 min-w-0 break-words">
-            {r.match_status === "manual" ? "Выбран вручную" : "Найден"}
+            {r.match_status === "manual"
+              ? "Выбран вручную"
+              : r.match_type === "exact_feature"
+                ? "Найден по модели и признаку"
+                : r.match_type === "exact_name"
+                  ? "Найден по наименованию"
+                  : "Найден"}
             {chosen ? `: ${chosen}` : ""}
           </p>
           <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => pick(null)}>
