@@ -2,6 +2,71 @@
 import json
 import os
 import psycopg2
+from psycopg2.extras import execute_values
+from parser import parse_name
+
+
+def brand_products(cur, brand_id):
+    cur.execute("SELECT name, aliases FROM search_brands WHERE id = %s", (brand_id,))
+    b = cur.fetchone()
+    if not b:
+        return None, []
+    aliases = list({b[0], *(b[1] or [])})
+    conds = ' OR '.join(['p.name ILIKE %s'] * len(aliases))
+    cur.execute(
+        f"""SELECT p.id, p.name, p.article, p.parse_status FROM products p
+            WHERE COALESCE(p.is_archived, false) = false AND ({conds}) ORDER BY p.id""",
+        [f'%{a}%' for a in aliases],
+    )
+    return {'id': brand_id, 'name': b[0], 'aliases': aliases}, cur.fetchall()
+
+
+def run_parse(cur, brand_id, apply):
+    brand, rows = brand_products(cur, brand_id)
+    if not brand:
+        return resp(404, {'error': 'Бренд не найден'})
+    results, skipped_manual = [], 0
+    for pid, name, article, status in rows:
+        r = parse_name(name, article, brand['aliases'])
+        if not r:
+            continue
+        if status == 'manual':
+            skipped_manual += 1
+            continue
+        results.append({'id': pid, 'name': name, 'article': article, **r})
+
+    counts = {'parsed': 0, 'doubtful': 0}
+    groups = {}
+    for r in results:
+        counts[r['status']] += 1
+        if r['group']:
+            groups[r['group']] = groups.get(r['group'], 0) + 1
+
+    if not apply:
+        return resp(200, {
+            'brand': brand['name'], 'total': len(results), 'counts': counts,
+            'skipped_manual': skipped_manual,
+            'groups': sorted(groups.items(), key=lambda x: -x[1]),
+            'items': results,
+        })
+
+    names = list(groups.keys())
+    if names:
+        execute_values(cur, "INSERT INTO search_groups (name) VALUES %s ON CONFLICT (name) DO NOTHING",
+                       [(n,) for n in names])
+    cur.execute("SELECT id, name FROM search_groups")
+    gid = {n: i for i, n in cur.fetchall()}
+    execute_values(
+        cur,
+        """UPDATE products p SET search_group_id = v.g, search_brand_id = v.b, model = v.m,
+                  feature = v.f, parse_status = v.s
+           FROM (VALUES %s) AS v(id, g, b, m, f, s)
+           WHERE p.id = v.id AND p.parse_status <> 'manual'""",
+        [(r['id'], gid.get(r['group']), brand_id, r['model'], r['feature'], r['status']) for r in results],
+        template='(%s::int, %s::int, %s::int, %s::text, %s::text, %s::text)',
+        page_size=500,
+    )
+    return resp(200, {'applied': len(results), 'counts': counts, 'groups_created': len(names)})
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -147,6 +212,12 @@ def handler(event: dict, context) -> dict:
     try:
         if not is_owner(cur, event):
             return resp(403, {'error': 'Доступно только владельцу'})
+
+        if section == 'parse':
+            bid = int_or_none(params.get('brand_id'))
+            if not bid:
+                return resp(400, {'error': 'Укажите бренд'})
+            return run_parse(cur, bid, apply=(method == 'POST'))
 
         if method == 'GET':
             if section == 'brands':

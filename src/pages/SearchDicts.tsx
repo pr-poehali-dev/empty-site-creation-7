@@ -14,6 +14,7 @@ import {
   SearchGroup,
 } from "@/components/search-dicts/api";
 import DictList from "@/components/search-dicts/DictList";
+import ParsePreview from "@/components/search-dicts/ParsePreview";
 
 const SearchDicts = () => {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ const SearchDicts = () => {
   const [groups, setGroups] = useState<SearchGroup[]>([]);
   const [stats, setStats] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [parseBrandId, setParseBrandId] = useState<number | null>(null);
 
   const load = async () => {
     try {
@@ -70,6 +72,14 @@ const SearchDicts = () => {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+        {parseBrandId !== null ? (
+          <ParsePreview
+            brandId={parseBrandId}
+            onClose={() => setParseBrandId(null)}
+            onApplied={() => { setParseBrandId(null); load(); }}
+          />
+        ) : (
+        <>
         <div className="rounded-xl border border-white/[0.08] p-4">
           <p className="text-sm font-medium mb-2">Разбор каталога</p>
           <div className="flex flex-wrap gap-2">
@@ -102,6 +112,7 @@ const SearchDicts = () => {
             key="brands"
             items={brands}
             withAliases
+            onParse={(id) => setParseBrandId(id)}
             emptyText="Брендов пока нет"
             onCreate={(name, aliases) => run(() => callSearchDicts("POST", "section=brands", { name, aliases }), "Бренд добавлен")}
             onUpdate={(id, name, aliases) => run(() => callSearchDicts("PUT", `section=brands&id=${id}`, { name, aliases }), "Сохранено")}
@@ -116,6 +127,8 @@ const SearchDicts = () => {
             onUpdate={(id, name) => run(() => callSearchDicts("PUT", `section=groups&id=${id}`, { name }), "Сохранено")}
             onDelete={(id) => run(() => callSearchDicts("DELETE", `section=groups&id=${id}`), "Группа удалена")}
           />
+        )}
+        </>
         )}
       </main>
     </div>

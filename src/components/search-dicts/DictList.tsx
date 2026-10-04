@@ -17,12 +17,13 @@ interface Props {
   onCreate: (name: string, aliases: string[]) => Promise<boolean>;
   onUpdate: (id: number, name: string, aliases: string[]) => Promise<boolean>;
   onDelete: (id: number) => Promise<boolean>;
+  onParse?: (id: number) => void;
 }
 
 const splitAliases = (s: string) =>
   s.split(",").map((a) => a.trim()).filter(Boolean);
 
-const DictList = ({ items, withAliases, emptyText, onCreate, onUpdate, onDelete }: Props) => {
+const DictList = ({ items, withAliases, emptyText, onCreate, onUpdate, onDelete, onParse }: Props) => {
   const [editId, setEditId] = useState<number | "new" | null>(null);
   const [name, setName] = useState("");
   const [aliases, setAliases] = useState("");
@@ -107,6 +108,12 @@ const DictList = ({ items, withAliases, emptyText, onCreate, onUpdate, onDelete 
               )}
               <p className="text-xs text-muted-foreground mt-0.5">Товаров: {it.products}</p>
             </div>
+            {onParse && (
+              <Button size="sm" variant="outline" className="rounded-lg h-8" onClick={() => onParse(it.id)}>
+                <Icon name="ScanSearch" size={14} />
+                <span className="ml-1">Разобрать</span>
+              </Button>
+            )}
             <button
               className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.06] text-muted-foreground"
               onClick={() => start(it)}
