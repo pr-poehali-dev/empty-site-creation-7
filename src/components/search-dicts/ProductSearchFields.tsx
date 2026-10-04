@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
+import PickList from "./PickList";
 import {
   callSearchDicts,
   PARSE_STATUS_COLORS,
@@ -29,7 +30,6 @@ interface Props {
   onSaved: (v: SearchFieldsValue & { search_brand_name?: string | null; search_group_name?: string | null }) => void;
 }
 
-const selectCls = "w-full h-10 rounded-xl bg-secondary border border-white/[0.08] px-3 text-sm";
 
 const ProductSearchFields = ({ productId, value, brands, groups, onSaved }: Props) => {
   const { toast } = useToast();
@@ -91,21 +91,23 @@ const ProductSearchFields = ({ productId, value, brands, groups, onSaved }: Prop
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">Товарная группа</label>
-          <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className={selectCls}>
-            <option value="">Не указана</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
+          <PickList
+            value={groupId}
+            onChange={setGroupId}
+            placeholder="Не указана"
+            extra={[{ value: "", label: "Не указана" }]}
+            options={groups.map((g) => ({ value: String(g.id), label: g.name }))}
+          />
         </div>
         <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">Бренд</label>
-          <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className={selectCls}>
-            <option value="">Не указан</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
+          <PickList
+            value={brandId}
+            onChange={setBrandId}
+            placeholder="Не указан"
+            extra={[{ value: "", label: "Не указан" }]}
+            options={brands.map((b) => ({ value: String(b.id), label: b.name }))}
+          />
         </div>
         <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">Модель</label>

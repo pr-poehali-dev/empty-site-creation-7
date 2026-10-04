@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
+import PickList from "./PickList";
 import { PARSE_STATUS_LABELS, ParseStatus, SearchBrand, SearchGroup } from "./api";
 
 export interface SearchFilterValue {
@@ -15,7 +16,7 @@ interface Props {
   groups: SearchGroup[];
 }
 
-const cls = "h-8 rounded-lg bg-secondary border border-white/[0.08] px-2 text-xs max-w-[11rem]";
+const cls = "w-[calc(50%-0.25rem)] sm:w-44";
 
 const SearchFilters = ({ value, onChange, brands, groups }: Props) => {
   const navigate = useNavigate();
@@ -27,26 +28,37 @@ const SearchFilters = ({ value, onChange, brands, groups }: Props) => {
         <Icon name="ScanSearch" size={14} />
         Для поиска:
       </span>
-      <select value={value.brand} onChange={(e) => onChange({ ...value, brand: e.target.value })} className={cls}>
-        <option value="">Любой бренд</option>
-        <option value="none">Бренд не указан</option>
-        {brands.map((b) => (
-          <option key={b.id} value={b.id}>{b.name}</option>
-        ))}
-      </select>
-      <select value={value.group} onChange={(e) => onChange({ ...value, group: e.target.value })} className={cls}>
-        <option value="">Любая группа</option>
-        <option value="none">Группа не указана</option>
-        {groups.map((g) => (
-          <option key={g.id} value={g.id}>{g.name}</option>
-        ))}
-      </select>
-      <select value={value.status} onChange={(e) => onChange({ ...value, status: e.target.value })} className={cls}>
-        <option value="">Любое состояние</option>
-        {(Object.keys(PARSE_STATUS_LABELS) as ParseStatus[]).map((s) => (
-          <option key={s} value={s}>{PARSE_STATUS_LABELS[s]}</option>
-        ))}
-      </select>
+      <div className={cls}>
+        <PickList
+          size="sm"
+          value={value.brand}
+          onChange={(v) => onChange({ ...value, brand: v })}
+          placeholder="Любой бренд"
+          extra={[{ value: "", label: "Любой бренд" }, { value: "none", label: "Бренд не указан" }]}
+          options={brands.map((b) => ({ value: String(b.id), label: b.name, count: b.products }))}
+        />
+      </div>
+      <div className={cls}>
+        <PickList
+          size="sm"
+          value={value.group}
+          onChange={(v) => onChange({ ...value, group: v })}
+          placeholder="Любая группа"
+          extra={[{ value: "", label: "Любая группа" }, { value: "none", label: "Группа не указана" }]}
+          options={groups.map((g) => ({ value: String(g.id), label: g.name, count: g.products }))}
+        />
+      </div>
+      <div className={cls}>
+        <PickList
+          size="sm"
+          sort={false}
+          value={value.status}
+          onChange={(v) => onChange({ ...value, status: v })}
+          placeholder="Любое состояние"
+          extra={[{ value: "", label: "Любое состояние" }]}
+          options={(Object.keys(PARSE_STATUS_LABELS) as ParseStatus[]).map((s) => ({ value: s, label: PARSE_STATUS_LABELS[s] }))}
+        />
+      </div>
       {active && (
         <button
           className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
+import PickList from "./PickList";
 import { useToast } from "@/hooks/use-toast";
 import { authHeaders, SEARCH_DICTS_URL, PARSE_STATUS_COLORS, PARSE_STATUS_LABELS } from "./api";
 
@@ -145,16 +146,15 @@ const ParsePreview = ({ brandId, onClose, onApplied }: Props) => {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <select
-          value={group}
-          onChange={(e) => setGroup(e.target.value)}
-          className="h-9 rounded-xl bg-secondary border border-white/[0.08] px-3 text-sm max-w-[16rem]"
-        >
-          <option value="">Все группы ({report.groups.length})</option>
-          {report.groups.map(([g, n]) => (
-            <option key={g} value={g}>{g} — {n}</option>
-          ))}
-        </select>
+        <div className="w-full sm:w-64">
+          <PickList
+            value={group}
+            onChange={setGroup}
+            placeholder={`Все группы (${report.groups.length})`}
+            extra={[{ value: "", label: `Все группы (${report.groups.length})` }]}
+            options={report.groups.map(([g, n]) => ({ value: g, label: g, count: n }))}
+          />
+        </div>
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}

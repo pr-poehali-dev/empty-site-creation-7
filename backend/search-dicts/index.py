@@ -46,7 +46,7 @@ def run_parse(cur, brand_id, apply):
         return resp(200, {
             'brand': brand['name'], 'total': len(results), 'counts': counts,
             'skipped_manual': skipped_manual,
-            'groups': sorted(groups.items(), key=lambda x: -x[1]),
+            'groups': sorted(groups.items(), key=lambda x: x[0].lower()),
             'items': results,
         })
 
