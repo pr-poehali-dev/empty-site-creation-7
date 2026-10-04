@@ -129,17 +129,18 @@ const ParsePreview = ({ brandId, onClose, onApplied }: Props) => {
 
       <div className="grid grid-cols-3 gap-2">
         {chip("all", "Всего", report.total, "")}
-        {chip("parsed", "Разобрано уверенно", report.counts.parsed, "text-emerald-400")}
+        {chip("parsed", "Разобрано", report.counts.parsed, "text-emerald-400")}
         {chip("doubtful", "Сомнительно", report.counts.doubtful, "text-amber-400")}
       </div>
 
       <div className="rounded-xl border border-white/[0.08] p-3 text-xs text-muted-foreground space-y-1">
         <p>
-          <span className="text-foreground font-medium">Уверенно</span> — модель в названии совпала с артикулом товара.
+          Разбор идёт только по наименованию: группа — до бренда, модель — код или слова сразу после бренда,
+          признак — всё остальное.
         </p>
         <p>
-          <span className="text-foreground font-medium">Сомнительно</span> — модель не сошлась с артикулом или не
-          нашлась группа. Такие лучше просмотреть: их можно исправить в карточке после записи.
+          <span className="text-foreground font-medium">Сомнительно</span> — не удалось выделить группу или модель.
+          Их можно исправить в карточке после записи.
         </p>
       </div>
 

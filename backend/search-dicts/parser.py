@@ -1,30 +1,22 @@
-"""Разбор наименования товара на группу, бренд, модель и признак."""
+"""Разбор наименования на группу, бренд, модель и признак. Только по тексту наименования —
+одни и те же правила для каталога и для строки счёта поставщика."""
 import re
 
 CYR2LAT = str.maketrans('АВЕКМНОРСТХаеорсху', 'ABEKMHOPCTXaeopcxy')
 WORD = r'0-9A-Za-zА-Яа-яЁё'
-
-COLOR_WORDS = [
-    'нержавеющая сталь', 'розовое золото', 'розовым золотом', 'белое стекло', 'черное стекло',
-    'чёрное стекло', 'прозрачное стекло', 'вставка сатин', 'чёрный антрацит', 'черный антрацит',
-    'черный матовый', 'чёрный матовый', 'белый', 'черный', 'чёрный', 'бежевый', 'золотистый',
-    'золотой', 'бургундия', 'зелёный', 'зеленый', 'кашемир', 'медный', 'серый', 'серебристый',
-    'красный', 'синий', 'голубой', 'графит', 'антрацит',
-]
-COLOR_RE = re.compile(
-    r'(?<![' + WORD + r'])(' + '|'.join(re.escape(c) for c in COLOR_WORDS) + r')(?![' + WORD + r'])',
-    re.IGNORECASE,
-)
+CYR = re.compile(r'[А-Яа-яЁё]')
+LAT = re.compile(r'[A-Za-z]')
 TAIL_BU = re.compile(r'[\s,]*б/у?\.?\s*$', re.IGNORECASE)
 
 
 def squash(s):
+    """Ключ для сравнения моделей: без регистра, пробелов и знаков, кириллица-двойники → латиница."""
     return re.sub(r'[^0-9a-zа-яё]', '', (s or '').translate(CYR2LAT).lower())
 
 
 def clean(s):
     s = re.sub(r'\s+', ' ', s or '').strip(' ,;')
-    return s
+    return re.sub(r'\s+,', ',', s)
 
 
 def find_brand(name, aliases):
@@ -48,56 +40,68 @@ def split_group(prefix):
     return group or None, clean(extra)
 
 
-def find_article(tail, article):
-    art = (article or '').strip()
-    if not art:
-        return None
-    low = tail.lower()
-    for v in {art, art.replace('/', '\\'), art.replace('\\', '/')}:
-        i = low.find(v.lower())
-        while i >= 0:
-            before = tail[i - 1] if i > 0 else ' '
-            after = tail[i + len(v)] if i + len(v) < len(tail) else ' '
-            if not re.match(r'[' + WORD + ']', before) and not re.match(r'[' + WORD + ']', after):
-                return i, i + len(v)
-            i = low.find(v.lower(), i + 1)
-    key = squash(art)
-    if not key:
-        return None
-    toks = [(m.start(), m.end()) for m in re.finditer(r'\S+', tail)]
-    for size in range(1, 5):
-        for k in range(len(toks) - size + 1):
-            a, b = toks[k][0], toks[k + size - 1][1]
-            if squash(tail[a:b]) == key:
-                return a, b
-    return None
+def is_code(tok):
+    """Код модели: начинается с буквы, есть латиница и цифра, не короче 4 знаков."""
+    t = tok.rstrip(',;')
+    return (
+        len(t) >= 4 and t[0].isalpha() and '(' not in t and ')' not in t
+        and LAT.search(t) and re.search(r'\d', t)
+    )
 
 
-def parse_name(name, article, aliases):
-    """Возвращает словарь group/model/feature/status или None, если бренда в названии нет."""
+EN_COLORS = {
+    'black', 'white', 'inox', 'beige', 'biege', 'gold', 'grey', 'gray', 'silver', 'red', 'green',
+    'blue', 'burgundy', 'cashmere', 'copper', 'pink', 'anthracite',
+}
+
+
+def is_model_word(tok):
+    """Слово, которое может продолжать модель: без кириллицы, с буквой/цифрой и не цвет."""
+    return (
+        not CYR.search(tok) and re.search(r'[0-9A-Za-z]', tok)
+        and tok.strip(',;').lower() not in EN_COLORS
+    )
+
+
+def pick_model(tail):
+    toks = tail.split(' ') if tail else []
+    depth = 0
+    start = None
+    for i, t in enumerate(toks):
+        if depth == 0 and is_code(t):
+            start = i
+            break
+        depth += t.count('(') - t.count(')')
+        depth = max(depth, 0)
+
+    if start is not None:
+        end = start + 1
+        if not toks[start].endswith(','):
+            while end < len(toks) and is_model_word(toks[end]) and not toks[end].startswith('('):
+                end += 1
+                if toks[end - 1].endswith(','):
+                    break
+    else:
+        start, end = 0, 0
+        while end < len(toks) and is_model_word(toks[end]):
+            end += 1
+            if toks[end - 1].endswith(','):
+                break
+
+    model = clean(' '.join(toks[start:end]))
+    rest = clean(' '.join(toks[:start] + toks[end:]))
+    return model or None, rest
+
+
+def parse_name(name, aliases):
+    """Возвращает group/model/feature/status или None, если бренда в названии нет."""
     s = re.sub(r'\s+', ' ', name or '').strip()
     m = find_brand(s, aliases)
     if not m:
         return None
     group, extra = split_group(s[:m.start()])
     tail = clean(TAIL_BU.sub('', s[m.end():]))
-
-    model, rest, sure = '', '', False
-    pos = find_article(tail, article)
-    if pos:
-        model = clean(tail[pos[0]:pos[1]])
-        rest = tail[:pos[0]] + ' ' + tail[pos[1]:]
-        sure = True
-    else:
-        c = COLOR_RE.search(tail)
-        if c and c.start() > 0:
-            model, rest = clean(tail[:c.start()]), tail[c.start():]
-            sure = bool(article) and squash(article).startswith(squash(model))
-        else:
-            model = tail
-            sure = bool(article) and squash(article) == squash(tail)
-
-    feature = clean(' '.join(x for x in [extra, rest] if x).strip())
-    feature = clean(re.sub(r'\s+,', ',', re.sub(r'^[,\s]+', '', feature)))
-    status = 'parsed' if (group and model and sure) else 'doubtful'
-    return {'group': group, 'model': model or None, 'feature': feature or None, 'status': status}
+    model, rest = pick_model(tail)
+    feature = clean(' '.join(x for x in [extra, rest] if x))
+    status = 'parsed' if (group and model) else 'doubtful'
+    return {'group': group, 'model': model, 'feature': feature or None, 'status': status}

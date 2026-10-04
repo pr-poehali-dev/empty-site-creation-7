@@ -27,7 +27,7 @@ def run_parse(cur, brand_id, apply):
         return resp(404, {'error': 'Бренд не найден'})
     results, skipped_manual = [], 0
     for pid, name, article, status in rows:
-        r = parse_name(name, article, brand['aliases'])
+        r = parse_name(name, brand['aliases'])
         if not r:
             continue
         if status == 'manual':
