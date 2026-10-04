@@ -90,13 +90,15 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [loading, setLoading] = useState(true);
   const [group, setGroup] = useState("");
   const [inNames, setInNames] = useState(false);
+  const [tolerance, setTolerance] = useState(0);
   const [filter, setFilter] = useState<FilterKey>("todo");
   const [creating, setCreating] = useState(false);
   const [undoing, setUndoing] = useState(false);
 
   const run = useCallback(
-    async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean }) => {
+    async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean; tolerance?: number }) => {
       const m = opts?.mode ?? mode;
+      const tol = opts?.tolerance ?? tolerance;
       setLoading(true);
       try {
         let r: Response;
@@ -105,7 +107,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
           r = await fetch(`${SEARCH_DICTS_URL}?section=match`, {
             method: "POST",
             headers: authHeaders(),
-            body: JSON.stringify({ draft_id: draftId, brand_id: b ? Number(b) : null }),
+            body: JSON.stringify({ draft_id: draftId, brand_id: b ? Number(b) : null, tolerance: tol }),
           });
         } else {
           r = await fetch(INVOICE_URL, {
@@ -116,6 +118,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
               draft_id: draftId,
               product_group: opts?.product_group ?? group,
               search_in_names: opts?.search_in_names ?? inNames,
+              tolerance: tol,
             }),
           });
         }
@@ -127,19 +130,21 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         setRows(d.rows || []);
         setSummary(d.summary || null);
         setFromNames(d.article_from_name_count || 0);
+        if (typeof d.tolerance === "number") setTolerance(d.tolerance);
       } catch {
         toast({ title: "Ошибка сопоставления", variant: "destructive" });
       } finally {
         setLoading(false);
       }
     },
-    [draftId, mode, brandId, group, inNames, toast],
+    [draftId, mode, brandId, group, inNames, tolerance, toast],
   );
 
   useEffect(() => {
     (async () => {
       let m: Mode = "article";
       let b = "";
+      let t = 0;
       try {
         const [dicts, st] = await Promise.all([
           loadSearchDicts(),
@@ -148,10 +153,12 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         setBrands(dicts.brands);
         if (st?.mode === "name") m = "name";
         if (st?.brand_id) b = String(st.brand_id);
+        if (typeof st?.tolerance === "number") t = st.tolerance;
       } catch { /* ignore */ }
       setMode(m);
       setBrandId(b);
-      run({ mode: m, brandId: b });
+      setTolerance(t);
+      run({ mode: m, brandId: b, tolerance: t });
     })();
   }, [draftId]);
 
@@ -270,6 +277,28 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
           </div>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground">Сравнение:</span>
+          <div className="inline-flex rounded-xl border border-white/[0.08] p-0.5 bg-secondary">
+            {[0, 1, 2].map((t) => (
+              <button
+                key={t}
+                disabled={loading}
+                onClick={() => { if (t !== tolerance) { setTolerance(t); run({ tolerance: t }); } }}
+                className={`px-3 h-8 rounded-lg text-sm transition-colors ${tolerance === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {t === 0 ? "Точно" : t === 1 ? "Допуск 1 знак" : "Допуск 2 знака"}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground w-full">
+            {tolerance === 0
+              ? "Нет точного совпадения — строка сразу идёт в создание новых товаров."
+              : `Отличия до ${tolerance} ${tolerance === 1 ? "знака" : "знаков"} предлагаются на выбор, остальное — в создание.`}
+            {" "}Регистр, пробелы, точки, дефисы и «б/у» не учитываются. Запоминается за поставщиком.
+          </p>
+        </div>
+
         {mode === "name" && (
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
@@ -320,7 +349,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {([
           ["found", "Найдено", counts.found, "text-emerald-400", "border-emerald-500"],
-          ["yellow", mode === "name" ? "Предложено / выбор" : "Нужен выбор", counts.yellow, "text-amber-400", "border-amber-500"],
+          ["yellow", tolerance > 0 ? "Предложено / выбор" : "Нужен выбор", counts.yellow, "text-amber-400", "border-amber-500"],
           ["red", "Не найдено", counts.red, "text-rose-400", "border-rose-500"],
           ["gray", "Бренд не разобран", counts.gray, "", "border-white/40"],
         ] as [FilterKey, string, number, string, string][])

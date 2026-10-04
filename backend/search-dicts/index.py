@@ -267,12 +267,16 @@ def handler(event: dict, context) -> dict:
             if not did:
                 return resp(400, {'error': 'Не указан счёт'})
             if method == 'GET':
-                cur.execute("SELECT match_mode, search_brand_id FROM invoice_drafts WHERE id = %s", (did,))
+                cur.execute(
+                    "SELECT d.match_mode, d.search_brand_id, COALESCE(d.match_tolerance, s.match_tolerance, 0) "
+                    "FROM invoice_drafts d LEFT JOIN invoice_suppliers s ON s.id = d.supplier_id WHERE d.id = %s",
+                    (did,))
                 r = cur.fetchone()
                 if not r:
                     return resp(404, {'error': 'Счёт не найден'})
-                return resp(200, {'mode': r[0], 'brand_id': r[1]})
-            res = match_draft(cur, did, int_or_none(body.get('brand_id')))
+                return resp(200, {'mode': r[0], 'brand_id': r[1], 'tolerance': r[2]})
+            tol = body.get('tolerance')
+            res = match_draft(cur, did, int_or_none(body.get('brand_id')), None if tol is None else int(tol))
             if res is None:
                 return resp(404, {'error': 'Счёт не найден'})
             return resp(200, res)

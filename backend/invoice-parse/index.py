@@ -165,16 +165,22 @@ def drop_draft(draft_id):
         cur.execute(f"DELETE FROM invoice_drafts WHERE id = {int(draft_id)}")
 
 
-def match_draft(draft_id, product_group=None, search_in_names=False):
+def match_draft(draft_id, product_group=None, search_in_names=False, tolerance=None):
     """Сопоставляет строки черновика с каталогом и сохраняет результат."""
     with _conn() as c, c.cursor() as cur:
         cur.execute(
-            f"SELECT rows_data FROM invoice_drafts WHERE id = {int(draft_id)}"
+            f"SELECT d.rows_data, d.supplier_id, COALESCE(s.match_tolerance, 0) FROM invoice_drafts d "
+            f"LEFT JOIN invoice_suppliers s ON s.id = d.supplier_id WHERE d.id = {int(draft_id)}"
         )
         row = cur.fetchone()
         if not row:
             return None
         rows = row[0] or []
+        if tolerance is None:
+            tolerance = row[2]
+        tolerance = max(0, min(2, int(tolerance)))
+        if row[1]:
+            cur.execute(f"UPDATE invoice_suppliers SET match_tolerance = {tolerance} WHERE id = {int(row[1])}")
 
         prev = {}
         for i, r in enumerate(rows):
@@ -185,7 +191,7 @@ def match_draft(draft_id, product_group=None, search_in_names=False):
             r.pop('match_reason', None)
             r.pop('prev_status', None)
 
-        matched = match_rows(cur, rows, product_group, search_in_names)
+        matched = match_rows(cur, rows, product_group, search_in_names, tolerance)
 
         for i, (pid, cname, st, pst) in prev.items():
             if i < len(matched):
@@ -201,7 +207,7 @@ def match_draft(draft_id, product_group=None, search_in_names=False):
         rows_json = _esc(json.dumps(matched, ensure_ascii=False))
         cur.execute(
             f"UPDATE invoice_drafts SET rows_data = '{rows_json}'::jsonb, "
-            f"stage = 'matched', match_mode = 'article', updated_at = NOW(), "
+            f"stage = 'matched', match_mode = 'article', match_tolerance = {tolerance}, updated_at = NOW(), "
             f"expires_at = NOW() + INTERVAL '1 hour' WHERE id = {int(draft_id)}"
         )
 
@@ -214,6 +220,7 @@ def match_draft(draft_id, product_group=None, search_in_names=False):
         'article_from_name_count': from_names,
         'search_in_names': search_in_names,
         'product_group': product_group or '',
+        'tolerance': tolerance,
     }
 
 
@@ -316,6 +323,7 @@ def handler(event, context):
             did,
             product_group=body.get('product_group'),
             search_in_names=bool(body.get('search_in_names')),
+            tolerance=body.get('tolerance'),
         )
         if res is None:
             return _resp(404, {'error': 'Черновик не найден'})

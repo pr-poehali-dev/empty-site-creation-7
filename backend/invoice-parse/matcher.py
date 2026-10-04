@@ -89,75 +89,106 @@ def find_exact(cur, articles, product_group=None):
     return found
 
 
-def find_substring(cur, articles, product_group=None, in_names=False):
-    """Подстрочный поиск — только для того, что не нашлось точно."""
+def _distance(a, b, limit):
+    """Расстояние Левенштейна с ранним выходом."""
+    if abs(len(a) - len(b)) > limit:
+        return limit + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        best = cur[0]
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+            best = min(best, cur[j])
+        if best > limit:
+            return limit + 1
+        prev = cur
+    return prev[-1]
+
+
+def find_in_names(cur, articles, product_group=None):
+    """Артикул целым словом в наименовании товара — только точное совпадение слова."""
     keys = sorted({norm(a) for a in articles if norm(a)})
     found = {}
     if not keys:
         return found
-
-    norm_col = SQL_NORM.format(col='article')
     name_col = SQL_NORM.format(col='name')
     group_cond = ''
     if product_group:
         group_cond = f" AND lower(product_group) = lower('{_esc(product_group)}')"
-
-    # Один запрос на весь счёт: ключи склеиваем в список, сопоставление
-    # конкретному ключу делаем уже в памяти. Запрос на каждый артикул
-    # по отдельности упирался в таймаут на счетах в сотни строк.
     CHUNK = 200
-    MAX_PER_KEY = 50
-
     for i in range(0, len(keys), CHUNK):
         part = keys[i:i + CHUNK]
-        conds = []
-        for k in part:
-            pat = "'%" + _esc(k) + "%'"
-            c = f"{norm_col} LIKE {pat}"
-            if in_names:
-                c = f"({c} OR {name_col} LIKE {pat})"
-            conds.append(c)
+        conds = [f"{name_col} LIKE '%" + _esc(k) + "%'" for k in part]
         cur.execute(
-            f"SELECT {FIELDS} FROM products "
-            f"WHERE ({' OR '.join(conds)}) "
-            f"AND COALESCE(is_archived, false) = false{group_cond} "
-            f"LIMIT 3000"
+            f"SELECT {FIELDS} FROM products WHERE ({' OR '.join(conds)}) "
+            f"AND COALESCE(is_archived, false) = false{group_cond} LIMIT 3000"
         )
         rows = [_row(r) for r in cur.fetchall()]
-        for k in part:
-            hits = []
-            for p in rows:
-                hay = norm(p.get('article'))
-                if hay and _is_wider_code(k, hay):
-                    # 900/68/3/2 и 900/68/3/25 — разные товары, как КТ-535-1 и КТ-5351.
-                    continue
-                if k in hay or (in_names and k in norm(p.get('name'))):
-                    hits.append(p)
-                    if len(hits) >= MAX_PER_KEY:
-                        break
-            if hits:
-                found[k] = hits
+        keyset = set(part)
+        for p in rows:
+            for tok in str(p.get('name') or '').split():
+                k = norm(tok.strip(',;()[]'))
+                if k in keyset:
+                    found.setdefault(k, [])
+                    if p not in found[k]:
+                        found[k].append(p)
     return found
 
 
-def match_rows(cur, rows, product_group=None, search_in_names=False):
+def find_similar(cur, articles, tolerance, product_group=None):
+    """Артикулы с отличием до tolerance знаков. Только предложения — не автосовпадение."""
+    keys = sorted({norm(a) for a in articles if norm(a)})
+    found = {}
+    if not keys or tolerance <= 0:
+        return found
+    group_cond = ''
+    if product_group:
+        group_cond = f" AND lower(product_group) = lower('{_esc(product_group)}')"
+    cur.execute(
+        f"SELECT {FIELDS} FROM products WHERE article IS NOT NULL AND article <> '' "
+        f"AND COALESCE(is_archived, false) = false{group_cond}"
+    )
+    by_len = {}
+    for r in cur.fetchall():
+        p = _row(r)
+        k = norm(p['article'])
+        if k:
+            by_len.setdefault(len(k), []).append((k, p))
+    for key in keys:
+        hits = []
+        for ln in range(len(key) - tolerance, len(key) + tolerance + 1):
+            for k, p in by_len.get(ln, []):
+                if k == key or k[0] != key[0]:
+                    continue
+                d = _distance(key, k, tolerance)
+                if d <= tolerance:
+                    hits.append({**p, 'distance': d})
+        if hits:
+            hits.sort(key=lambda c: c['distance'])
+            found[key] = hits[:15]
+    return found
+
+
+def match_rows(cur, rows, product_group=None, search_in_names=False, tolerance=0):
     """Раскладывает строки счёта на найденные, спорные и ненайденные.
 
-    rows — список словарей с ключами article и name.
-    Возвращает тот же список, дополненный полями match_status и candidates.
+    tolerance = 0 — только точное совпадение артикула (или целого слова в наименовании).
+    tolerance 1–2 — похожие артикулы предлагаются на выбор, но никогда не ставятся сами.
     """
     articles = [r.get('article') for r in rows]
     exact = find_exact(cur, articles, product_group)
 
     missing = [a for a in articles if norm(a) and not exact.get(norm(a))]
-    loose = {}
-    if missing:
-        loose = find_substring(cur, missing, product_group, search_in_names)
+    in_names = find_in_names(cur, missing, product_group) if (missing and search_in_names) else {}
+    missing = [a for a in missing if not in_names.get(norm(a))]
+    similar = find_similar(cur, missing, tolerance, product_group) if missing else {}
 
     result = []
     for r in rows:
         key = norm(r.get('article'))
         out = dict(r)
+        out.pop('match_reason', None)
 
         if not key:
             out['match_status'] = 'empty'
@@ -167,27 +198,27 @@ def match_rows(cur, rows, product_group=None, search_in_names=False):
 
         cands = exact.get(key) or []
         out['match_type'] = 'exact'
-        if not cands:
-            cands = loose.get(key) or []
-            out['match_type'] = 'substring' if cands else 'none'
+        if not cands and in_names.get(key):
+            cands = in_names[key]
+            out['match_type'] = 'in_name'
 
-        if len(cands) > 1:
-            cands = sorted(
-                cands,
-                key=lambda c: _similarity(c.get('name'), r.get('name')),
-                reverse=True,
-            )
-
-        if not cands:
-            out['match_status'] = 'not_found'
-            out['candidates'] = []
-        elif len(cands) == 1:
-            out['match_status'] = 'matched'
-            out['product_id'] = cands[0]['id']
+        if cands:
+            if len(cands) > 1:
+                cands = sorted(cands, key=lambda c: _similarity(c.get('name'), r.get('name')), reverse=True)
+                out['match_status'] = 'ambiguous'
+            else:
+                out['match_status'] = 'matched'
+                out['product_id'] = cands[0]['id']
             out['candidates'] = cands
+        elif similar.get(key):
+            out['match_type'] = 'similar'
+            out['match_status'] = 'suggested'
+            out['candidates'] = similar[key]
         else:
-            out['match_status'] = 'ambiguous'
-            out['candidates'] = cands
+            out['match_type'] = 'none'
+            out['match_status'] = 'not_found'
+            out['match_reason'] = 'no_article_in_catalog'
+            out['candidates'] = []
 
         result.append(out)
 
@@ -196,7 +227,7 @@ def match_rows(cur, rows, product_group=None, search_in_names=False):
 
 def summarize(rows):
     """Сводка по исходам — для шапки экрана."""
-    s = {'total': len(rows), 'matched': 0, 'ambiguous': 0, 'not_found': 0, 'empty': 0}
+    s = {'total': len(rows), 'matched': 0, 'ambiguous': 0, 'suggested': 0, 'not_found': 0, 'empty': 0}
     for r in rows:
         st = r.get('match_status')
         if st in s:

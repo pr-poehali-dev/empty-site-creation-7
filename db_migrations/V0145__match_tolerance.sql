@@ -1,0 +1,2 @@
+ALTER TABLE invoice_suppliers ADD COLUMN IF NOT EXISTS match_tolerance SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE invoice_drafts ADD COLUMN IF NOT EXISTS match_tolerance SMALLINT;

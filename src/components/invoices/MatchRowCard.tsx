@@ -29,7 +29,8 @@ const TONE: Record<string, string> = {
 const REASON: Record<string, string> = {
   no_brand: "Бренд не определён — выберите бренд счёта",
   no_model: "Не удалось выделить модель из наименования",
-  no_model_in_catalog: "Такой модели нет в каталоге",
+  no_model_in_catalog: "Такой модели нет в каталоге — пойдёт в «Создать новые товары»",
+  no_article_in_catalog: "Такого артикула нет в каталоге — пойдёт в «Создать новые товары»",
   brand_not_parsed: "Товары этого бренда ещё не разобраны — запустите разбор в «Справочниках для поиска»",
 };
 
@@ -75,7 +76,7 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
         <div className="mt-2">
           <p className="text-sm font-medium text-amber-400">
             {r.match_status === "suggested"
-              ? "Точной модели нет — похожие варианты"
+              ? (mode === "name" ? "Точной модели нет — похожие варианты" : "Точного артикула нет — похожие варианты")
               : r.match_reason === "feature_differs"
                 ? "Модель есть, но признак другой"
                 : r.match_reason === "feature_not_found"
@@ -97,7 +98,7 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
                   <div className="flex flex-wrap items-baseline gap-2">
                     <span className="font-mono text-xs text-amber-300">{mode === "name" ? c.model : c.article}</span>
                     <span className="text-sm flex-1 min-w-0 break-words">{c.name}</span>
-                    {mode === "name" && c.distance != null && c.distance > 0 && (
+                    {c.distance != null && c.distance > 0 && (
                       <span className="text-[11px] text-muted-foreground">отличие: {c.distance} зн.</span>
                     )}
                     {mode === "article" && c.product_group && (

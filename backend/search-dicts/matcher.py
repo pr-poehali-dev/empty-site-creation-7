@@ -103,8 +103,7 @@ def distance(a, b, limit):
     return prev[-1]
 
 
-def fuzzy(key, index):
-    limit = 1 if len(key) < 6 else 2
+def fuzzy(key, index, limit):
     found = []
     for k, items in index.items():
         if not k or k[0] != key[0]:
@@ -120,7 +119,7 @@ def fuzzy(key, index):
     return out
 
 
-def match_by_name(cur, rows, brand_id=None):
+def match_by_name(cur, rows, brand_id=None, tolerance=0):
     brands = load_brands(cur)
     by_id = {b['id']: b for b in brands}
     default = by_id.get(brand_id) if brand_id else None
@@ -185,7 +184,7 @@ def match_by_name(cur, rows, brand_id=None):
                     row['catalog_features'] = sorted({c.get('feature') or '—' for c in cands})
                 row['candidates'] = cands[:30]
             else:
-                cands = fuzzy(key, index) if key else []
+                cands = fuzzy(key, index, tolerance) if (key and tolerance > 0) else []
                 if cands:
                     cands.sort(key=lambda c: (c['distance'], -closeness(ref, c)))
                     row['match_type'] = 'similar'
@@ -207,17 +206,22 @@ def summarize(rows):
     return s
 
 
-def match_draft(cur, draft_id, brand_id=None):
-    cur.execute(f"SELECT rows_data FROM invoice_drafts WHERE id = {int(draft_id)}")
+def match_draft(cur, draft_id, brand_id=None, tolerance=None):
+    cur.execute(
+        "SELECT d.rows_data, d.supplier_id, COALESCE(s.match_tolerance, 0) FROM invoice_drafts d "
+        "LEFT JOIN invoice_suppliers s ON s.id = d.supplier_id WHERE d.id = %s", (int(draft_id),))
     row = cur.fetchone()
     if not row:
         return None
     rows = row[0] or []
+    tolerance = max(0, min(2, int(row[2] if tolerance is None else tolerance)))
+    if row[1]:
+        cur.execute("UPDATE invoice_suppliers SET match_tolerance = %s WHERE id = %s", (tolerance, row[1]))
     manual = {i: (r['product_id'], r.get('chosen_name'), r['match_status'], r.get('prev_status'))
               for i, r in enumerate(rows)
               if r.get('match_status') in ('manual', 'created') and r.get('product_id')}
 
-    matched = match_by_name(cur, rows, brand_id)
+    matched = match_by_name(cur, rows, brand_id, tolerance)
     for i, (pid, cname, st, prev) in manual.items():
         if i < len(matched):
             matched[i]['match_status'] = st
@@ -229,7 +233,8 @@ def match_draft(cur, draft_id, brand_id=None):
 
     cur.execute(
         "UPDATE invoice_drafts SET rows_data = %s::jsonb, stage = 'matched', match_mode = 'name', "
-        "search_brand_id = %s, updated_at = NOW(), expires_at = NOW() + INTERVAL '1 hour' WHERE id = %s",
-        (json.dumps(matched, ensure_ascii=False), brand_id, int(draft_id)),
+        "search_brand_id = %s, match_tolerance = %s, updated_at = NOW(), expires_at = NOW() + INTERVAL '1 hour' WHERE id = %s",
+        (json.dumps(matched, ensure_ascii=False), brand_id, tolerance, int(draft_id)),
     )
-    return {'rows': matched, 'summary': summarize(matched), 'mode': 'name', 'brand_id': brand_id}
+    return {'rows': matched, 'summary': summarize(matched), 'mode': 'name', 'brand_id': brand_id,
+            'tolerance': tolerance}
