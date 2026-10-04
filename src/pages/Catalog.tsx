@@ -30,6 +30,16 @@ import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 import compressImage from "@/lib/compressImage";
+import ProductSearchFields from "@/components/search-dicts/ProductSearchFields";
+import SearchFilters, { SearchFilterValue } from "@/components/search-dicts/SearchFilters";
+import {
+  loadSearchDicts,
+  ParseStatus,
+  PARSE_STATUS_COLORS,
+  PARSE_STATUS_LABELS,
+  SearchBrand,
+  SearchGroup,
+} from "@/components/search-dicts/api";
 
 const CATEGORIES_URL = "https://functions.poehali.dev/3224f567-ef06-4974-bd4e-812f95d12d9c?section=categories";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -75,6 +85,13 @@ interface Product {
   weight_gross?: number | null;
   weight_net?: number | null;
   tnved_code?: string | null;
+  search_group_id?: number | null;
+  search_group_name?: string | null;
+  search_brand_id?: number | null;
+  search_brand_name?: string | null;
+  model?: string | null;
+  feature?: string | null;
+  parse_status?: ParseStatus | null;
 }
 
 interface PendingImage {
@@ -158,6 +175,11 @@ const Catalog = () => {
   const [wizardCatDropdownOpen, setWizardCatDropdownOpen] = useState(false);
   const [wizardCatSearch, setWizardCatSearch] = useState("");
   const [wizardArticleDuplicate, setWizardArticleDuplicate] = useState<string | null>(null);
+  const [searchBrands, setSearchBrands] = useState<SearchBrand[]>([]);
+  const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
+  const [searchFilter, setSearchFilter] = useState<SearchFilterValue>({ brand: "", group: "", status: "" });
+  const searchFilterRef = useRef<SearchFilterValue>(searchFilter);
+  searchFilterRef.current = searchFilter;
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -203,6 +225,10 @@ const Catalog = () => {
       if (searchQuery) params.set("search", searchQuery);
       if (archived) params.set("archived", "true");
       if (filterGroup) params.set("filter_group", filterGroup);
+      const sf = searchFilterRef.current;
+      if (sf.brand) params.set("search_brand_id", sf.brand);
+      if (sf.group) params.set("search_group_id", sf.group);
+      if (sf.status) params.set("parse_status", sf.status);
       params.set("page", String(pageNum));
       params.set("per_page", "50");
       const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
@@ -230,6 +256,11 @@ const Catalog = () => {
     fetchCategories();
     fetchGroups();
     fetchBrands();
+    if (isOwner) {
+      loadSearchDicts()
+        .then((d) => { setSearchBrands(d.brands); setSearchGroups(d.groups); })
+        .catch(() => { /* ignore */ });
+    }
   }, []);
 
   useEffect(() => {
@@ -250,7 +281,7 @@ const Catalog = () => {
     setPage(1);
     setHasMore(true);
     fetchItems(selectedCategory, search, showArchive, 1, false, selectedGroup);
-  }, [selectedCategory, showArchive, selectedGroup]);
+  }, [selectedCategory, showArchive, selectedGroup, searchFilter]);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -895,6 +926,15 @@ const Catalog = () => {
             </Button>
           </div>
 
+          {isOwner && (
+            <SearchFilters
+              value={searchFilter}
+              onChange={setSearchFilter}
+              brands={searchBrands}
+              groups={searchGroups}
+            />
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-muted-foreground">
               {selectedCategoryName}{selectedGroup ? ` · ${selectedGroup}` : ""} · {total} {total === 1 ? "позиция" : "позиций"}
@@ -953,6 +993,18 @@ const Catalog = () => {
                       )}
                       <span className="text-xs text-muted-foreground">{item.category_name}</span>
                     </div>
+                    {isOwner && item.parse_status && item.parse_status !== "none" && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs">
+                        <Badge className={`text-[10px] ${PARSE_STATUS_COLORS[item.parse_status]}`}>
+                          {PARSE_STATUS_LABELS[item.parse_status]}
+                        </Badge>
+                        {[item.search_group_name, item.search_brand_name, item.model, item.feature]
+                          .filter(Boolean)
+                          .map((t, idx) => (
+                            <span key={idx} className="text-primary/80">{idx > 0 ? "· " : ""}{t}</span>
+                          ))}
+                      </div>
+                    )}
                     {item.barcodes && item.barcodes.length > 0 && (
                       <p className="text-xs text-muted-foreground italic mt-0.5 truncate">
                         {item.barcodes.join(", ")}
@@ -1063,6 +1115,19 @@ const Catalog = () => {
                 </div>
               )}
             </div>
+            {isOwner && editingProduct && (
+              <ProductSearchFields
+                productId={editingProduct.id}
+                value={editingProduct}
+                brands={searchBrands}
+                groups={searchGroups}
+                onSaved={(v) => {
+                  const patch = { ...v, parse_status: "manual" as const };
+                  setEditingProduct((prev) => (prev ? { ...prev, ...patch } : prev));
+                  setItems((prev) => prev.map((p) => (p.id === editingProduct.id ? { ...p, ...patch } : p)));
+                }}
+              />
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Артикул</label>

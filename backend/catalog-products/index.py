@@ -150,6 +150,24 @@ def handler(event: dict, context) -> dict:
             )
             barcodes = [{'id': r[0], 'barcode': r[1]} for r in cur.fetchall()]
 
+            search_fields = None
+            if is_owner:
+                cur.execute(
+                    """SELECT p.search_group_id, g.name, p.search_brand_id, b.name, p.model, p.feature, p.parse_status
+                       FROM products p
+                       LEFT JOIN search_groups g ON g.id = p.search_group_id
+                       LEFT JOIN search_brands b ON b.id = p.search_brand_id
+                       WHERE p.id = %s""",
+                    (product_id,)
+                )
+                sf = cur.fetchone()
+                if sf:
+                    search_fields = {
+                        'search_group_id': sf[0], 'search_group_name': sf[1],
+                        'search_brand_id': sf[2], 'search_brand_name': sf[3],
+                        'model': sf[4], 'feature': sf[5], 'parse_status': sf[6],
+                    }
+
             item = {
                 'id': row[0], 'category_id': row[1], 'name': row[2], 'article': row[3],
                 'brand': row[4], 'supplier_code': row[5],
@@ -174,6 +192,8 @@ def handler(event: dict, context) -> dict:
                 'images': images,
                 'barcodes': barcodes
             }
+            if search_fields:
+                item.update(search_fields)
             cur.close()
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'item': item})}
@@ -307,6 +327,24 @@ def handler(event: dict, context) -> dict:
             conditions.append("p.product_group = %s")
             values.append(filter_group)
 
+        if is_owner:
+            sb = params.get('search_brand_id', '').strip()
+            sg = params.get('search_group_id', '').strip()
+            ps = params.get('parse_status', '').strip()
+            if sb == 'none':
+                conditions.append("p.search_brand_id IS NULL")
+            elif sb.isdigit():
+                conditions.append("p.search_brand_id = %s")
+                values.append(int(sb))
+            if sg == 'none':
+                conditions.append("p.search_group_id IS NULL")
+            elif sg.isdigit():
+                conditions.append("p.search_group_id = %s")
+                values.append(int(sg))
+            if ps in ('none', 'parsed', 'doubtful', 'manual'):
+                conditions.append("p.parse_status = %s")
+                values.append(ps)
+
         if search:
             like = f"%{search}%"
             if search_type == 'article':
@@ -325,6 +363,11 @@ def handler(event: dict, context) -> dict:
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
+        search_cols = (
+            "p.search_group_id, sg.name, p.search_brand_id, sb.name, p.model, p.feature, p.parse_status"
+            if is_owner else
+            "NULL, NULL, NULL, NULL, NULL, NULL, NULL"
+        )
 
         cur.execute(f"SELECT COUNT(*) FROM products p {where}", values)
         total = cur.fetchone()[0]
@@ -334,9 +377,12 @@ def handler(event: dict, context) -> dict:
                        p.price_base, p.price_retail, p.price_wholesale, {price_purchase_col},
                        p.created_at, c.name as category_name, p.product_group, p.external_id, p.is_new,
                        p.nomenclature_kind, p.nomenclature_type, p.writeoff_method, p.unit,
-                       p.vat_rate, p.weight_gross, p.weight_net, p.tnved_code
+                       p.vat_rate, p.weight_gross, p.weight_net, p.tnved_code,
+                       {search_cols}
                 FROM products p
                 JOIN categories c ON c.id = p.category_id
+                LEFT JOIN search_groups sg ON sg.id = p.search_group_id
+                LEFT JOIN search_brands sb ON sb.id = p.search_brand_id
                 {where}
                 ORDER BY p.name
                 LIMIT %s OFFSET %s""",
@@ -393,6 +439,12 @@ def handler(event: dict, context) -> dict:
                 'images': images_map.get(r[0], []),
                 'barcodes': barcodes_map.get(r[0], [])
             })
+            if is_owner:
+                items[-1].update({
+                    'search_group_id': r[23], 'search_group_name': r[24],
+                    'search_brand_id': r[25], 'search_brand_name': r[26],
+                    'model': r[27], 'feature': r[28], 'parse_status': r[29],
+                })
 
         cur.close()
         conn.close()

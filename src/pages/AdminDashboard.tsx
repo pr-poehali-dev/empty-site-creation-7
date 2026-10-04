@@ -327,6 +327,16 @@ const AdminDashboard = () => {
               <span className="font-medium">Бренды</span>
             </Button>
           </DebugBadge>
+          <DebugBadge id="Admin:nav.searchDicts" className="flex-1">
+            <Button
+              variant="outline"
+              className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
+              onClick={() => navigate("/admin/search-dicts")}
+            >
+              <Icon name="ScanSearch" size={20} />
+              <span className="font-medium">Справочники для поиска</span>
+            </Button>
+          </DebugBadge>
           <DebugBadge id="Admin:nav.groups" className="flex-1">
             <Button
               variant="outline"

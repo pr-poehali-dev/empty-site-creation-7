@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "GET without auth is forbidden",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST without auth is forbidden",
+      "method": "POST",
+      "path": "/?section=brands",
+      "body": {"name": "Test"},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
