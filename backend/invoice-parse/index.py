@@ -178,20 +178,23 @@ def match_draft(draft_id, product_group=None, search_in_names=False):
 
         prev = {}
         for i, r in enumerate(rows):
-            if r.get('match_status') == 'manual' and r.get('product_id'):
-                prev[i] = (r['product_id'], r.get('chosen_name'))
+            if r.get('match_status') in ('manual', 'created') and r.get('product_id'):
+                prev[i] = (r['product_id'], r.get('chosen_name'), r['match_status'], r.get('prev_status'))
             r.pop('chosen_name', None)
             r.pop('parsed', None)
             r.pop('match_reason', None)
+            r.pop('prev_status', None)
 
         matched = match_rows(cur, rows, product_group, search_in_names)
 
-        for i, (pid, cname) in prev.items():
+        for i, (pid, cname, st, pst) in prev.items():
             if i < len(matched):
-                matched[i]['match_status'] = 'manual'
+                matched[i]['match_status'] = st
                 matched[i]['product_id'] = pid
                 if cname:
                     matched[i]['chosen_name'] = cname
+                if pst:
+                    matched[i]['prev_status'] = pst
 
         from_names = sum(1 for r in rows if r.get('article_guessed'))
 

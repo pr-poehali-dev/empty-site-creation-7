@@ -9,6 +9,7 @@ interface Props {
   mode: "article" | "name";
   brandId?: string;
   onChoose: (productId: number | null, name?: string) => void;
+  onUndo?: () => void;
 }
 
 const money = (v: number) =>
@@ -17,6 +18,7 @@ const money = (v: number) =>
 const TONE: Record<string, string> = {
   matched: "border-emerald-500/40 bg-emerald-500/[0.05]",
   manual: "border-emerald-500/40 bg-emerald-500/[0.05]",
+  created: "border-sky-500/40 bg-sky-500/[0.05]",
   suggested: "border-amber-500/40 bg-amber-500/[0.05]",
   ambiguous: "border-amber-500/40 bg-amber-500/[0.05]",
   not_found: "border-rose-500/40 bg-rose-500/[0.05]",
@@ -31,7 +33,7 @@ const REASON: Record<string, string> = {
   brand_not_parsed: "Товары этого бренда ещё не разобраны — запустите разбор в «Справочниках для поиска»",
 };
 
-const MatchRowCard = ({ row: r, mode, brandId, onChoose }: Props) => {
+const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const [searching, setSearching] = useState(false);
   const p = r.parsed;
@@ -114,7 +116,7 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose }: Props) => {
               onClick={() => pick(null)}
               className="w-full text-left rounded-lg border border-dashed border-rose-400/40 px-3 py-2 hover:bg-rose-500/[0.06] transition"
             >
-              <span className="text-sm text-rose-300">Ничего не подходит — создать новый товар</span>
+              <span className="text-sm text-rose-300">Ничего не подходит — новый товар</span>
             </button>
           </div>
         </div>
@@ -123,8 +125,19 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose }: Props) => {
       {red && (
         <p className={`mt-2 text-sm ${r.match_status === "unparsed" ? "text-muted-foreground" : "text-rose-400"}`}>
           {(r.match_reason && REASON[r.match_reason]) ||
-            (r.match_status === "empty" ? "Артикул не определён" : "В каталоге не найден — карточку создадим на следующем шаге")}
+            (r.match_status === "empty" ? "Артикул не определён" : "В каталоге не найден — пойдёт в «Создать новые товары»")}
         </p>
+      )}
+
+      {r.match_status === "created" && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="text-sm text-sky-400 flex-1 min-w-0 break-words">Создан новый товар{chosen ? `: ${chosen}` : ""}</p>
+          {onUndo && (
+            <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={onUndo}>
+              Отменить создание
+            </button>
+          )}
+        </div>
       )}
 
       {resolved && (

@@ -6,6 +6,7 @@ import Icon from "@/components/ui/icon";
 import PickList from "@/components/search-dicts/PickList";
 import { authHeaders, loadSearchDicts, SEARCH_DICTS_URL, SearchBrand } from "@/components/search-dicts/api";
 import MatchRowCard from "./MatchRowCard";
+import CreateProducts from "./CreateProducts";
 
 const INVOICE_URL = "https://functions.poehali.dev/da75537b-bd2c-4bb3-b3ee-5cd90f17c9a2";
 
@@ -25,7 +26,7 @@ export interface Candidate {
   distance?: number;
 }
 
-export type MatchStatus = "matched" | "suggested" | "ambiguous" | "not_found" | "empty" | "manual" | "unparsed";
+export type MatchStatus = "matched" | "suggested" | "ambiguous" | "not_found" | "empty" | "manual" | "unparsed" | "created";
 
 export interface MatchRow {
   article: string;
@@ -69,7 +70,7 @@ interface Props {
 type Mode = "article" | "name";
 
 const GROUPS = {
-  found: ["matched", "manual"],
+  found: ["matched", "manual", "created"],
   yellow: ["suggested", "ambiguous"],
   red: ["not_found", "empty"],
   gray: ["unparsed"],
@@ -89,6 +90,8 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [group, setGroup] = useState("");
   const [inNames, setInNames] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("todo");
+  const [creating, setCreating] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   const run = useCallback(
     async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean }) => {
@@ -205,7 +208,37 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
       return GROUPS[filter].includes(r.match_status);
     });
 
+  const createdCount = rows.filter((r) => r.match_status === "created").length;
+
+  const undo = async (productId?: number) => {
+    if (!productId && !confirm(`Отменить создание ${createdCount} товаров из этого счёта? Они уйдут в архив.`)) return;
+    setUndoing(true);
+    try {
+      const qs = new URLSearchParams({ section: "create", draft_id: String(draftId) });
+      if (productId) qs.set("product_id", String(productId));
+      const r = await fetch(`${SEARCH_DICTS_URL}?${qs}`, { method: "DELETE", headers: authHeaders() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setRows(d.rows || []);
+      toast({ title: `Отменено: ${d.undone}` });
+    } catch (e) {
+      toast({ title: (e as Error).message || "Не удалось отменить", variant: "destructive" });
+    } finally {
+      setUndoing(false);
+    }
+  };
+
   const toggle = (f: FilterKey) => setFilter(filter === f ? "all" : f);
+
+  if (creating) {
+    return (
+      <CreateProducts
+        draftId={draftId}
+        onBack={() => setCreating(false)}
+        onDone={() => { setCreating(false); run(); }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -306,6 +339,23 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
           ))}
       </div>
 
+      {(counts.red > 0 || createdCount > 0) && !loading && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.08] p-3">
+          {counts.red > 0 && (
+            <Button className="rounded-xl" onClick={() => setCreating(true)}>
+              <Icon name="PackagePlus" size={16} />
+              <span className="ml-2">Создать новые товары ({counts.red})</span>
+            </Button>
+          )}
+          {createdCount > 0 && (
+            <Button variant="outline" className="rounded-xl" disabled={undoing} onClick={() => undo()}>
+              <Icon name="Undo2" size={16} />
+              <span className="ml-2">Отменить создание товаров из этого счёта ({createdCount})</span>
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {mode === "article" && (
           <Input
@@ -359,6 +409,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
               mode={mode}
               brandId={brandId}
               onChoose={(pid, name) => choose(i, pid, name, pid === null && GROUPS.found.includes(r.match_status))}
+              onUndo={() => r.product_id && undo(r.product_id)}
             />
           ))}
         </div>

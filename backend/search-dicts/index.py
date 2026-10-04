@@ -5,6 +5,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from parser import parse_name
 from matcher import match_draft
+import creator
 
 
 def find_products(cur, q, brand_id=None):
@@ -240,6 +241,26 @@ def handler(event: dict, context) -> dict:
 
         if section == 'find':
             return resp(200, {'items': find_products(cur, params.get('q', ''), int_or_none(params.get('brand_id')))})
+
+        if section == 'create':
+            did = int_or_none(params.get('draft_id') or body.get('draft_id'))
+            if not did:
+                return resp(400, {'error': 'Не указан счёт'})
+            if method == 'GET':
+                res = creator.preview(cur, did)
+                return resp(200, res) if res is not None else resp(404, {'error': 'Счёт не найден'})
+            conn.autocommit = False
+            if method == 'POST':
+                res, err = creator.create(cur, did, body.get('items') or [])
+            elif method == 'DELETE':
+                res, err = creator.undo(cur, did, int_or_none(params.get('product_id')))
+            else:
+                return resp(400, {'error': 'Неверный запрос'})
+            if err:
+                conn.rollback()
+                return resp(400, {'error': err})
+            conn.commit()
+            return resp(200, res)
 
         if section == 'match':
             did = int_or_none(params.get('draft_id') or body.get('draft_id'))

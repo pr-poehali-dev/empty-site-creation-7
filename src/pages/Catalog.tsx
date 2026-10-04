@@ -70,6 +70,7 @@ interface Product {
   product_group: string | null;
   external_id: string | null;
   is_new: boolean;
+  not_in_1c?: boolean;
   price_base: number | null;
   price_retail: number | null;
   price_wholesale: number | null;
@@ -229,6 +230,7 @@ const Catalog = () => {
       if (sf.brand) params.set("search_brand_id", sf.brand);
       if (sf.group) params.set("search_group_id", sf.group);
       if (sf.status) params.set("parse_status", sf.status);
+      if (sf.notIn1c) params.set("not_in_1c", "true");
       params.set("page", String(pageNum));
       params.set("per_page", "50");
       const resp = await fetch(`${PRODUCTS_URL}?${params}`, { headers: authHeaders });
@@ -978,6 +980,9 @@ const Catalog = () => {
                       <p className="font-medium text-sm sm:text-base break-words min-w-0">{item.name}</p>
                       {item.is_new && (
                         <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs flex-shrink-0">Новый</Badge>
+                      )}
+                      {item.not_in_1c && (
+                        <Badge className="bg-orange-500/15 text-orange-300 border-orange-500/30 text-xs flex-shrink-0">Не в 1С</Badge>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1">

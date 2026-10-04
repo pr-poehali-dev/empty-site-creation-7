@@ -344,6 +344,8 @@ def handler(event: dict, context) -> dict:
             if ps in ('none', 'parsed', 'doubtful', 'manual'):
                 conditions.append("p.parse_status = %s")
                 values.append(ps)
+            if params.get('not_in_1c', '') == 'true':
+                conditions.append("p.not_in_1c = TRUE")
 
         if search:
             like = f"%{search}%"
@@ -364,9 +366,9 @@ def handler(event: dict, context) -> dict:
 
         price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
         search_cols = (
-            "p.search_group_id, sg.name, p.search_brand_id, sb.name, p.model, p.feature, p.parse_status"
+            "p.search_group_id, sg.name, p.search_brand_id, sb.name, p.model, p.feature, p.parse_status, p.not_in_1c"
             if is_owner else
-            "NULL, NULL, NULL, NULL, NULL, NULL, NULL"
+            "NULL, NULL, NULL, NULL, NULL, NULL, NULL, p.not_in_1c"
         )
 
         cur.execute(f"SELECT COUNT(*) FROM products p {where}", values)
@@ -437,7 +439,8 @@ def handler(event: dict, context) -> dict:
                 'weight_net': float(r[21]) if r[21] is not None else None,
                 'tnved_code': r[22],
                 'images': images_map.get(r[0], []),
-                'barcodes': barcodes_map.get(r[0], [])
+                'barcodes': barcodes_map.get(r[0], []),
+                'not_in_1c': bool(r[30]),
             })
             if is_owner:
                 items[-1].update({
