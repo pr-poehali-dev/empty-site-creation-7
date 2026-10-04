@@ -30,6 +30,7 @@ const REASON: Record<string, string> = {
   no_brand: "Бренд не определён — выберите бренд счёта",
   no_model: "Не удалось выделить модель из наименования",
   no_model_in_catalog: "Такой модели нет в каталоге — пойдёт в «Создать новые товары»",
+  feature_new: "У модели нет такого признака — пойдёт в «Создать новые товары» как новый вариант",
   no_article_in_catalog: "Такого артикула нет в каталоге — пойдёт в «Создать новые товары»",
   brand_not_parsed: "Товары этого бренда ещё не разобраны — запустите разбор в «Справочниках для поиска»",
 };
@@ -134,7 +135,9 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
 
       {red && (
         <p className={`mt-2 text-sm ${r.match_status === "unparsed" ? "text-muted-foreground" : "text-rose-400"}`}>
-          {(r.match_reason && REASON[r.match_reason]) ||
+          {r.match_reason === "feature_new" && r.catalog_features?.length
+            ? `${REASON.feature_new}. В каталоге: ${r.catalog_features.join(", ")}`
+            : (r.match_reason && REASON[r.match_reason]) ||
             (r.match_status === "empty" ? "Артикул не определён" : "В каталоге не найден — пойдёт в «Создать новые товары»")}
         </p>
       )}

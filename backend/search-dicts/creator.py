@@ -3,7 +3,7 @@
 import json
 from psycopg2.extras import execute_values
 from parser import squash
-from matcher import load_brands, detect_brand
+from matcher import load_brands, detect_brand, norm_text
 from parser import parse_name
 
 NO_CATEGORY = 'Без категории'
@@ -103,11 +103,11 @@ def preview(cur, draft_id):
     model_map = {}
     if brand_ids:
         cur.execute(
-            """SELECT search_brand_id, model, id, name FROM products
+            """SELECT search_brand_id, model, feature, id, name FROM products
                WHERE search_brand_id = ANY(%s) AND model IS NOT NULL AND COALESCE(is_archived, false) = false""",
             (brand_ids,))
-        for bid, m, pid, nm in cur.fetchall():
-            model_map.setdefault((bid, squash(m)), {'id': pid, 'name': nm})
+        for bid, m, f, pid, nm in cur.fetchall():
+            model_map.setdefault((bid, squash(m)), []).append({'id': pid, 'name': nm, 'feature': f})
 
     for it in items:
         warn = []
@@ -116,8 +116,16 @@ def preview(cur, draft_id):
         if it['article'] and it['article'].upper() in art_map:
             warn.append({'reason': 'Такой артикул уже есть', **art_map[it['article'].upper()]})
         m = it['parsed'].get('model')
+        it['other_features'] = []
         if it['brand_id'] and m and (it['brand_id'], squash(m)) in model_map:
-            warn.append({'reason': 'Такая модель этого бренда уже есть', **model_map[(it['brand_id'], squash(m))]})
+            same_model = model_map[(it['brand_id'], squash(m))]
+            f = norm_text(it['parsed'].get('feature'))
+            same = [x for x in same_model if norm_text(x.get('feature')) == f]
+            if same:
+                warn.append({'reason': 'Такая модель с таким признаком уже есть',
+                             'id': same[0]['id'], 'name': same[0]['name']})
+            else:
+                it['other_features'] = sorted({x.get('feature') or '—' for x in same_model})
         it['duplicates'] = warn
 
     cur.execute("SELECT count(*) FROM products WHERE created_from_draft_id = %s AND not_in_1c = true "

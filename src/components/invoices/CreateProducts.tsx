@@ -30,6 +30,7 @@ interface Item {
   brand_id: number | null;
   parsed: Parsed;
   duplicates: Dup[];
+  other_features?: string[];
 }
 
 interface Folder {
@@ -257,6 +258,12 @@ const CreateProducts = ({ draftId, onBack, onDone }: Props) => {
                       />
                     </div>
                   </div>
+
+                  {it.duplicates.length === 0 && (it.other_features?.length ?? 0) > 0 && (
+                    <p className="mt-2 pl-6 text-xs text-muted-foreground break-words">
+                      У этой модели в каталоге есть: {it.other_features!.join(", ")} — создаётся новый вариант.
+                    </p>
+                  )}
 
                   {it.duplicates.length > 0 && (
                     <div className="mt-2 pl-6 space-y-1">

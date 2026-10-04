@@ -175,10 +175,13 @@ def match_by_name(cur, rows, brand_id=None, tolerance=0):
                 else:
                     row['match_status'] = 'ambiguous'
                     f = norm_text(p.get('feature'))
-                    if len(cands) == 1:
-                        row['match_reason'] = 'feature_differs'
-                    elif any(norm_text(c.get('feature')) == f for c in cands):
+                    if any(norm_text(c.get('feature')) == f for c in cands):
                         row['match_reason'] = 'feature_many'
+                    elif tolerance == 0:
+                        row['match_status'] = 'not_found'
+                        row['match_reason'] = 'feature_new'
+                    elif len(cands) == 1:
+                        row['match_reason'] = 'feature_differs'
                     else:
                         row['match_reason'] = 'feature_not_found'
                     row['catalog_features'] = sorted({c.get('feature') or '—' for c in cands})
