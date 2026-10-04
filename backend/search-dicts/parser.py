@@ -93,14 +93,28 @@ def pick_model(tail):
     return model or None, rest
 
 
-def parse_name(name, aliases):
-    """Возвращает group/model/feature/status или None, если бренда в названии нет."""
+def implied_brand_pos(s):
+    """Куда «встал бы» бренд, если его нет в названии: перед первым словом с латиницей или цифрой."""
+    for m in re.finditer(r'\S+', s):
+        if re.search(r'[0-9A-Za-z]', m.group()):
+            return m.start()
+    return len(s)
+
+
+def parse_name(name, aliases, assume_brand=False):
+    """Возвращает group/model/feature/status или None, если бренда в названии нет.
+    assume_brand=True — бренда в названии нет, но он задан для всего счёта: считаем,
+    что он стоит перед моделью, и разбираем остальное по тем же правилам."""
     s = re.sub(r'\s+', ' ', name or '').strip()
     m = find_brand(s, aliases)
-    if not m:
+    if m:
+        b_start, b_end = m.start(), m.end()
+    elif assume_brand:
+        b_start = b_end = implied_brand_pos(s)
+    else:
         return None
-    group, extra = split_group(s[:m.start()])
-    tail = clean(TAIL_BU.sub('', s[m.end():]))
+    group, extra = split_group(s[:b_start])
+    tail = clean(TAIL_BU.sub('', s[b_end:]))
     model, rest = pick_model(tail)
     feature = clean(' '.join(x for x in [extra, rest] if x))
     status = 'parsed' if (group and model) else 'doubtful'

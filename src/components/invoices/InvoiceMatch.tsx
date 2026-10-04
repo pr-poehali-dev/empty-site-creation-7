@@ -3,6 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import PickList from "@/components/search-dicts/PickList";
+import { authHeaders, loadSearchDicts, SEARCH_DICTS_URL, SearchBrand } from "@/components/search-dicts/api";
+import MatchRowCard from "./MatchRowCard";
 
 const INVOICE_URL = "https://functions.poehali.dev/da75537b-bd2c-4bb3-b3ee-5cd90f17c9a2";
 
@@ -16,7 +19,13 @@ export interface Candidate {
   price_retail: number;
   price_wholesale: number;
   price_purchase: number;
+  model?: string | null;
+  feature?: string | null;
+  search_group?: string | null;
+  distance?: number;
 }
+
+export type MatchStatus = "matched" | "suggested" | "ambiguous" | "not_found" | "empty" | "manual" | "unparsed";
 
 export interface MatchRow {
   article: string;
@@ -25,19 +34,29 @@ export interface MatchRow {
   qty: number | null;
   price: number | null;
   total: number | null;
-  match_status: "matched" | "ambiguous" | "not_found" | "empty" | "manual";
+  match_status: MatchStatus;
   match_type?: string;
+  match_reason?: string;
   product_id?: number;
   candidates: Candidate[];
+  parsed?: {
+    brand: string | null;
+    brand_implied: boolean;
+    group: string | null;
+    model: string | null;
+    feature: string | null;
+  };
 }
 
 export interface MatchSummary {
   total: number;
   matched: number;
+  suggested?: number;
   ambiguous: number;
   not_found: number;
   empty: number;
   manual: number;
+  unparsed?: number;
 }
 
 interface Props {
@@ -45,11 +64,13 @@ interface Props {
   onBack: () => void;
 }
 
-const money = (v: number) =>
-  v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+type Mode = "article" | "name";
 
 const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const { toast } = useToast();
+  const [mode, setMode] = useState<Mode>("article");
+  const [brandId, setBrandId] = useState("");
+  const [brands, setBrands] = useState<SearchBrand[]>([]);
   const [rows, setRows] = useState<MatchRow[]>([]);
   const [summary, setSummary] = useState<MatchSummary | null>(null);
   const [fromNames, setFromNames] = useState(0);
@@ -57,22 +78,32 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [group, setGroup] = useState("");
   const [inNames, setInNames] = useState(false);
   const [filter, setFilter] = useState<"todo" | "all">("todo");
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
   const run = useCallback(
-    async (opts?: { product_group?: string; search_in_names?: boolean }) => {
+    async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean }) => {
+      const m = opts?.mode ?? mode;
       setLoading(true);
       try {
-        const r = await fetch(INVOICE_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "match",
-            draft_id: draftId,
-            product_group: opts?.product_group ?? group,
-            search_in_names: opts?.search_in_names ?? inNames,
-          }),
-        });
+        let r: Response;
+        if (m === "name") {
+          const b = opts?.brandId ?? brandId;
+          r = await fetch(`${SEARCH_DICTS_URL}?section=match`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ draft_id: draftId, brand_id: b ? Number(b) : null }),
+          });
+        } else {
+          r = await fetch(INVOICE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "match",
+              draft_id: draftId,
+              product_group: opts?.product_group ?? group,
+              search_in_names: opts?.search_in_names ?? inNames,
+            }),
+          });
+        }
         const d = await r.json();
         if (!r.ok) {
           toast({ title: d.error || "Не удалось сопоставить", variant: "destructive" });
@@ -87,23 +118,39 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         setLoading(false);
       }
     },
-    [draftId, group, inNames, toast],
+    [draftId, mode, brandId, group, inNames, toast],
   );
 
   useEffect(() => {
-    run();
-     
+    (async () => {
+      let m: Mode = "article";
+      let b = "";
+      try {
+        const [dicts, st] = await Promise.all([
+          loadSearchDicts(),
+          fetch(`${SEARCH_DICTS_URL}?section=match&draft_id=${draftId}`, { headers: authHeaders() }).then((x) => x.json()),
+        ]);
+        setBrands(dicts.brands);
+        if (st?.mode === "name") m = "name";
+        if (st?.brand_id) b = String(st.brand_id);
+      } catch { /* ignore */ }
+      setMode(m);
+      setBrandId(b);
+      run({ mode: m, brandId: b });
+    })();
   }, [draftId]);
+
+  const switchMode = (m: Mode) => {
+    if (m === mode) return;
+    setMode(m);
+    run({ mode: m });
+  };
 
   const choose = async (index: number, productId: number | null) => {
     setRows((prev) =>
       prev.map((r, i) =>
         i === index
-          ? {
-              ...r,
-              product_id: productId ?? undefined,
-              match_status: productId ? "manual" : "not_found",
-            }
+          ? { ...r, product_id: productId ?? undefined, match_status: productId ? "manual" : "not_found" }
           : r,
       ),
     );
@@ -111,12 +158,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
       await fetch(INVOICE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "set_match",
-          draft_id: draftId,
-          row_index: index,
-          product_id: productId,
-        }),
+        body: JSON.stringify({ action: "set_match", draft_id: draftId, row_index: index, product_id: productId }),
       });
     } catch {
       toast({ title: "Выбор не сохранился", variant: "destructive" });
@@ -124,14 +166,15 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   };
 
   const needsWork = (r: MatchRow) =>
-    r.match_status === "ambiguous" || r.match_status === "not_found" || r.match_status === "empty";
+    ["ambiguous", "suggested", "not_found", "empty", "unparsed"].includes(r.match_status);
 
   const visible = rows
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => (filter === "all" ? true : needsWork(r)));
 
   const done = summary ? summary.matched + summary.manual : 0;
-  const left = summary ? summary.ambiguous + summary.not_found + summary.empty : 0;
+  const left = rows.filter(needsWork).length;
+  const yellow = summary ? (summary.ambiguous || 0) + (summary.suggested || 0) : 0;
 
   return (
     <div className="space-y-4">
@@ -141,23 +184,56 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         </Button>
         <div>
           <h2 className="text-lg font-semibold">Сопоставление с каталогом</h2>
-          <p className="text-sm text-muted-foreground">
-            Строк в счёте: {summary?.total ?? 0}
-          </p>
+          <p className="text-sm text-muted-foreground">Строк в счёте: {summary?.total ?? 0}</p>
         </div>
       </div>
 
-      {fromNames > 0 && (
+      <div className="rounded-xl border border-white/[0.08] p-3 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground">Искать по:</span>
+          <div className="inline-flex rounded-xl border border-white/[0.08] p-0.5 bg-secondary">
+            {(["article", "name"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                disabled={loading}
+                onClick={() => switchMode(m)}
+                className={`px-3 h-8 rounded-lg text-sm transition-colors ${mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {m === "article" ? "Артикулу" : "Наименованию"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode === "name" && (
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-full sm:w-64">
+                <PickList
+                  value={brandId}
+                  onChange={(v) => { setBrandId(v); run({ brandId: v }); }}
+                  placeholder="Бренд счёта не выбран"
+                  extra={[{ value: "", label: "Не выбран" }]}
+                  options={brands.map((b) => ({ value: String(b.id), label: b.name }))}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Наименование из счёта разбирается так же, как карточки каталога: группа, бренд, модель, признак.
+              Если бренда в строке нет — берётся бренд счёта.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {mode === "article" && fromNames > 0 && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
           <div className="flex gap-2">
             <Icon name="TriangleAlert" size={18} className="text-amber-400 shrink-0 mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium text-amber-300">
-                В счёте нет колонки с артикулом
-              </p>
+              <p className="font-medium text-amber-300">В счёте нет колонки с артикулом</p>
               <p className="text-muted-foreground mt-1">
-                Артикулы вычислены из наименований — таких строк {fromNames}. Если товары
-                не находятся, попробуйте искать артикул ещё и в тексте названий каталога.
+                Артикулы вычислены из наименований — таких строк {fromNames}. Попробуйте поиск по наименованию.
               </p>
             </div>
           </div>
@@ -167,10 +243,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
               variant="outline"
               className="rounded-xl"
               disabled={loading}
-              onClick={() => {
-                setInNames(true);
-                run({ search_in_names: true });
-              }}
+              onClick={() => { setInNames(true); run({ search_in_names: true }); }}
             >
               <Icon name="Search" size={14} />
               <span className="ml-2">Расширить поиск на наименования</span>
@@ -179,38 +252,35 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className={`grid grid-cols-2 ${mode === "name" ? "sm:grid-cols-4" : "sm:grid-cols-4"} gap-2`}>
         <div className="rounded-xl border border-white/[0.08] p-3">
           <p className="text-xs text-muted-foreground">Найдено</p>
           <p className="text-xl font-semibold text-emerald-400">{done}</p>
         </div>
         <div className="rounded-xl border border-white/[0.08] p-3">
-          <p className="text-xs text-muted-foreground">Нужен выбор</p>
-          <p className="text-xl font-semibold text-amber-400">{summary?.ambiguous ?? 0}</p>
+          <p className="text-xs text-muted-foreground">{mode === "name" ? "Предложено / выбор" : "Нужен выбор"}</p>
+          <p className="text-xl font-semibold text-amber-400">{mode === "name" ? yellow : summary?.ambiguous ?? 0}</p>
         </div>
         <div className="rounded-xl border border-white/[0.08] p-3">
           <p className="text-xs text-muted-foreground">Не найдено</p>
           <p className="text-xl font-semibold text-rose-400">{summary?.not_found ?? 0}</p>
         </div>
         <div className="rounded-xl border border-white/[0.08] p-3">
-          <p className="text-xs text-muted-foreground">Без артикула</p>
-          <p className="text-xl font-semibold">{summary?.empty ?? 0}</p>
+          <p className="text-xs text-muted-foreground">{mode === "name" ? "Бренд не разобран" : "Без артикула"}</p>
+          <p className="text-xl font-semibold">{mode === "name" ? summary?.unparsed ?? 0 : summary?.empty ?? 0}</p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Сузить до группы товаров"
-          value={group}
-          onChange={(e) => setGroup(e.target.value)}
-          className="w-56 rounded-xl"
-        />
-        <Button
-          variant="outline"
-          className="rounded-xl"
-          disabled={loading}
-          onClick={() => run()}
-        >
+        {mode === "article" && (
+          <Input
+            placeholder="Сузить до группы товаров"
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            className="w-56 rounded-xl"
+          />
+        )}
+        <Button variant="outline" className="rounded-xl" disabled={loading} onClick={() => run()}>
           <Icon name="RefreshCw" size={14} />
           <span className="ml-2">Искать заново</span>
         </Button>
@@ -239,85 +309,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
       ) : (
         <div className="space-y-2">
           {visible.map(({ r, i }) => (
-            <div key={i} className="rounded-xl border border-white/[0.08] p-3">
-              <div
-                className={`flex flex-wrap items-baseline gap-2 ${
-                  r.match_status === "ambiguous"
-                    ? "sticky top-0 z-10 bg-card -mx-3 px-3 py-2 border-b border-white/[0.08]"
-                    : ""
-                }`}
-              >
-                <span className="font-mono text-sm">{r.article || "без артикула"}</span>
-                {r.article_guessed && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
-                    из наименования
-                  </span>
-                )}
-                <span className="text-sm text-muted-foreground flex-1">{r.name}</span>
-                <span className="text-sm">
-                  {r.qty ?? 0} × {money(r.price ?? 0)}
-                </span>
-              </div>
-
-              {r.match_status === "ambiguous" && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium text-amber-400">
-                    Нужен выбор — несколько подходящих товаров
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    {(expanded[i] ? r.candidates : r.candidates.slice(0, 5)).map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => choose(i, c.id)}
-                        className="w-full text-left rounded-lg border border-white/[0.08] px-3 py-2 hover:bg-white/[0.04] transition"
-                      >
-                        <div className="flex flex-wrap items-baseline gap-2">
-                          <span className="font-mono text-xs text-amber-300">
-                            {c.article}
-                          </span>
-                          <span className="text-sm flex-1">{c.name}</span>
-                          {c.product_group && (
-                            <span className="text-[11px] text-muted-foreground">
-                              {c.product_group}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-
-                    {r.candidates.length > 5 && !expanded[i] && (
-                      <button
-                        onClick={() => setExpanded((p) => ({ ...p, [i]: true }))}
-                        className="w-full text-center text-xs text-muted-foreground py-2 hover:text-foreground transition"
-                      >
-                        Показать ещё {r.candidates.length - 5}
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => choose(i, null)}
-                      className="w-full text-left rounded-lg border border-dashed border-rose-400/40 px-3 py-2 hover:bg-rose-500/[0.06] transition"
-                    >
-                      <span className="text-sm text-rose-300">
-                        Ничего не подходит — создать новый товар
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {(r.match_status === "not_found" || r.match_status === "empty") && (
-                <p className="mt-2 text-sm text-rose-400">
-                  {r.match_status === "empty"
-                    ? "Артикул не определён"
-                    : "В каталоге не найден — карточку создадим на следующем шаге"}
-                </p>
-              )}
-
-              {r.match_status === "manual" && (
-                <p className="mt-2 text-sm text-emerald-400">Выбран вручную</p>
-              )}
-            </div>
+            <MatchRowCard key={i} row={r} mode={mode} onChoose={(pid) => choose(i, pid)} />
           ))}
         </div>
       )}

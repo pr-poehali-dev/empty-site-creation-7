@@ -4,6 +4,7 @@ import os
 import psycopg2
 from psycopg2.extras import execute_values
 from parser import parse_name
+from matcher import match_draft
 
 
 def brand_products(cur, brand_id):
@@ -212,6 +213,21 @@ def handler(event: dict, context) -> dict:
     try:
         if not is_owner(cur, event):
             return resp(403, {'error': 'Доступно только владельцу'})
+
+        if section == 'match':
+            did = int_or_none(params.get('draft_id') or body.get('draft_id'))
+            if not did:
+                return resp(400, {'error': 'Не указан счёт'})
+            if method == 'GET':
+                cur.execute("SELECT match_mode, search_brand_id FROM invoice_drafts WHERE id = %s", (did,))
+                r = cur.fetchone()
+                if not r:
+                    return resp(404, {'error': 'Счёт не найден'})
+                return resp(200, {'mode': r[0], 'brand_id': r[1]})
+            res = match_draft(cur, did, int_or_none(body.get('brand_id')))
+            if res is None:
+                return resp(404, {'error': 'Счёт не найден'})
+            return resp(200, res)
 
         if section == 'parse':
             bid = int_or_none(params.get('brand_id'))
