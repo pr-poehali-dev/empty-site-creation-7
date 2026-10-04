@@ -121,7 +121,8 @@ def match_by_name(cur, rows, brand_id=None):
 
     out = []
     for r, (b, implied, p) in zip(rows, parsed_rows):
-        row = {k: v for k, v in r.items() if k not in ('candidates', 'product_id', 'match_type', 'match_reason')}
+        row = {k: v for k, v in r.items()
+               if k not in ('candidates', 'product_id', 'match_type', 'match_reason', 'chosen_name', 'match_status')}
         row['parsed'] = {
             'brand': b['name'] if b else None,
             'brand_implied': implied,
@@ -180,14 +181,16 @@ def match_draft(cur, draft_id, brand_id=None):
     if not row:
         return None
     rows = row[0] or []
-    manual = {i: r['product_id'] for i, r in enumerate(rows)
+    manual = {i: (r['product_id'], r.get('chosen_name')) for i, r in enumerate(rows)
               if r.get('match_status') == 'manual' and r.get('product_id')}
 
     matched = match_by_name(cur, rows, brand_id)
-    for i, pid in manual.items():
+    for i, (pid, cname) in manual.items():
         if i < len(matched):
             matched[i]['match_status'] = 'manual'
             matched[i]['product_id'] = pid
+            if cname:
+                matched[i]['chosen_name'] = cname
 
     cur.execute(
         "UPDATE invoice_drafts SET rows_data = %s::jsonb, stage = 'matched', match_mode = 'name', "

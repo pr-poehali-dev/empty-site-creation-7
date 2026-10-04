@@ -179,21 +179,26 @@ def match_draft(draft_id, product_group=None, search_in_names=False):
         prev = {}
         for i, r in enumerate(rows):
             if r.get('match_status') == 'manual' and r.get('product_id'):
-                prev[i] = r['product_id']
+                prev[i] = (r['product_id'], r.get('chosen_name'))
+            r.pop('chosen_name', None)
+            r.pop('parsed', None)
+            r.pop('match_reason', None)
 
         matched = match_rows(cur, rows, product_group, search_in_names)
 
-        for i, pid in prev.items():
+        for i, (pid, cname) in prev.items():
             if i < len(matched):
                 matched[i]['match_status'] = 'manual'
                 matched[i]['product_id'] = pid
+                if cname:
+                    matched[i]['chosen_name'] = cname
 
         from_names = sum(1 for r in rows if r.get('article_guessed'))
 
         rows_json = _esc(json.dumps(matched, ensure_ascii=False))
         cur.execute(
             f"UPDATE invoice_drafts SET rows_data = '{rows_json}'::jsonb, "
-            f"stage = 'matched', updated_at = NOW(), "
+            f"stage = 'matched', match_mode = 'article', updated_at = NOW(), "
             f"expires_at = NOW() + INTERVAL '1 hour' WHERE id = {int(draft_id)}"
         )
 
@@ -209,7 +214,7 @@ def match_draft(draft_id, product_group=None, search_in_names=False):
     }
 
 
-def set_row_match(draft_id, row_index, product_id):
+def set_row_match(draft_id, row_index, product_id, chosen_name=None):
     """Запоминает выбор владельца по одной строке."""
     with _conn() as c, c.cursor() as cur:
         cur.execute(
@@ -225,8 +230,11 @@ def set_row_match(draft_id, row_index, product_id):
         if product_id:
             rows[row_index]['product_id'] = int(product_id)
             rows[row_index]['match_status'] = 'manual'
+            if chosen_name:
+                rows[row_index]['chosen_name'] = str(chosen_name)
         else:
             rows[row_index].pop('product_id', None)
+            rows[row_index].pop('chosen_name', None)
             rows[row_index]['match_status'] = 'not_found'
 
         rows_json = _esc(json.dumps(rows, ensure_ascii=False))
@@ -315,7 +323,7 @@ def handler(event, context):
         idx = body.get('row_index')
         if not did or idx is None:
             return _resp(400, {'error': 'Не указана строка'})
-        ok = set_row_match(did, int(idx), body.get('product_id'))
+        ok = set_row_match(did, int(idx), body.get('product_id'), body.get('chosen_name'))
         if not ok:
             return _resp(404, {'error': 'Строка не найдена'})
         return _resp(200, {'saved': True})

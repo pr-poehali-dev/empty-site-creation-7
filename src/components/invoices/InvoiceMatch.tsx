@@ -38,6 +38,8 @@ export interface MatchRow {
   match_type?: string;
   match_reason?: string;
   product_id?: number;
+  chosen_name?: string;
+  prev_status?: MatchStatus;
   candidates: Candidate[];
   parsed?: {
     brand: string | null;
@@ -66,6 +68,15 @@ interface Props {
 
 type Mode = "article" | "name";
 
+const GROUPS = {
+  found: ["matched", "manual"],
+  yellow: ["suggested", "ambiguous"],
+  red: ["not_found", "empty"],
+  gray: ["unparsed"],
+} as Record<"found" | "yellow" | "red" | "gray", MatchStatus[]>;
+
+type FilterKey = "all" | "todo" | keyof typeof GROUPS;
+
 const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const { toast } = useToast();
   const [mode, setMode] = useState<Mode>("article");
@@ -77,7 +88,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [loading, setLoading] = useState(true);
   const [group, setGroup] = useState("");
   const [inNames, setInNames] = useState(false);
-  const [filter, setFilter] = useState<"todo" | "all">("todo");
+  const [filter, setFilter] = useState<FilterKey>("todo");
 
   const run = useCallback(
     async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean }) => {
@@ -146,35 +157,55 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
     run({ mode: m });
   };
 
-  const choose = async (index: number, productId: number | null) => {
+  const choose = async (index: number, productId: number | null, name?: string, reset = false) => {
     setRows((prev) =>
-      prev.map((r, i) =>
-        i === index
-          ? { ...r, product_id: productId ?? undefined, match_status: productId ? "manual" : "not_found" }
-          : r,
-      ),
+      prev.map((r, i) => {
+        if (i !== index) return r;
+        if (productId) {
+          return {
+            ...r,
+            prev_status: r.prev_status ?? r.match_status,
+            product_id: productId,
+            chosen_name: name,
+            match_status: "manual",
+          };
+        }
+        const back: MatchStatus = reset && r.candidates.length > 0
+          ? (r.prev_status && r.prev_status !== "matched" && r.prev_status !== "manual" ? r.prev_status : "ambiguous")
+          : "not_found";
+        return { ...r, product_id: undefined, chosen_name: undefined, match_status: back };
+      }),
     );
     try {
       await fetch(INVOICE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set_match", draft_id: draftId, row_index: index, product_id: productId }),
+        body: JSON.stringify({
+          action: "set_match", draft_id: draftId, row_index: index, product_id: productId, chosen_name: name || null,
+        }),
       });
     } catch {
       toast({ title: "Выбор не сохранился", variant: "destructive" });
     }
   };
 
-  const needsWork = (r: MatchRow) =>
-    ["ambiguous", "suggested", "not_found", "empty", "unparsed"].includes(r.match_status);
+  const counts = {
+    found: rows.filter((r) => GROUPS.found.includes(r.match_status)).length,
+    yellow: rows.filter((r) => GROUPS.yellow.includes(r.match_status)).length,
+    red: rows.filter((r) => GROUPS.red.includes(r.match_status)).length,
+    gray: rows.filter((r) => GROUPS.gray.includes(r.match_status)).length,
+  };
+  const left = counts.yellow + counts.red + counts.gray;
 
   const visible = rows
     .map((r, i) => ({ r, i }))
-    .filter(({ r }) => (filter === "all" ? true : needsWork(r)));
+    .filter(({ r }) => {
+      if (filter === "all") return true;
+      if (filter === "todo") return !GROUPS.found.includes(r.match_status);
+      return GROUPS[filter].includes(r.match_status);
+    });
 
-  const done = summary ? summary.matched + summary.manual : 0;
-  const left = rows.filter(needsWork).length;
-  const yellow = summary ? (summary.ambiguous || 0) + (summary.suggested || 0) : 0;
+  const toggle = (f: FilterKey) => setFilter(filter === f ? "all" : f);
 
   return (
     <div className="space-y-4">
@@ -252,23 +283,27 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
         </div>
       )}
 
-      <div className={`grid grid-cols-2 ${mode === "name" ? "sm:grid-cols-4" : "sm:grid-cols-4"} gap-2`}>
-        <div className="rounded-xl border border-white/[0.08] p-3">
-          <p className="text-xs text-muted-foreground">Найдено</p>
-          <p className="text-xl font-semibold text-emerald-400">{done}</p>
-        </div>
-        <div className="rounded-xl border border-white/[0.08] p-3">
-          <p className="text-xs text-muted-foreground">{mode === "name" ? "Предложено / выбор" : "Нужен выбор"}</p>
-          <p className="text-xl font-semibold text-amber-400">{mode === "name" ? yellow : summary?.ambiguous ?? 0}</p>
-        </div>
-        <div className="rounded-xl border border-white/[0.08] p-3">
-          <p className="text-xs text-muted-foreground">Не найдено</p>
-          <p className="text-xl font-semibold text-rose-400">{summary?.not_found ?? 0}</p>
-        </div>
-        <div className="rounded-xl border border-white/[0.08] p-3">
-          <p className="text-xs text-muted-foreground">{mode === "name" ? "Бренд не разобран" : "Без артикула"}</p>
-          <p className="text-xl font-semibold">{mode === "name" ? summary?.unparsed ?? 0 : summary?.empty ?? 0}</p>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {([
+          ["found", "Найдено", counts.found, "text-emerald-400", "border-emerald-500"],
+          ["yellow", mode === "name" ? "Предложено / выбор" : "Нужен выбор", counts.yellow, "text-amber-400", "border-amber-500"],
+          ["red", "Не найдено", counts.red, "text-rose-400", "border-rose-500"],
+          ["gray", "Бренд не разобран", counts.gray, "", "border-white/40"],
+        ] as [FilterKey, string, number, string, string][])
+          .filter(([k]) => k !== "gray" || mode === "name")
+          .map(([k, label, n, color, active]) => (
+            <button
+              key={k}
+              onClick={() => toggle(k)}
+              className={`rounded-xl border p-3 text-left transition-colors ${filter === k ? `${active} bg-white/[0.04]` : "border-white/[0.08] hover:bg-white/[0.03]"}`}
+            >
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                {label}
+                {filter === k && <Icon name="Filter" size={11} />}
+              </p>
+              <p className={`text-xl font-semibold ${color}`}>{n}</p>
+            </button>
+          ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -285,11 +320,18 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
           <span className="ml-2">Искать заново</span>
         </Button>
         <Button
+          variant={filter === "all" ? "default" : "outline"}
+          className="rounded-xl"
+          onClick={() => setFilter("all")}
+        >
+          Все строки ({rows.length})
+        </Button>
+        <Button
           variant={filter === "todo" ? "default" : "outline"}
           className="rounded-xl"
-          onClick={() => setFilter(filter === "todo" ? "all" : "todo")}
+          onClick={() => setFilter("todo")}
         >
-          {filter === "todo" ? "Показать все строки" : "Только требующие внимания"}
+          Требуют внимания ({left})
         </Button>
       </div>
 
@@ -301,15 +343,23 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
       ) : visible.length === 0 ? (
         <div className="py-12 text-center">
           <Icon name="CircleCheck" size={32} className="text-emerald-400 mx-auto mb-2" />
-          <p className="font-medium">Все строки опознаны</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            {left === 0 ? "Ручной выбор не потребовался" : "Остались только решённые"}
-          </p>
+          <p className="font-medium">{left === 0 ? "Все строки опознаны" : "В этом фильтре строк нет"}</p>
+          {left > 0 && (
+            <Button variant="outline" className="rounded-xl mt-3" onClick={() => setFilter("todo")}>
+              Показать требующие внимания ({left})
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
           {visible.map(({ r, i }) => (
-            <MatchRowCard key={i} row={r} mode={mode} onChoose={(pid) => choose(i, pid)} />
+            <MatchRowCard
+              key={i}
+              row={r}
+              mode={mode}
+              brandId={brandId}
+              onChoose={(pid, name) => choose(i, pid, name, pid === null && GROUPS.found.includes(r.match_status))}
+            />
           ))}
         </div>
       )}

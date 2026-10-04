@@ -7,6 +7,30 @@ from parser import parse_name
 from matcher import match_draft
 
 
+def find_products(cur, q, brand_id=None):
+    """Ручной поиск товара: все слова запроса должны встретиться в названии, артикуле или модели."""
+    words = [w for w in (q or '').split() if w][:6]
+    if not words:
+        return []
+    conds, vals = [], []
+    for w in words:
+        conds.append("(p.name ILIKE %s OR p.article ILIKE %s OR p.model ILIKE %s)")
+        vals += [f'%{w}%'] * 3
+    order = ''
+    if brand_id:
+        order = 'CASE WHEN p.search_brand_id = %s THEN 0 ELSE 1 END, '
+        vals.append(brand_id)
+    cur.execute(
+        f"""SELECT p.id, p.name, p.article, p.model, p.feature, g.name
+            FROM products p LEFT JOIN search_groups g ON g.id = p.search_group_id
+            WHERE COALESCE(p.is_archived, false) = false AND {' AND '.join(conds)}
+            ORDER BY {order}p.name LIMIT 30""",
+        vals,
+    )
+    return [{'id': r[0], 'name': r[1], 'article': r[2], 'model': r[3], 'feature': r[4], 'search_group': r[5]}
+            for r in cur.fetchall()]
+
+
 def brand_products(cur, brand_id):
     cur.execute("SELECT name, aliases FROM search_brands WHERE id = %s", (brand_id,))
     b = cur.fetchone()
@@ -213,6 +237,9 @@ def handler(event: dict, context) -> dict:
     try:
         if not is_owner(cur, event):
             return resp(403, {'error': 'Доступно только владельцу'})
+
+        if section == 'find':
+            return resp(200, {'items': find_products(cur, params.get('q', ''), int_or_none(params.get('brand_id')))})
 
         if section == 'match':
             did = int_or_none(params.get('draft_id') or body.get('draft_id'))

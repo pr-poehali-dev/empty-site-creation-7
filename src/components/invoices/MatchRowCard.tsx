@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import Icon from "@/components/ui/icon";
 import type { MatchRow } from "./InvoiceMatch";
+import ManualProductSearch from "./ManualProductSearch";
 
 interface Props {
   row: MatchRow;
   mode: "article" | "name";
-  onChoose: (productId: number | null) => void;
+  brandId?: string;
+  onChoose: (productId: number | null, name?: string) => void;
 }
 
 const money = (v: number) =>
@@ -27,11 +31,20 @@ const REASON: Record<string, string> = {
   brand_not_parsed: "Товары этого бренда ещё не разобраны — запустите разбор в «Справочниках для поиска»",
 };
 
-const MatchRowCard = ({ row: r, mode, onChoose }: Props) => {
+const MatchRowCard = ({ row: r, mode, brandId, onChoose }: Props) => {
   const [expanded, setExpanded] = useState(false);
+  const [searching, setSearching] = useState(false);
   const p = r.parsed;
-  const showCands = r.match_status === "ambiguous" || r.match_status === "suggested";
+  const yellow = r.match_status === "ambiguous" || r.match_status === "suggested";
+  const red = ["not_found", "empty", "unparsed"].includes(r.match_status);
+  const resolved = r.match_status === "matched" || r.match_status === "manual";
   const list = expanded ? r.candidates : r.candidates.slice(0, 5);
+  const chosen = r.chosen_name || r.candidates.find((c) => c.id === r.product_id)?.name;
+
+  const pick = (id: number | null, name?: string) => {
+    setSearching(false);
+    onChoose(id, name);
+  };
 
   return (
     <div className={`rounded-xl border p-3 ${TONE[r.match_status] || "border-white/[0.08]"}`}>
@@ -56,7 +69,7 @@ const MatchRowCard = ({ row: r, mode, onChoose }: Props) => {
         </div>
       )}
 
-      {showCands && (
+      {yellow && (
         <div className="mt-2">
           <p className="text-sm font-medium text-amber-400">
             {r.match_status === "suggested"
@@ -64,23 +77,30 @@ const MatchRowCard = ({ row: r, mode, onChoose }: Props) => {
               : "Нужен выбор — несколько подходящих товаров"}
           </p>
           <div className="mt-2 space-y-1">
-            {list.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => onChoose(c.id)}
-                className="w-full text-left rounded-lg border border-white/[0.08] bg-card px-3 py-2 hover:bg-white/[0.04] transition"
-              >
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="font-mono text-xs text-amber-300">{mode === "name" ? c.model : c.article}</span>
-                  <span className="text-sm flex-1">{c.name}</span>
-                  {mode === "name" && c.distance != null && c.distance > 0 && (
-                    <span className="text-[11px] text-muted-foreground">отличие: {c.distance} зн.</span>
-                  )}
-                  {mode === "article" && c.product_group && (
-                    <span className="text-[11px] text-muted-foreground">{c.product_group}</span>
-                  )}
-                </div>
-              </button>
+            {list.map((c, idx) => (
+              <div key={c.id} className="flex items-stretch gap-1">
+                <button
+                  onClick={() => pick(c.id, c.name)}
+                  className="flex-1 min-w-0 text-left rounded-lg border border-white/[0.08] bg-card px-3 py-2 hover:bg-white/[0.04] transition"
+                >
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-mono text-xs text-amber-300">{mode === "name" ? c.model : c.article}</span>
+                    <span className="text-sm flex-1 min-w-0 break-words">{c.name}</span>
+                    {mode === "name" && c.distance != null && c.distance > 0 && (
+                      <span className="text-[11px] text-muted-foreground">отличие: {c.distance} зн.</span>
+                    )}
+                    {mode === "article" && c.product_group && (
+                      <span className="text-[11px] text-muted-foreground">{c.product_group}</span>
+                    )}
+                  </div>
+                </button>
+                {idx === 0 && (
+                  <Button size="sm" className="h-auto rounded-lg shrink-0" onClick={() => pick(c.id, c.name)}>
+                    <Icon name="Check" size={14} />
+                    <span className="ml-1 hidden sm:inline">Подтвердить</span>
+                  </Button>
+                )}
+              </div>
             ))}
             {r.candidates.length > 5 && !expanded && (
               <button
@@ -91,7 +111,7 @@ const MatchRowCard = ({ row: r, mode, onChoose }: Props) => {
               </button>
             )}
             <button
-              onClick={() => onChoose(null)}
+              onClick={() => pick(null)}
               className="w-full text-left rounded-lg border border-dashed border-rose-400/40 px-3 py-2 hover:bg-rose-500/[0.06] transition"
             >
               <span className="text-sm text-rose-300">Ничего не подходит — создать новый товар</span>
@@ -100,17 +120,44 @@ const MatchRowCard = ({ row: r, mode, onChoose }: Props) => {
         </div>
       )}
 
-      {(r.match_status === "not_found" || r.match_status === "empty" || r.match_status === "unparsed") && (
+      {red && (
         <p className={`mt-2 text-sm ${r.match_status === "unparsed" ? "text-muted-foreground" : "text-rose-400"}`}>
           {(r.match_reason && REASON[r.match_reason]) ||
             (r.match_status === "empty" ? "Артикул не определён" : "В каталоге не найден — карточку создадим на следующем шаге")}
         </p>
       )}
 
-      {r.match_status === "matched" && mode === "name" && r.candidates[0] && (
-        <p className="mt-2 text-sm text-emerald-400 break-words">Найден: {r.candidates[0].name}</p>
+      {resolved && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="text-sm text-emerald-400 flex-1 min-w-0 break-words">
+            {r.match_status === "manual" ? "Выбран вручную" : "Найден"}
+            {chosen ? `: ${chosen}` : ""}
+          </p>
+          <button className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => pick(null)}>
+            Сбросить
+          </button>
+        </div>
       )}
-      {r.match_status === "manual" && <p className="mt-2 text-sm text-emerald-400">Выбран вручную</p>}
+
+      {(yellow || red) && (
+        <div className="mt-2">
+          {!searching ? (
+            <button
+              onClick={() => setSearching(true)}
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              <Icon name="Search" size={12} />
+              Найти товар в каталоге вручную
+            </button>
+          ) : (
+            <ManualProductSearch
+              initial={(mode === "name" && p?.model) || r.article || ""}
+              brandId={brandId}
+              onPick={(id, name) => pick(id, name)}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 };
