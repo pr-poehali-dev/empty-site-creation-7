@@ -284,6 +284,44 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             return resp(200, res)
 
+        if section == 'row_brand':
+            did = int_or_none(body.get('draft_id'))
+            bid = int_or_none(body.get('brand_id'))
+            if not did or not bid:
+                return resp(400, {'error': 'Укажите счёт и бренд'})
+            cur.execute("SELECT rows_data, search_brand_id FROM invoice_drafts WHERE id = %s", (did,))
+            d = cur.fetchone()
+            if not d:
+                return resp(404, {'error': 'Счёт не найден'})
+            cur.execute("SELECT name, aliases FROM search_brands WHERE id = %s", (bid,))
+            b = cur.fetchone()
+            if not b:
+                return resp(404, {'error': 'Бренд не найден'})
+            word = (body.get('word') or '').strip()
+            parsed_count = None
+            if word:
+                if len(word) < 2:
+                    return resp(400, {'error': 'Слишком короткое слово'})
+                cur.execute("SELECT name FROM search_brands WHERE id <> %s AND (lower(name) = lower(%s) "
+                            "OR lower(%s) = ANY(SELECT lower(x) FROM unnest(aliases) x))", (bid, word, word))
+                other = cur.fetchone()
+                if other:
+                    return resp(409, {'error': f'«{word}» уже записано у бренда {other[0]}'})
+                aliases = clean_aliases(list(b[1] or []) + [word], b[0])
+                cur.execute("UPDATE search_brands SET aliases = %s WHERE id = %s", (aliases, bid))
+                pr = run_parse(cur, bid, apply=True)
+                parsed_count = json.loads(pr['body']).get('applied')
+            else:
+                rows = d[0] or []
+                for i in body.get('row_indexes') or []:
+                    if 0 <= int(i) < len(rows):
+                        rows[int(i)]['brand_override'] = bid
+                cur.execute("UPDATE invoice_drafts SET rows_data = %s::jsonb WHERE id = %s",
+                            (json.dumps(rows, ensure_ascii=False), did))
+            res = match_draft(cur, did, d[1])
+            res['parsed_count'] = parsed_count
+            return resp(200, res)
+
         if section == 'match':
             did = int_or_none(params.get('draft_id') or body.get('draft_id'))
             if not did:

@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import type { MatchRow } from "./InvoiceMatch";
 import ManualProductSearch from "./ManualProductSearch";
+import RowBrandPicker, { BrandApply } from "./RowBrandPicker";
+import type { SearchBrand } from "@/components/search-dicts/api";
 
 interface Props {
   row: MatchRow;
@@ -10,6 +12,10 @@ interface Props {
   brandId?: string;
   onChoose: (productId: number | null, name?: string) => void;
   onUndo?: () => void;
+  brands?: SearchBrand[];
+  impliedCount?: number;
+  brandBusy?: boolean;
+  onBrand?: (a: BrandApply) => Promise<boolean>;
 }
 
 const money = (v: number) =>
@@ -35,9 +41,10 @@ const REASON: Record<string, string> = {
   brand_not_parsed: "Товары этого бренда ещё не разобраны — запустите разбор в «Справочниках для поиска»",
 };
 
-const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
+const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo, brands = [], impliedCount = 0, brandBusy = false, onBrand }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(false);
   const p = r.parsed;
   const yellow = r.match_status === "ambiguous" || r.match_status === "suggested";
   const red = ["not_found", "empty", "unparsed"].includes(r.match_status);
@@ -67,10 +74,27 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo }: Props) => {
           <span>
             <span className="text-muted-foreground">Бренд: </span>{p.brand || "—"}
             {p.brand_implied && <span className="text-muted-foreground"> (бренд счёта)</span>}
+            {p.brand_implied && onBrand && !resolved && r.match_status !== "created" && (
+              <button className="ml-2 text-primary hover:underline" onClick={() => setBrandOpen(!brandOpen)}>
+                Уточнить бренд
+              </button>
+            )}
           </span>
           <span><span className="text-muted-foreground">Модель: </span><span className="font-mono">{p.model || "—"}</span></span>
           {p.feature && <span><span className="text-muted-foreground">Признак: </span>{p.feature}</span>}
         </div>
+      )}
+
+      {brandOpen && onBrand && (
+        <RowBrandPicker
+          brands={brands}
+          defaultBrandId={brandId}
+          lineWord={p?.line_word}
+          sameCount={impliedCount}
+          busy={brandBusy}
+          onApply={async (a) => { if (await onBrand(a)) setBrandOpen(false); }}
+          onClose={() => setBrandOpen(false)}
+        />
       )}
 
       {yellow && (

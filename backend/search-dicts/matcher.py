@@ -127,6 +127,13 @@ def match_by_name(cur, rows, brand_id=None, tolerance=0):
     parsed_rows = []
     used = set()
     for r in rows:
+        b = by_id.get(r.get('brand_override')) if r.get('brand_override') else None
+        if b:
+            implied = not find_brand(r.get('name') or '', b['aliases'])
+            p = parse_name(r.get('name'), b['aliases'], assume_brand=implied)
+            parsed_rows.append((b, implied, p))
+            used.add(b['id'])
+            continue
         b = detect_brand(r.get('name'), brands)
         implied = False
         if not b and default:
@@ -149,6 +156,13 @@ def match_by_name(cur, rows, brand_id=None, tolerance=0):
             'model': p and p['model'],
             'feature': p and p['feature'],
         }
+        if implied:
+            mk = squash(p and p['model'])
+            for t in (r.get('name') or '').split():
+                t = t.strip(',;()')
+                if re.search(r'[A-Za-z]', t) and not re.search(r'[А-Яа-яЁё]', t) and squash(t) != mk:
+                    row['parsed']['line_word'] = t
+                    break
         row['candidates'] = []
 
         if not b:

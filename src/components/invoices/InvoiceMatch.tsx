@@ -47,6 +47,7 @@ export interface MatchRow {
   parsed?: {
     brand: string | null;
     brand_implied: boolean;
+    line_word?: string | null;
     group: string | null;
     model: string | null;
     feature: string | null;
@@ -96,6 +97,37 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [creating, setCreating] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [pricing, setPricing] = useState(false);
+  const [brandBusy, setBrandBusy] = useState(false);
+
+  const applyBrand = async (index: number, a: { brandId: number; word: string | null; all: boolean }) => {
+    setBrandBusy(true);
+    try {
+      const idxs = a.all
+        ? rows.map((r, i) => (r.parsed?.brand_implied && !["matched", "manual", "created"].includes(r.match_status) ? i : -1)).filter((i) => i >= 0)
+        : [index];
+      const r = await fetch(`${SEARCH_DICTS_URL}?section=row_brand`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ draft_id: draftId, brand_id: a.brandId, word: a.word, row_indexes: idxs }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setRows(d.rows || []);
+      setSummary(d.summary || null);
+      toast({
+        title: a.word
+          ? `«${a.word}» запомнено. Разобрано товаров в каталоге: ${d.parsed_count ?? 0}`
+          : "Бренд применён, счёт пересопоставлен",
+      });
+      return true;
+    } catch (e) {
+      toast({ title: (e as Error).message || "Не удалось применить бренд", variant: "destructive" });
+      return false;
+    } finally {
+      setBrandBusy(false);
+    }
+  };
+  const impliedCount = rows.filter((r) => r.parsed?.brand_implied && !["matched", "manual", "created"].includes(r.match_status)).length;
 
   const run = useCallback(
     async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean; tolerance?: number }) => {
@@ -458,6 +490,10 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
               brandId={brandId}
               onChoose={(pid, name) => choose(i, pid, name, pid === null && GROUPS.found.includes(r.match_status))}
               onUndo={() => r.product_id && undo(r.product_id)}
+              brands={brands}
+              impliedCount={impliedCount}
+              brandBusy={brandBusy}
+              onBrand={(a) => applyBrand(i, a)}
             />
           ))}
         </div>

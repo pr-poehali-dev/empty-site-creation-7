@@ -109,8 +109,36 @@ def preview(cur, draft_id):
         for bid, m, f, pid, nm in cur.fetchall():
             model_map.setdefault((bid, squash(m)), []).append({'id': pid, 'name': nm, 'feature': f})
 
+    loose = {}
+    pats = list({f"%{it['parsed']['model']}%" for it in items
+                 if it['parsed'].get('model') and len(squash(it['parsed']['model'])) >= 4})
+    if pats:
+        cur.execute(
+            """SELECT id, name FROM products
+               WHERE COALESCE(is_archived, false) = false AND (model IS NULL OR model = '')
+                 AND name ILIKE ANY(%s)""", (pats,))
+        loose = {pid: nm for pid, nm in cur.fetchall()}
+    names = list({it['name'] for it in items if it['name']})
+    same_name = {}
+    if names:
+        cur.execute(
+            """SELECT id, name FROM products WHERE COALESCE(is_archived, false) = false
+               AND lower(regexp_replace(name, '\\s+', ' ', 'g')) = ANY(%s)""",
+            ([' '.join(n.lower().split()) for n in names],))
+        for pid, nm in cur.fetchall():
+            same_name.setdefault(norm_text(nm), {'id': pid, 'name': nm})
+
     for it in items:
         warn = []
+        n = norm_text(it['name'])
+        if n in same_name:
+            warn.append({'reason': 'Товар с таким наименованием уже есть', **same_name[n]})
+        else:
+            mk = squash(it['parsed'].get('model'))
+            if len(mk) >= 4:
+                hit = next(({'id': pid, 'name': nm} for pid, nm in loose.items() if mk in squash(nm)), None)
+                if hit:
+                    warn.append({'reason': 'Эта модель уже есть в названии товара (товар не разобран)', **hit})
         if it['barcode'] and it['barcode'] in bc_map:
             warn.append({'reason': 'Такой штрихкод уже есть', **bc_map[it['barcode']]})
         if it['article'] and it['article'].upper() in art_map:
@@ -156,6 +184,17 @@ def create(cur, draft_id, items):
 
     brands = load_brands(cur)
     bname = {b['id']: b['name'] for b in brands}
+    by_id = {b['id']: b for b in brands}
+    cur.execute("SELECT search_brand_id FROM invoice_drafts WHERE id = %s", (draft_id,))
+    default_brand_id = (cur.fetchone() or [None])[0]
+    for it in items:
+        p = it.get('parsed') or {}
+        if not it.get('brand_id') or not p.get('model'):
+            idx = (it.get('row_indexes') or [None])[0]
+            src = rows[int(idx)] if idx is not None and 0 <= int(idx) < len(rows) else {'name': it.get('name')}
+            b, p2 = _parse_row(src, brands, by_id, default_brand_id)
+            if b:
+                it['brand_id'], it['parsed'] = b['id'], p2
 
     group_names = list({(it.get('parsed') or {}).get('group') for it in items if (it.get('parsed') or {}).get('group')})
     if group_names:
