@@ -1,5 +1,6 @@
 """Шаг «Цены»: цены из счёта в каталог, с запоминанием старых цен для отката."""
 import json
+from psycopg2.extras import execute_values
 
 FIELDS = ('price_purchase', 'price_base', 'price_retail', 'price_wholesale')
 MODES = ('ready', 'calc')
@@ -96,31 +97,34 @@ def apply(cur, draft_id, field, mode, items):
                     (field, mode, d[0]))
 
     pids = [p for p, _ in clean]
-    cur.execute(f"SELECT id, {field} FROM products WHERE id = ANY(%s)", (pids,))
-    old = {r[0]: r[1] for r in cur.fetchall()}
-    cur.execute(
-        """SELECT product_id FROM invoice_price_log
-           WHERE draft_id = %s AND price_field = %s AND reverted_at IS NULL AND product_id = ANY(%s)""",
-        (draft_id, field, pids))
-    logged = {r[0] for r in cur.fetchall()}
+    cur.execute("SELECT id FROM products WHERE id = ANY(%s)", (pids,))
+    exist = {r[0] for r in cur.fetchall()}
+    clean = [(p, pr) for p, pr in clean if p in exist]
+    if not clean:
+        return None, 'Товары не найдены'
 
-    written = 0
-    for pid, price in clean:
-        if pid not in old:
-            continue
-        cur.execute(
-            f"UPDATE products SET {field} = %s, {field}_changed_at = NOW(), updated_at = NOW() WHERE id = %s",
-            (price, pid))
-        if pid in logged:
-            cur.execute(
-                """UPDATE invoice_price_log SET new_price = %s, created_at = NOW()
-                   WHERE draft_id = %s AND product_id = %s AND price_field = %s AND reverted_at IS NULL""",
-                (price, draft_id, pid, field))
-        else:
-            cur.execute(
-                """INSERT INTO invoice_price_log (draft_id, product_id, price_field, old_price, new_price)
-                   VALUES (%s, %s, %s, %s, %s)""", (draft_id, pid, field, old[pid], price))
-        written += 1
+    did = int(draft_id)
+    execute_values(
+        cur,
+        f"""INSERT INTO invoice_price_log (draft_id, product_id, price_field, old_price, new_price)
+            SELECT {did}, p.id, '{field}', p.{field}, v.price
+            FROM (VALUES %s) AS v(id, price) JOIN products p ON p.id = v.id
+            WHERE NOT EXISTS (SELECT 1 FROM invoice_price_log l WHERE l.draft_id = {did} AND l.product_id = p.id
+                              AND l.price_field = '{field}' AND l.reverted_at IS NULL)""",
+        clean, template='(%s::int, %s::numeric)', page_size=1000)
+    execute_values(
+        cur,
+        f"""UPDATE invoice_price_log l SET new_price = v.price, created_at = NOW()
+            FROM (VALUES %s) AS v(id, price)
+            WHERE l.product_id = v.id AND l.draft_id = {int(draft_id)} AND l.price_field = '{field}'
+              AND l.reverted_at IS NULL""",
+        clean, template='(%s::int, %s::numeric)', page_size=1000)
+    execute_values(
+        cur,
+        f"""UPDATE products p SET {field} = v.price, {field}_changed_at = NOW(), updated_at = NOW()
+            FROM (VALUES %s) AS v(id, price) WHERE p.id = v.id""",
+        clean, template='(%s::int, %s::numeric)', page_size=1000)
+    written = len(clean)
 
     cur.execute("UPDATE invoice_drafts SET updated_at = NOW(), expires_at = NOW() + INTERVAL '1 hour' "
                 "WHERE id = %s", (draft_id,))
@@ -132,13 +136,16 @@ def revert(cur, draft_id):
         """SELECT id, product_id, price_field, old_price FROM invoice_price_log
            WHERE draft_id = %s AND reverted_at IS NULL""", (draft_id,))
     logs = cur.fetchall()
-    for lid, pid, field, old_price in logs:
-        if field not in FIELDS:
-            continue
-        cur.execute(
-            f"UPDATE products SET {field} = %s, {field}_changed_at = NOW(), updated_at = NOW() WHERE id = %s",
-            (old_price, pid))
-        cur.execute("UPDATE invoice_price_log SET reverted_at = NOW() WHERE id = %s", (lid,))
+    for field in FIELDS:
+        vals = [(pid, old) for _, pid, f, old in logs if f == field]
+        if vals:
+            execute_values(
+                cur,
+                f"""UPDATE products p SET {field} = v.price, {field}_changed_at = NOW(), updated_at = NOW()
+                    FROM (VALUES %s) AS v(id, price) WHERE p.id = v.id""",
+                vals, template='(%s::int, %s::numeric)', page_size=1000)
+    if logs:
+        cur.execute("UPDATE invoice_price_log SET reverted_at = NOW() WHERE id = ANY(%s)", ([l[0] for l in logs],))
     return {'reverted': len(logs)}, None
 
 

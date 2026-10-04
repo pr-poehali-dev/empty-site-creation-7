@@ -4,6 +4,10 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import { authHeaders, SEARCH_DICTS_URL } from "@/components/search-dicts/api";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import PriceFormula, { applySteps, FormulaStep, PRICE_FIELDS, SOURCES } from "./PriceFormula";
 
 interface PriceItem {
@@ -46,6 +50,7 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
   const [manual, setManual] = useState<Record<number, string>>({});
   const [checked, setChecked] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<Filter>("all");
+  const [ask, setAsk] = useState<"save" | "revert" | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -95,12 +100,14 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
     filter === "all" ? true : filter === "big" ? r.big : filter === "double" ? r.double : !r.on);
 
   const sample = rows.find((r) => r.value != null);
-  const fieldLabel = PRICE_FIELDS.find((f) => f.value === field)?.label || field;
+  const FIELD_ACC: Record<string, string> = {
+    price_purchase: "закупочную", price_base: "базовую", price_retail: "розничную", price_wholesale: "оптовую",
+  };
+  const fieldAcc = FIELD_ACC[field] || field;
   const appliedCount = applied.reduce((s, a) => s + a.count, 0);
 
   const save = async () => {
     if (!selected.length) return;
-    if (!confirm(`Записать ${fieldLabel.toLowerCase()} цену для ${selected.length} товаров?`)) return;
     setSaving(true);
     try {
       const r = await fetch(`${SEARCH_DICTS_URL}?section=prices`, {
@@ -127,7 +134,6 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
   };
 
   const revert = async () => {
-    if (!confirm(`Вернуть старые цены у ${appliedCount} товаров из этого счёта?`)) return;
     setSaving(true);
     try {
       const r = await fetch(`${SEARCH_DICTS_URL}?section=prices&draft_id=${draftId}`, { method: "DELETE", headers: authHeaders() });
@@ -159,7 +165,7 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
           <p className="text-sm flex-1 min-w-[200px]">
             Из этого счёта уже записаны цены: {applied.map((a) => `${PRICE_FIELDS.find((f) => f.value === a.price_field)?.label?.toLowerCase()} — ${a.count}`).join(", ")}
           </p>
-          <Button variant="outline" size="sm" className="rounded-xl" disabled={saving} onClick={revert}>
+          <Button variant="outline" size="sm" className="rounded-xl" disabled={saving} onClick={() => setAsk("revert")}>
             <Icon name="Undo2" size={14} />
             <span className="ml-2">Откатить цены</span>
           </Button>
@@ -313,13 +319,35 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-white/[0.08] bg-background/95 backdrop-blur p-3">
           <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">Записать: {selected.length}</p>
-            <Button className="rounded-xl" disabled={saving || !selected.length} onClick={save}>
+            <Button className="rounded-xl" disabled={saving || !selected.length} onClick={() => setAsk("save")}>
               <Icon name={saving ? "Loader" : "Save"} size={16} className={saving ? "animate-spin" : ""} />
               <span className="ml-2">Записать цены ({selected.length})</span>
             </Button>
           </div>
         </div>
       )}
+
+      <AlertDialog open={ask !== null} onOpenChange={(o) => !o && setAsk(null)}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{ask === "revert" ? "Откатить цены?" : "Записать цены?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {ask === "revert"
+                ? `Вернуть старые цены у ${appliedCount} товаров из этого счёта.`
+                : `Записать ${fieldAcc} цену для ${selected.length} товаров.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl"
+              onClick={() => { const a = ask; setAsk(null); if (a === "revert") revert(); else save(); }}
+            >
+              {ask === "revert" ? "Откатить" : "Записать"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
