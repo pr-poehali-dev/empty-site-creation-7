@@ -123,5 +123,3 @@ const SearchDicts = () => {
 };
 
 export default SearchDicts;
-
-export { Input };
