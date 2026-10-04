@@ -86,6 +86,11 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
     off: rows.filter((r) => !r.on).length,
   };
   const selected = rows.filter((r) => r.on);
+  const noPrice = rows.filter((r) => r.value != null && (r.it.created || !r.old));
+  const markAll = () =>
+    setChecked(Object.fromEntries(rows.map((r) => [r.it.product_id, r.value != null])));
+  const markNoPrice = () =>
+    setChecked(Object.fromEntries(rows.map((r) => [r.it.product_id, r.value != null && (r.it.created || !r.old)])));
   const visible = rows.filter((r) =>
     filter === "all" ? true : filter === "big" ? r.big : filter === "double" ? r.double : !r.on);
 
@@ -226,6 +231,19 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
           </button>
         ))}
       </div>
+
+      {!loading && items.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={markAll}>
+            <Icon name="CheckCheck" size={14} />
+            <span className="ml-2">Отметить все</span>
+          </Button>
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={markNoPrice}>
+            <Icon name="CircleDashed" size={14} />
+            <span className="ml-2">Только без цены ({noPrice.length})</span>
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         <div className="py-12 text-center text-muted-foreground">
