@@ -23,13 +23,15 @@ def find_products(cur, q, brand_id=None):
         order = 'CASE WHEN p.search_brand_id = %s THEN 0 ELSE 1 END, '
         vals.append(brand_id)
     cur.execute(
-        f"""SELECT p.id, p.name, p.article, p.model, p.feature, g.name
+        f"""SELECT p.id, p.name, p.article, p.model, p.feature, g.name, p.search_brand_id, b.name, p.parse_status
             FROM products p LEFT JOIN search_groups g ON g.id = p.search_group_id
+            LEFT JOIN search_brands b ON b.id = p.search_brand_id
             WHERE COALESCE(p.is_archived, false) = false AND {' AND '.join(conds)}
             ORDER BY {order}p.name LIMIT 30""",
         vals,
     )
-    return [{'id': r[0], 'name': r[1], 'article': r[2], 'model': r[3], 'feature': r[4], 'search_group': r[5]}
+    return [{'id': r[0], 'name': r[1], 'article': r[2], 'model': r[3], 'feature': r[4], 'search_group': r[5],
+             'search_brand_id': r[6], 'search_brand': r[7], 'parse_status': r[8]}
             for r in cur.fetchall()]
 
 
@@ -212,6 +214,15 @@ def save_product(cur, product_id, body):
     status = body.get('parse_status') or 'manual'
     if status not in STATUSES:
         return resp(400, {'error': 'Неизвестное состояние разбора'})
+    group_name = (body.get('group_name') or '').strip()
+    if group_name:
+        group_name = group_name[0].upper() + group_name[1:]
+        cur.execute("SELECT id FROM search_groups WHERE lower(name) = lower(%s) LIMIT 1", (group_name,))
+        g = cur.fetchone()
+        if not g:
+            cur.execute("INSERT INTO search_groups (name) VALUES (%s) RETURNING id", (group_name,))
+            g = cur.fetchone()
+        body['search_group_id'] = g[0]
     cur.execute(
         """UPDATE products SET search_group_id = %s, search_brand_id = %s, model = %s,
                   feature = %s, parse_status = %s

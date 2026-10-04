@@ -1,19 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { authHeaders, SEARCH_DICTS_URL } from "@/components/search-dicts/api";
-
-interface Found {
-  id: number;
-  name: string;
-  article: string | null;
-  model: string | null;
-  search_group: string | null;
-}
+import type { FoundProduct as Found } from "./ManualPickConfirm";
 
 interface Props {
   initial?: string;
   brandId?: string;
-  onPick: (id: number, name: string) => void;
+  onPick: (item: Found) => void;
 }
 
 const ManualProductSearch = ({ initial = "", brandId, onPick }: Props) => {
@@ -66,12 +59,13 @@ const ManualProductSearch = ({ initial = "", brandId, onPick }: Props) => {
         {items.map((it) => (
           <button
             key={it.id}
-            onClick={() => onPick(it.id, it.name)}
+            onClick={() => onPick(it)}
             className="w-full text-left rounded-lg px-2.5 py-2 hover:bg-white/[0.06] transition"
           >
             <p className="text-sm break-words">{it.name}</p>
             <p className="text-[11px] text-muted-foreground">
               {[it.model && `модель ${it.model}`, it.article && `арт. ${it.article}`, it.search_group].filter(Boolean).join(" · ")}
+              {!(it.search_brand_id && it.model) && <span className="text-amber-300"> · не разобран</span>}
             </p>
           </button>
         ))}

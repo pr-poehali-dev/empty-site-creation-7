@@ -3,6 +3,9 @@ import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import type { MatchRow } from "./InvoiceMatch";
 import ManualProductSearch from "./ManualProductSearch";
+import ManualPickConfirm, { FoundProduct, ParseData } from "./ManualPickConfirm";
+import { authHeaders, SEARCH_DICTS_URL } from "@/components/search-dicts/api";
+import { useToast } from "@/hooks/use-toast";
 import RowBrandPicker, { BrandApply } from "./RowBrandPicker";
 import type { SearchBrand } from "@/components/search-dicts/api";
 
@@ -45,6 +48,40 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo, brands = [], im
   const [expanded, setExpanded] = useState(false);
   const [searching, setSearching] = useState(false);
   const [brandOpen, setBrandOpen] = useState(false);
+  const [picked, setPicked] = useState<FoundProduct | null>(null);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  const confirmPick = async (save: ParseData | null) => {
+    if (!picked) return;
+    if (save) {
+      setSaving(true);
+      try {
+        const resp = await fetch(`${SEARCH_DICTS_URL}?section=product&id=${picked.id}`, {
+          method: "PUT",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            group_name: save.group.trim(),
+            search_brand_id: save.brandId,
+            model: save.model,
+            feature: save.feature,
+            parse_status: "manual",
+          }),
+        });
+        const d = await resp.json();
+        if (!resp.ok) throw new Error(d.error);
+        toast({ title: "Данные для поиска записаны в карточку" });
+      } catch (e) {
+        toast({ title: (e as Error).message || "Не удалось записать разбор", variant: "destructive" });
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+    }
+    const it = picked;
+    setPicked(null);
+    pick(it.id, it.name);
+  };
   const p = r.parsed;
   const yellow = r.match_status === "ambiguous" || r.match_status === "suggested";
   const red = ["not_found", "empty", "unparsed"].includes(r.match_status);
@@ -197,7 +234,16 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo, brands = [], im
 
       {(yellow || red) && (
         <div className="mt-2">
-          {!searching ? (
+          {picked ? (
+            <ManualPickConfirm
+              product={picked}
+              fromRow={{ group: p?.group, brand: p?.brand, model: p?.model, feature: p?.feature }}
+              brands={brands}
+              busy={saving}
+              onConfirm={confirmPick}
+              onCancel={() => setPicked(null)}
+            />
+          ) : !searching ? (
             <button
               onClick={() => setSearching(true)}
               className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -209,7 +255,7 @@ const MatchRowCard = ({ row: r, mode, brandId, onChoose, onUndo, brands = [], im
             <ManualProductSearch
               initial={(mode === "name" && p?.model) || r.article || ""}
               brandId={brandId}
-              onPick={(id, name) => pick(id, name)}
+              onPick={(it) => setPicked(it)}
             />
           )}
         </div>
