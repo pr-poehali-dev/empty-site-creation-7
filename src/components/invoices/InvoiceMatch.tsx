@@ -7,6 +7,7 @@ import PickList from "@/components/search-dicts/PickList";
 import { authHeaders, loadSearchDicts, SEARCH_DICTS_URL, SearchBrand } from "@/components/search-dicts/api";
 import MatchRowCard from "./MatchRowCard";
 import CreateProducts from "./CreateProducts";
+import InvoicePrices from "./InvoicePrices";
 
 const INVOICE_URL = "https://functions.poehali.dev/da75537b-bd2c-4bb3-b3ee-5cd90f17c9a2";
 
@@ -94,6 +95,7 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
   const [filter, setFilter] = useState<FilterKey>("todo");
   const [creating, setCreating] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [pricing, setPricing] = useState(false);
 
   const run = useCallback(
     async (opts?: { mode?: Mode; brandId?: string; product_group?: string; search_in_names?: boolean; tolerance?: number }) => {
@@ -238,6 +240,10 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
 
   const toggle = (f: FilterKey) => setFilter(filter === f ? "all" : f);
 
+  if (pricing) {
+    return <InvoicePrices draftId={draftId} onBack={() => setPricing(false)} />;
+  }
+
   if (creating) {
     return (
       <CreateProducts
@@ -368,6 +374,18 @@ const InvoiceMatch = ({ draftId, onBack }: Props) => {
             </button>
           ))}
       </div>
+
+      {counts.found > 0 && !loading && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/40 bg-primary/10 p-3">
+          <p className="text-sm flex-1 min-w-[200px]">
+            Сопоставлено товаров: {counts.found}{left > 0 ? `. Ещё ${left} строк без товара — в ценах их не будет.` : "."}
+          </p>
+          <Button className="rounded-xl" onClick={() => setPricing(true)}>
+            <span>Дальше: цены</span>
+            <Icon name="ArrowRight" size={16} className="ml-2" />
+          </Button>
+        </div>
+      )}
 
       {(counts.red > 0 || createdCount > 0) && !loading && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.08] p-3">
