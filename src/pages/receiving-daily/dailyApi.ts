@@ -88,6 +88,35 @@ export interface Receiving {
   auto_closed?: boolean;
   opened_at: string;
   closed_at: string | null;
+  /** Время с телефона мастера в момент открытия и нажатия «Закончить». */
+  opened_local?: string | null;
+  closed_local?: string | null;
+}
+
+const hhmm = (local?: string | null, server?: string | null): string => {
+  if (local) {
+    const m = String(local).match(/[T ](\d{2}:\d{2})/);
+    if (m) return m[1];
+  }
+  if (server) {
+    const d = new Date(String(server).replace(" ", "T"));
+    if (!isNaN(d.getTime())) return d.toTimeString().slice(0, 5);
+  }
+  return "";
+};
+
+/** Начало и окончание приёмки. Закрытая системой — без времени окончания. */
+export function receivingTimes(r: Receiving): { start: string; end: string } {
+  const start = hhmm(r.opened_local, r.opened_at);
+  if (!r.closed) return { start, end: "" };
+  if (r.auto_closed) return { start, end: "авто" };
+  return { start, end: hhmm(r.closed_local, r.closed_at) };
+}
+
+export function nowLocal(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${todayLocal()}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 export interface Counters {
@@ -178,7 +207,7 @@ export const findCurrent = (kind: string) =>
   );
 
 export const openReceiving = (kind: string) =>
-  post<Receiving>({ action: "open", kind, work_date: todayLocal() });
+  post<Receiving>({ action: "open", kind, work_date: todayLocal(), local_time: nowLocal() });
 
 export const loadState = (id: number, result = "") =>
   get<DailyState>(`action=state&id=${id}${result ? `&result=${result}` : ""}`);
@@ -189,7 +218,7 @@ export const loadArchive = (id: number, q = "", result = "") =>
     `action=state&id=${id}&limit=500&q=${encodeURIComponent(q)}${result ? `&result=${result}` : ""}`
   );
 
-export const closeReceiving = (id: number) => post<{ ok: boolean }>({ action: "close", id });
+export const closeReceiving = (id: number) => post<{ ok: boolean }>({ action: "close", id, local_time: nowLocal() });
 
 /** Удалить можно только пустую закрытую и только свою — решает сервер. */
 export const deleteReceiving = (id: number) =>

@@ -117,6 +117,13 @@ def _owner_filter(actor):
     return "manager_id IS NULL AND is_owner=true"
 
 
+def _local_ts(v):
+    """Время с телефона мастера, как он его видит: 2026-10-05T09:12:30."""
+    import re
+    m = re.match(r'^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(:\d{2})?)$', str(v or '').strip())
+    return f"'{m.group(1)} {m.group(2)}'" if m else 'NULL'
+
+
 def autoclose_past(cur, actor, work_date):
     """Сутки кончились — кончилась и приёмка. Кнопку нажать забывают,
     и без этого забытые приёмки висели бы открытыми вечно.
@@ -267,9 +274,9 @@ def act_open(cur, actor, body):
 
     mid = 'NULL' if not actor['manager_id'] else str(int(actor['manager_id']))
     cur.execute(
-        f"INSERT INTO daily_receivings (manager_id, is_owner, employee_name, kind, work_date) "
+        f"INSERT INTO daily_receivings (manager_id, is_owner, employee_name, kind, work_date, opened_local) "
         f"VALUES ({mid}, {'true' if actor['is_owner'] else 'false'}, "
-        f"'{_esc(actor['name'])}', '{_esc(kind)}', '{work_date}') "
+        f"'{_esc(actor['name'])}', '{_esc(kind)}', '{work_date}', {_local_ts(body.get('local_time'))}) "
         f"ON CONFLICT DO NOTHING RETURNING *"
     )
     row = cur.fetchone()
@@ -327,7 +334,8 @@ def act_close(cur, actor, body):
     if not rid:
         return None, 'Не указана приёмка'
     cur.execute(
-        f"UPDATE daily_receivings SET closed=true, closed_at=now() "
+        f"UPDATE daily_receivings SET closed=true, closed_at=now(), "
+        f"closed_local={_local_ts(body.get('local_time'))} "
         f"WHERE id={rid} AND {_owner_filter(actor)} AND closed=false RETURNING id"
     )
     if not cur.fetchone():

@@ -12,6 +12,7 @@ import {
   KIND_TITLES,
   OUTCOME_WAREHOUSE,
   receivingDate,
+  receivingTimes,
   deleteReceiving,
   isMoved,
   loadArchive,
@@ -138,7 +139,13 @@ const ReceivingArchive = () => {
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-semibold truncate">{title}</h1>
             <p className="text-xs text-muted-foreground truncate">
-              {receiving ? `№${receiving.id} · ${receivingDate(receiving.work_date)}` : ""}
+              {receiving
+                ? `№${receiving.id} · ${receivingDate(receiving.work_date)}${
+                    receivingTimes(receiving).start
+                      ? ` · ${receivingTimes(receiving).start} – ${receivingTimes(receiving).end || "…"}`
+                      : ""
+                  }`
+                : ""}
               {receiving?.employee_name ? ` · ${receiving.employee_name}` : ""}
             </p>
           </div>

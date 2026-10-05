@@ -1,6 +1,6 @@
 import Icon from "@/components/ui/icon";
 import OutcomeChips from "./OutcomeChips";
-import { KIND_SHORT, KIND_TITLES, receivingDate, type ReceivingRow } from "./dailyApi";
+import { KIND_SHORT, KIND_TITLES, receivingDate, receivingTimes, type ReceivingRow } from "./dailyApi";
 
 interface Props {
   row: ReceivingRow;
@@ -23,6 +23,14 @@ const ReceivingRowItem = ({ row, full = false, deleting, onOpen, onDelete }: Pro
           <span className="text-muted-foreground">№{row.id}</span>
           <span className="text-muted-foreground">·</span>
           <span>{receivingDate(row.work_date)}</span>
+          {(() => {
+            const t = receivingTimes(row);
+            return t.start ? (
+              <span className="text-muted-foreground tabular-nums">
+                {t.start} – {t.end || "…"}
+              </span>
+            ) : null;
+          })()}
           {full && (
             <>
               <span className="text-muted-foreground">·</span>

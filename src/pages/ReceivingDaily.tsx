@@ -19,6 +19,7 @@ import {
   loadState,
   openReceiving,
   receivingDate,
+  receivingTimes,
   removeItem,
   scanCode,
   undoCheck,
@@ -326,7 +327,7 @@ const ReceivingDaily = () => {
             <h1 className="text-base font-semibold truncate">{title}</h1>
             <p className="text-xs text-muted-foreground truncate">
               {receiving
-                ? `№${receiving.id} · ${receivingDate(receiving.work_date)}${receiving.employee_name ? ` · ${receiving.employee_name}` : ""} · `
+                ? `№${receiving.id} · ${receivingDate(receiving.work_date)}${receivingTimes(receiving).start ? ` · начало ${receivingTimes(receiving).start}` : ""}${receiving.employee_name ? ` · ${receiving.employee_name}` : ""} · `
                 : ""}
               Проверено: {counters.total}
             </p>
