@@ -660,11 +660,11 @@ const ConvertedFiles = () => {
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => navigate("/admin/dashboard")}
+            onClick={() => navigate("/admin/convert")}
           >
             <Icon name="ArrowLeft" size={18} />
           </Button>
-          <h1 className="text-lg font-semibold">Конвертация файлов</h1>
+          <h1 className="text-lg font-semibold">Файлы от Юры</h1>
         </div>
       </header>
 

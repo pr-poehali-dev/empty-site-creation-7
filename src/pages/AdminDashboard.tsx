@@ -201,7 +201,7 @@ const AdminDashboard = () => {
             <Button
               variant="outline"
               className="w-full h-12 rounded-xl border-white/[0.08] justify-start gap-3"
-              onClick={() => navigate("/admin/converted-files")}
+              onClick={() => navigate("/admin/convert")}
             >
               <Icon name="FileSpreadsheet" size={20} />
               <span className="font-medium">Конвертация файлов</span>
