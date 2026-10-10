@@ -28,6 +28,17 @@ import recStock from "@/data/receiving/07-stock.md?raw";
 import recOrders from "@/data/receiving/08-orders.md?raw";
 import recReports from "@/data/receiving/09-reports.md?raw";
 import recTodo from "@/data/receiving/10-todo.md?raw";
+import migOverview from "@/data/migration/00-overview.md?raw";
+import migFull from "@/data/migration/01-full-backup.md?raw";
+import migDisk from "@/data/migration/02-yadisk.md?raw";
+import migRestore from "@/data/migration/03-restore-here.md?raw";
+import migRunner from "@/data/migration/04-functions-runner.md?raw";
+import migBindings from "@/data/migration/05-bindings.md?raw";
+import migInstaller from "@/data/migration/06-installer.md?raw";
+import migSecrets from "@/data/migration/07-secrets.md?raw";
+import migFile from "@/data/migration/08-instruction-file.md?raw";
+import migVerify from "@/data/migration/09-verify.md?raw";
+import migTodo from "@/data/migration/10-todo.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
 import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
@@ -60,6 +71,20 @@ const RECEIVING_TABS = [
   { key: "orders", label: "8. Заявки и отгрузка", content: recOrders },
   { key: "reports", label: "9. Сводки", content: recReports },
   { key: "todo", label: "Доработки", content: recTodo },
+];
+
+const MIGRATION_TABS = [
+  { key: "overview", label: "Общее", content: migOverview },
+  { key: "full", label: "1. Полная копия", content: migFull },
+  { key: "disk", label: "2. Яндекс Диск", content: migDisk },
+  { key: "restore", label: "3. Восстановление здесь", content: migRestore },
+  { key: "runner", label: "4. Переходник функций", content: migRunner },
+  { key: "bindings", label: "5. Замена привязок", content: migBindings },
+  { key: "installer", label: "6. Установщик", content: migInstaller },
+  { key: "secrets", label: "7. Секреты", content: migSecrets },
+  { key: "file", label: "8. Инструкция-файл", content: migFile },
+  { key: "verify", label: "9. Проверка", content: migVerify },
+  { key: "todo", label: "Доработки", content: migTodo },
 ];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
@@ -578,7 +603,8 @@ const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "invoices" | "receiving" | "plans" | "backup" | "repo" | "about">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "invoices" | "receiving" | "migration" | "plans" | "backup" | "repo" | "about">("menu");
+  const [migrationTab, setMigrationTab] = useState(MIGRATION_TABS[0].key);
   const [activeTab, setActiveTab] = useState("creation");
   const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
   const [invoiceTab, setInvoiceTab] = useState(INVOICE_TABS[0]?.key || "");
@@ -614,6 +640,8 @@ const Instructions = () => {
       ? "Загрузка счетов"
       : section === "receiving"
       ? "Приёмки"
+      : section === "migration"
+      ? "Архивация — перенос"
       : section === "plans"
       ? "Планы"
       : section === "backup"
@@ -728,6 +756,18 @@ const Instructions = () => {
                 <span className="text-lg font-semibold">Приёмки</span>
               </div>
               <p className="text-sm text-muted-foreground">Приёмка товара от поставщика: загрузка файла, проверка, склады. Шаги и ход работы</p>
+            </button>
+            <button
+              onClick={() => setSection("migration")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  <Icon name="ServerCog" size={20} className="text-emerald-400" />
+                </div>
+                <span className="text-lg font-semibold">Архивация — перенос</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Полная копия сайта, Яндекс Диск, перенос и обновление на своём VPS. Этапы и ход работы</p>
             </button>
             <button
               onClick={() => setSection("plans")}
@@ -947,6 +987,31 @@ const Instructions = () => {
             <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
               {renderMarkdown(
                 RECEIVING_TABS.find((t) => t.key === receivingTab)?.content || "",
+              )}
+            </div>
+          </>
+        )}
+
+        {section === "migration" && (
+          <>
+            <div className="flex gap-2 mb-4 overflow-x-auto">
+              {MIGRATION_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setMigrationTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                    migrationTab === tab.key
+                      ? "bg-emerald-500/20 text-emerald-300 font-medium"
+                      : "text-muted-foreground hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+              {renderMarkdown(
+                MIGRATION_TABS.find((t) => t.key === migrationTab)?.content || "",
               )}
             </div>
           </>
