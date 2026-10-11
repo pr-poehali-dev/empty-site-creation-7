@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import os
 import socket
 import urllib.request
@@ -10,6 +11,23 @@ DIRECT = 'https://api.telegram.org'
 COOLDOWN_MIN = 10
 TIMEOUT = 3
 MAX_TRIES = 3
+
+
+UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+CF_MSG = ('Запрос заблокировала защита Cloudflare (код {}), до посредника он не дошёл. '
+          'Проверьте в Cloudflare: Security → Bots → Bot Fight Mode должен быть выключен.')
+
+
+def _http_err(e):
+    """Код ошибки HTTP; отказ защиты Cloudflare (error code: 10xx) — отдельно от ответа посредника."""
+    try:
+        raw = e.read().decode('utf-8', 'replace')
+    except Exception:
+        raw = ''
+    m = re.search(r'error code: (\d+)', raw)
+    if m:
+        return f'CF {m.group(1)}', raw
+    return f'HTTP {e.code}', raw
 
 
 def _force_ipv4():
@@ -121,6 +139,8 @@ HUMAN = {
 def humanize(err):
     if not err:
         return None
+    if err.startswith('CF '):
+        return CF_MSG.format(err[3:])
     return HUMAN.get(err, err)
 
 
@@ -147,9 +167,11 @@ def _call(route, token, method, payload, secret, timeout=None, upload=None):
     if upload:
         data, ctype = _multipart(payload, *upload)
         headers = {'Content-Type': ctype}
+        headers['User-Agent'] = UA
     else:
         data = json.dumps(payload).encode()
         headers = {'Content-Type': 'application/json'}
+        headers['User-Agent'] = UA
     if route != DIRECT:
         headers['X-Proxy-Key'] = secret
     req = urllib.request.Request(url, data=data, headers=headers, method='POST')
@@ -194,13 +216,13 @@ def tg_call(cur, method, payload, token=None, timeout=None, upload=None):
             last_err = str(e)
             _mark(cur, route, False, last_err)
         except urllib.error.HTTPError as e:
+            code, raw = _http_err(e)
             detail = ''
             try:
-                raw = e.read().decode('utf-8', 'replace')
                 detail = str(json.loads(raw).get('description', ''))[:180]
             except Exception:
                 detail = ''
-            last_err = f'HTTP {e.code}: {detail}' if detail else f'HTTP {e.code}'
+            last_err = f'{code}: {detail}' if detail else code
             _mark(cur, route, False, last_err)
         except Exception as e:
             last_err = type(e).__name__
@@ -228,7 +250,7 @@ def _probe_one(args):
         entry['error'] = str(e)
     except urllib.error.HTTPError as e:
         entry['ok'] = False
-        entry['error'] = humanize(f'HTTP {e.code}')
+        entry['error'] = humanize(_http_err(e)[0])
     except Exception as e:
         entry['ok'] = False
         entry['error'] = humanize(type(e).__name__)
