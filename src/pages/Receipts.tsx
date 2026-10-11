@@ -39,13 +39,14 @@ const Receipts = () => {
 
   const hasStock = WAREHOUSE_KEYS.some((k) => can(k));
   const myKinds = KINDS.filter((k) => can(k.key));
-  // Список приёмок открыт каждому мастеру: свои он видит всегда,
-  // чужие — только по праву, и это решает сервер.
+  // Список приёмок: мастеру с видом — свои, по праву see_all_lists — все,
+  // даже без выданных видов (только смотреть). Отбор решает сервер.
+  const canList = myKinds.length > 0 || can("see_all_lists");
   const myActions = ACTIONS.filter((a) =>
     a.key === "_stock"
       ? hasStock
       : a.key === "_list"
-        ? myKinds.length > 0
+        ? canList
         : a.key === "_barcodes"
           ? isOwner
           : can(a.key)
@@ -157,6 +158,20 @@ const Receipts = () => {
                   Обратитесь к владельцу — он открывает разделы приёмки
                 </p>
               </div>
+            ) : kinds.length === 0 && canList ? (
+              <button
+                onClick={() => navigate("/admin/receiving-list")}
+                className="w-full rounded-xl border border-white/[0.08] bg-card p-4 flex items-center gap-4 text-left hover:bg-white/[0.04] transition-colors"
+              >
+                <div className="w-11 h-11 rounded-xl bg-violet-500/20 flex items-center justify-center shrink-0">
+                  <Icon name="ClipboardList" size={22} className="text-violet-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">Список приёмок</div>
+                  <div className="text-xs text-muted-foreground">Смотреть приёмки сотрудников</div>
+                </div>
+                <Icon name="ChevronRight" size={18} className="text-muted-foreground" />
+              </button>
             ) : kinds.length === 0 ? (
               <div className="rounded-xl border border-white/[0.08] bg-card p-8 text-center">
                 <Icon name="PackagePlus" size={40} className="text-muted-foreground mx-auto mb-3" />

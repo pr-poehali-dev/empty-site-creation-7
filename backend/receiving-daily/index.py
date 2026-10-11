@@ -682,8 +682,11 @@ def handler(event: dict, context) -> dict:
         actor['_see_all'] = can(actor, perms, 'see_all_lists')
         actor['_can_remove'] = can(actor, perms, 'item_remove')
 
+        # Просмотр списка доступен по see_all_lists и без выданных видов;
+        # работать с приёмкой (open/scan/check...) без вида нельзя.
         kind = body.get('kind') or params.get('kind') or ''
-        if kind and not can(actor, perms, kind):
+        view_only = action in ('list', 'meta') and actor['_see_all']
+        if kind and not view_only and not can(actor, perms, kind):
             return _resp(403, {'error': 'Этот вид приёмки вам не открыт'})
 
         if action == 'meta':
