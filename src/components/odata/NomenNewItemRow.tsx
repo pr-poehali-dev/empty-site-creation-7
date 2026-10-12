@@ -7,7 +7,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
-import { Group1C, NewItem, TnvedKind, newItemProblems } from "@/pages/odata/nomenApi";
+import { useMemo, useState } from "react";
+import {
+  Group1C,
+  NewItem,
+  TnvedKind,
+  avgWeight,
+  fmtWeight,
+  newItemProblems,
+  similarWeights,
+} from "@/pages/odata/nomenApi";
 
 interface Props {
   item: NewItem;
@@ -28,6 +37,9 @@ const NomenNewItemRow = ({ item, groups, tnved, onChange }: Props) => {
   const bad = (k: string) => problems.includes(k);
   const options = tnved?.options || [];
   const known = options.some((o) => o.code === item.tnved);
+  const [open, setOpen] = useState(false);
+  const similar = useMemo(() => similarWeights(item.name, tnved?.weights), [item.name, tnved]);
+  const avg = avgWeight(similar);
 
   return (
     <div className="p-3 space-y-3">
@@ -85,9 +97,20 @@ const NomenNewItemRow = ({ item, groups, tnved, onChange }: Props) => {
           <Input
             value={item.weight}
             inputMode="decimal"
-            placeholder="0,0"
-            onChange={(e) => onChange({ weight: e.target.value })}
+            placeholder="например 12,5"
+            onChange={(e) =>
+              onChange({ weight: e.target.value.replace(/[^\d.,]/g, "").replace(".", ","), weightAuto: false })
+            }
           />
+          <span className="block text-[11px] leading-tight text-muted-foreground">
+            {!tnved
+              ? "подбираю вес…"
+              : item.weightAuto
+                ? `среднее по ${similar.length} похожим`
+                : item.weight.trim()
+                  ? "введено вручную"
+                  : "похожих с весом нет"}
+          </span>
         </Field>
         <Field label="Код ТНВЭД" bad={bad("ТНВЭД")}>
           {options.length > 0 ? (
@@ -133,6 +156,40 @@ const NomenNewItemRow = ({ item, groups, tnved, onChange }: Props) => {
             : "похожих в 1С нет — код ТНВЭД введите вручную"
           : "подбираю ТНВЭД…"}
       </div>
+
+      {similar.length > 0 && (
+        <div className="ml-9 text-xs">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              className="text-primary flex items-center gap-1"
+              onClick={() => setOpen((v) => !v)}
+            >
+              <Icon name={open ? "ChevronUp" : "ChevronDown"} size={13} />
+              Вес: среднее по {similar.length} похожим — {fmtWeight(avg)} кг
+            </button>
+            {!item.weightAuto && (
+              <button
+                type="button"
+                className="text-muted-foreground underline underline-offset-2"
+                onClick={() => onChange({ weight: fmtWeight(avg), weightAuto: true })}
+              >
+                подставить среднее
+              </button>
+            )}
+          </div>
+          {open && (
+            <div className="mt-1.5 rounded-lg border border-white/[0.08] divide-y divide-white/[0.06]">
+              {similar.map((c) => (
+                <div key={c.code + c.name} className="flex items-center gap-2 px-2 py-1.5">
+                  <span className="flex-1 min-w-0 truncate text-muted-foreground">{c.name}</span>
+                  <span className="shrink-0 tabular-nums">{fmtWeight(c.w)} кг</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

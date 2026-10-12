@@ -145,11 +145,47 @@ export interface TnvedOption {
   count: number;
 }
 
+export interface SimilarWeight {
+  name: string;
+  code: string;
+  w: number;
+}
+
 export interface TnvedKind {
   similar: number;
   options: TnvedOption[];
+  weights?: SimilarWeight[];
   error?: string | null;
 }
+
+const WEIGHT_SAMPLE = 10;
+
+const words = (s: string) =>
+  new Set(
+    s
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .split(/[^a-zа-я0-9]+/i)
+      .filter(Boolean),
+  );
+
+export const similarWeights = (name: string, pool: SimilarWeight[] = []): SimilarWeight[] => {
+  const mine = words(name);
+  return pool
+    .map((c) => {
+      let hit = 0;
+      words(c.name).forEach((w) => mine.has(w) && hit++);
+      return { c, hit };
+    })
+    .sort((a, b) => b.hit - a.hit || a.c.name.localeCompare(b.c.name))
+    .slice(0, WEIGHT_SAMPLE)
+    .map((x) => x.c);
+};
+
+export const avgWeight = (list: SimilarWeight[]) =>
+  list.length ? Math.round((list.reduce((s, x) => s + x.w, 0) / list.length) * 10) / 10 : 0;
+
+export const fmtWeight = (n: number) => String(n).replace(".", ",");
 
 export const loadGroups = async (base: string): Promise<Group1C[]> =>
   (await withRetry(() => odataPost("nomen_groups", base, {}))).groups;
@@ -173,6 +209,7 @@ export interface NewItem {
   groupKey: string;
   price: string;
   weight: string;
+  weightAuto: boolean;
   tnved: string;
   tnvedKey: string;
 }

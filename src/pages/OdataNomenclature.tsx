@@ -31,6 +31,9 @@ import {
   ConflictCard,
   Decision,
   attachBarcode,
+  avgWeight,
+  fmtWeight,
+  similarWeights,
 } from "./odata/nomenApi";
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
@@ -230,9 +233,15 @@ const OdataNomenclature = () => {
       setTnved(t);
       setNewItems((prev) =>
         prev.map((x) => {
-          if (keepChoice && x.tnved) return x;
+          let y = x;
           const best = t[x.kind]?.options?.[0];
-          return best ? { ...x, tnved: best.code, tnvedKey: best.key } : x;
+          if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
+          const manual = x.weight.trim() && !x.weightAuto;
+          if (!manual) {
+            const avg = avgWeight(similarWeights(x.name, t[x.kind]?.weights));
+            y = avg > 0 ? { ...y, weight: fmtWeight(avg), weightAuto: true } : { ...y, weight: "", weightAuto: false };
+          }
+          return y;
         }),
       );
     } catch (e) {
@@ -256,6 +265,7 @@ const OdataNomenclature = () => {
         groupKey: "",
         price: "",
         weight: "",
+        weightAuto: false,
         tnved: "",
         tnvedKey: "",
       }));

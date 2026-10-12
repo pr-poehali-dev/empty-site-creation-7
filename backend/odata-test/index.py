@@ -598,19 +598,27 @@ def tnved_code(cfg, key):
 
 
 def tnved_by_type(cfg, kind):
-    r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1000&$select=КодТНВЭД_Key"
+    r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1000"
+                        "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара"
                         f"&$filter=IsFolder eq false and DeletionMark eq false"
                         f" and startswith(Description,'{_q(kind)} ') eq true")
     if not r['ok']:
         return None, r['error']
     counts = {}
     total = 0
+    weights = []
     for x in r['data'].get('value', []):
         total += 1
         k = x.get('КодТНВЭД_Key')
         if k and k != EMPTY_GUID:
             counts[k] = counts.get(k, 0) + 1
-    return {'total': total, 'counts': counts}, None
+        try:
+            w = float(x.get('ВесПоСертификатуТовара') or 0)
+        except (TypeError, ValueError):
+            w = 0
+        if w > 0:
+            weights.append({'name': (x.get('Description') or '').strip(), 'code': (x.get('Code') or '').strip(), 'w': w})
+    return {'total': total, 'counts': counts, 'weights': weights}, None
 
 
 def nomen_tnved(cfg, kinds):
@@ -623,11 +631,11 @@ def nomen_tnved(cfg, kinds):
     for (k,) in [(k,) for k in kinds]:
         s = stats.get((k,))
         if not s:
-            out[k] = {'similar': 0, 'options': [], 'error': errors.get((k,))}
+            out[k] = {'similar': 0, 'options': [], 'weights': [], 'error': errors.get((k,))}
             continue
         opts = [{'key': g, 'code': codes.get((g,)) or '', 'count': n} for g, n in s['counts'].items()]
         opts.sort(key=lambda o: -o['count'])
-        out[k] = {'similar': s['total'], 'options': opts}
+        out[k] = {'similar': s['total'], 'options': opts, 'weights': s['weights']}
     return {'ok': True, 'kinds': out}
 
 
