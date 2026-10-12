@@ -358,6 +358,80 @@ def entity_fields_from_metadata(cfg, entity_type):
     return re.findall(r'<Property Name="([^"]+)"', block)
 
 
+NOMEN_SELECT = 'Ref_Key,Code,Description,Артикул,DeletionMark,Parent_Key'
+
+
+def _card(i):
+    return {
+        'key': i.get('Ref_Key'),
+        'code': (i.get('Code') or '').strip(),
+        'name': i.get('Description'),
+        'article': (i.get('Артикул') or '').strip(),
+        'deleted': bool(i.get('DeletionMark')),
+    }
+
+
+def _q(v):
+    return str(v).replace("'", "''")
+
+
+def nomen_find_one(cfg, by, value):
+    """Ищет карточки номенклатуры по одному значению. Возвращает (список карточек, ошибка)."""
+    value = str(value or '').strip()
+    if not value:
+        return [], None
+    if by == 'barcode':
+        sel = ','.join('Номенклатура/' + f for f in NOMEN_SELECT.split(','))
+        r = call_odata(cfg, "InformationRegister_ШтрихкодыНоменклатуры?$format=json"
+                            f"&$filter=Штрихкод eq '{_q(value)}'&$expand=Номенклатура&$select=Штрихкод,{sel}")
+        if not r['ok']:
+            return [], r['error']
+        return [_card(x['Номенклатура']) for x in r['data'].get('value', [])
+                if isinstance(x.get('Номенклатура'), dict)], None
+    field = 'Артикул' if by == 'article' else 'Description'
+    r = call_odata(cfg, f"Catalog_Номенклатура?$format=json&$top=20&$select={NOMEN_SELECT}"
+                        f"&$filter={field} eq '{_q(value)}' and IsFolder eq false")
+    if not r['ok']:
+        return [], r['error']
+    return [_card(i) for i in r['data'].get('value', [])], None
+
+
+def nomen_match(cfg, rows, by):
+    """Проверяет порцию строк счёта: есть / несколько / нет. Поиск по одному значению, параллельно."""
+    if by not in ('article', 'barcode', 'name'):
+        return {'ok': False, 'error': 'Неизвестный реквизит поиска'}
+    values = [str(r.get(by) or '').strip() for r in rows]
+    uniq = sorted({v for v in values if v})
+    found, errors = {}, {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(nomen_find_one, cfg, by, v): v for v in uniq}
+        for fut in as_completed(futures):
+            v = futures[fut]
+            try:
+                cards, err = fut.result()
+            except Exception as e:
+                cards, err = [], str(e)[:200]
+            found[v] = cards
+            if err:
+                errors[v] = err
+    items = []
+    for v in values:
+        cards = found.get(v, [])
+        active = [c for c in cards if not c['deleted']]
+        if not v:
+            status = 'empty'
+        elif v in errors:
+            status = 'error'
+        elif len(active) == 1:
+            status = 'found'
+        elif len(active) > 1:
+            status = 'multiple'
+        else:
+            status = 'missing'
+        items.append({'value': v, 'status': status, 'cards': cards, 'error': errors.get(v)})
+    return {'ok': True, 'items': items}
+
+
 NOMEN_SETS_HINTS = ('Номенклатур', 'Штрихкод', 'Цен', 'НДС', 'ЕдиницИзмерения', 'КлассификаторЕдиниц',
                     'ТНВЭД', 'ВЭД', 'Упаковк', 'Весов')
 
@@ -1197,6 +1271,9 @@ def handler(event: dict, context) -> dict:
 
     if action == 'match_products':
         return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
+
+    if action == 'nomen_match':
+        return resp(200, {'result': nomen_match(cfg, body.get('rows') or [], body.get('by') or 'article')})
 
     if action == 'nomen_schema':
         return resp(200, {'result': nomen_schema(cfg)})
