@@ -38,11 +38,13 @@ import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
 import NomenNewItems from "@/components/odata/NomenNewItems";
 import NomenCreatePanel from "@/components/odata/NomenCreatePanel";
 import NomenDecisions from "@/components/odata/NomenDecisions";
+import NomenExcelPanel from "@/components/odata/NomenExcelPanel";
+import { rowsForExcel } from "./odata/nomenExcel";
 
 const WRITE_PORTION = 10;
 
 const NEXT_STEPS = [
-  { icon: "FileSpreadsheet", title: "Excel для других баз", hint: "Только новые позиции, FIFO и «Без НДС»" },
+  { icon: "FileSpreadsheet", title: "Excel для других баз", hint: "Появится, когда карточки будут созданы в 1С" },
 ];
 
 const emptyBc = (): Record<BarcodeState, number> => ({
@@ -567,6 +569,15 @@ const OdataNomenclature = () => {
           />
         )}
 
+        {checked && rowsForExcel(newItems, createResults, decisions).length > 0 && (
+          <NomenExcelPanel
+            rows={rowsForExcel(newItems, createResults, decisions)}
+            groups={groups}
+            invoiceName={invoice?.file_name || ""}
+            pendingDecisions={pendingDecisions}
+          />
+        )}
+
         {invoice && (
           <section className="space-y-3">
             {hasResults && (
@@ -608,6 +619,7 @@ const OdataNomenclature = () => {
           </section>
         )}
 
+        {!(checked && rowsForExcel(newItems, createResults, decisions).length > 0) && (
         <div className="space-y-2 pt-2">
           {NEXT_STEPS.map((s, i) => (
             <div
@@ -621,10 +633,11 @@ const OdataNomenclature = () => {
                 </div>
                 <div className="text-xs text-muted-foreground">{s.hint}</div>
               </div>
-              <span className="text-xs text-muted-foreground shrink-0">скоро</span>
+              <span className="text-xs text-muted-foreground shrink-0">после создания</span>
             </div>
           ))}
         </div>
+        )}
       </main>
     </div>
   );
