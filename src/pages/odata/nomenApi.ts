@@ -239,6 +239,7 @@ export interface NewItem {
   weightAuto: boolean;
   priceSrc?: "site" | "manual";
   weightSrc?: "site";
+  countrySrc?: "site";
   siteUrl?: string;
   countryKey: string;
   countryTouched: boolean;
@@ -359,6 +360,7 @@ export interface SiteProduct {
   price?: number | null;
   old_price?: number | null;
   weight?: number | null;
+  country?: string;
 }
 
 export const sitePrice = (p: SiteProduct, s: SiteSettings): number | null =>

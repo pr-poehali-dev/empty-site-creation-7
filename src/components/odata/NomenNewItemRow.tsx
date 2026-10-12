@@ -187,7 +187,11 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, looku
             value={item.countryKey}
             info={tnved.country}
             countries={countries}
-            onChange={(k) => onChange({ countryKey: k, countryTouched: true })}
+            onChange={(k) => onChange({ countryKey: k, countryTouched: true, countrySrc: undefined })}
+            siteName={siteName}
+            lookup={doLookup}
+            fromSite={item.countrySrc === "site"}
+            onSite={(k, p) => onChange({ countryKey: k, countryTouched: true, countrySrc: "site", siteUrl: p.url })}
           />
         )}
       </div>

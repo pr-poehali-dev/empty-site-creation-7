@@ -39,16 +39,19 @@ def _wg_parse(page):
     if m:
         old = _num(m.group(1))
     weight = None
+    country = ''
     table = re.search(r'class="product-desc[^"]*"[^>]*>(.*?)</table>', page, re.S)
     if table:
         for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', table.group(1), re.S):
             tds = [_text(x) for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
             if len(tds) >= 2 and re.search(r'^вес\b', tds[0], re.I) and weight is None:
                 weight = _num(tds[1].split()[0] if tds[1] else '')
+            if len(tds) >= 2 and re.search(r'^страна\s+(производства|происхождения)', tds[0], re.I) and not country:
+                country = tds[1].strip()
     title = re.search(r'<h1[^>]*>(.*?)</h1>', page, re.S)
     return {
         'code': code.group(1) if code else '',
-        'price': price, 'old_price': old, 'weight': weight,
+        'price': price, 'old_price': old, 'weight': weight, 'country': country,
         'title': _text(title.group(1)) if title else '',
     }
 
