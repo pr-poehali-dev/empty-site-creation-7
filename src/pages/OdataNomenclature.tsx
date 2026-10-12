@@ -575,6 +575,7 @@ const OdataNomenclature = () => {
             onChange={patchNew}
             onAll={patchAll}
             onReload={() => loadRefs(newItems, true)}
+            base={base}
           />
         )}
 

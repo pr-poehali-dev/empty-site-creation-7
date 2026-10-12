@@ -9,12 +9,17 @@ import {
 import Icon from "@/components/ui/icon";
 import { useMemo, useState } from "react";
 import NomenCountryField from "./NomenCountryField";
+import NomenSiteField from "./NomenSiteField";
 import {
   Country1C,
   Group1C,
   NewItem,
+  SiteProduct,
+  SiteSettings,
   TnvedKind,
   avgWeight,
+  siteLabel,
+  sitePrice,
   fmtWeight,
   newItemProblems,
   similarWeights,
@@ -26,6 +31,8 @@ interface Props {
   tnved?: TnvedKind;
   countries: Country1C[];
   onChange: (patch: Partial<NewItem>) => void;
+  site: SiteSettings;
+  lookup: (article: string) => Promise<SiteProduct>;
 }
 
 const Field = ({ label, children, bad }: { label: string; children: React.ReactNode; bad?: boolean }) => (
@@ -35,7 +42,7 @@ const Field = ({ label, children, bad }: { label: string; children: React.ReactN
   </label>
 );
 
-const NomenNewItemRow = ({ item, groups, tnved, countries, onChange }: Props) => {
+const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, lookup }: Props) => {
   const problems = newItemProblems(item);
   const bad = (k: string) => problems.includes(k);
   const options = tnved?.options || [];
@@ -43,6 +50,9 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange }: Props) =>
   const [open, setOpen] = useState(false);
   const similar = useMemo(() => similarWeights(item.name, tnved?.weights), [item.name, tnved]);
   const avg = avgWeight(similar);
+  const siteName = siteLabel(site.site);
+  const doLookup = site.site ? () => lookup(item.article) : null;
+  const priceMissing = site.site === "weissgauff" && site.wgPrice === "old" ? "нет зачёркнутой цены" : "на сайте нет цены";
 
   return (
     <div className="p-3 space-y-3">
@@ -89,24 +99,47 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange }: Props) =>
           </Select>
         </Field>
         <Field label="Базовая цена, ₽" bad={bad("цена")}>
-          <Input
+          <NomenSiteField
             value={item.price}
             inputMode="decimal"
             placeholder={item.invoicePrice ? `в счёте ${item.invoicePrice}` : "0"}
-            onChange={(e) => onChange({ price: e.target.value })}
+            unit="₽"
+            siteName={siteName}
+            lookup={doLookup}
+            pick={(p) => sitePrice(p, site)}
+            missing={priceMissing}
+            onType={(v) => onChange({ price: v, priceSrc: "manual" })}
+            onSite={(v, p) => onChange({ price: String(v), priceSrc: "site", siteUrl: p.url })}
           />
+          {item.price.trim() && item.priceSrc && (
+            <span className="block text-[11px] leading-tight text-muted-foreground">
+              {item.priceSrc === "site" ? "с сайта" : "введено вручную"}
+            </span>
+          )}
         </Field>
         <Field label="Вес из сертификата, кг" bad={bad("вес")}>
-          <Input
+          <NomenSiteField
             value={item.weight}
             inputMode="decimal"
             placeholder="например 12,5"
-            onChange={(e) =>
-              onChange({ weight: e.target.value.replace(/[^\d.,]/g, "").replace(".", ","), weightAuto: false })
+            unit="кг"
+            siteName={siteName}
+            lookup={doLookup}
+            pick={(p) => p.weight ?? null}
+            missing="на сайте нет веса"
+            avg={similar.length ? { value: `${fmtWeight(avg)} кг`, hint: "" } : null}
+            onAvg={() => onChange({ weight: fmtWeight(avg), weightAuto: true, weightSrc: undefined })}
+            onType={(v) =>
+              onChange({ weight: v.replace(/[^\d.,]/g, "").replace(".", ","), weightAuto: false, weightSrc: undefined })
+            }
+            onSite={(v, p) =>
+              onChange({ weight: fmtWeight(v), weightAuto: false, weightSrc: "site", siteUrl: p.url })
             }
           />
           <span className="block text-[11px] leading-tight text-muted-foreground">
-            {!tnved
+            {item.weightSrc === "site" && item.weight.trim()
+              ? "с сайта"
+              : !tnved
               ? "подбираю вес…"
               : item.weightAuto
                 ? `среднее по ${similar.length} похожим`
@@ -158,6 +191,18 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange }: Props) =>
           />
         )}
       </div>
+
+      {item.siteUrl && (
+        <a
+          href={item.siteUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="ml-9 text-xs text-primary inline-flex items-center gap-1"
+        >
+          <Icon name="ExternalLink" size={13} />
+          открыть на сайте
+        </a>
+      )}
 
       <div className="ml-9 text-xs text-muted-foreground">
         Тип «{item.kind}»:{" "}

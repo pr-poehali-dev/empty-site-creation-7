@@ -237,6 +237,9 @@ export interface NewItem {
   price: string;
   weight: string;
   weightAuto: boolean;
+  priceSrc?: "site" | "manual";
+  weightSrc?: "site";
+  siteUrl?: string;
   countryKey: string;
   countryTouched: boolean;
   tnved: string;
@@ -333,3 +336,44 @@ export const attachBarcode = async (base: string, key: string, barcode: string) 
     barcode_error?: string;
     barcode_owner?: { code: string; name: string };
   };
+export type SiteId = "" | "weissgauff";
+export type PriceMode = "price" | "old";
+
+export interface SiteSettings {
+  site: SiteId;
+  wgPrice: PriceMode;
+}
+
+export const SITES: { id: SiteId; label: string }[] = [
+  { id: "", label: "Не искать" },
+  { id: "weissgauff", label: "weissgauff.ru" },
+];
+
+export const siteLabel = (id: SiteId) => SITES.find((s) => s.id === id)?.label || "";
+
+export interface SiteProduct {
+  found: boolean;
+  reason?: string;
+  url?: string;
+  title?: string;
+  price?: number | null;
+  old_price?: number | null;
+  weight?: number | null;
+}
+
+export const sitePrice = (p: SiteProduct, s: SiteSettings): number | null =>
+  s.site === "weissgauff" ? (s.wgPrice === "old" ? p.old_price ?? null : p.price ?? null) : null;
+
+export const siteLookup = async (base: string, site: SiteId, article: string): Promise<SiteProduct> => {
+  const r = await fetch(`${ODATA_URL}?action=site_lookup&base=${encodeURIComponent(base)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}`,
+    },
+    body: JSON.stringify({ action: "site_lookup", base, site, article }),
+  });
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d?.result?.ok) throw new Error(d?.result?.error || d?.error || "Сайт не ответил");
+  return d.result;
+};

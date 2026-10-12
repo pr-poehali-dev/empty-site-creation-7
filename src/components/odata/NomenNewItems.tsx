@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -8,7 +8,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
-import { Country1C, Group1C, NewItem, TnvedKind, newItemProblems } from "@/pages/odata/nomenApi";
+import {
+  Country1C,
+  Group1C,
+  NewItem,
+  SITES,
+  SiteId,
+  SiteProduct,
+  SiteSettings,
+  TnvedKind,
+  newItemProblems,
+  siteLookup,
+} from "@/pages/odata/nomenApi";
+
+const SITE_KEY = "nomen_site_settings";
+const loadSite = (): SiteSettings => {
+  try {
+    return { site: "", wgPrice: "price", ...JSON.parse(localStorage.getItem(SITE_KEY) || "{}") };
+  } catch {
+    return { site: "", wgPrice: "price" };
+  }
+};
 import NomenNewItemRow from "./NomenNewItemRow";
 
 interface Props {
@@ -20,10 +40,28 @@ interface Props {
   onChange: (idx: number, patch: Partial<NewItem>) => void;
   onAll: (patch: Partial<NewItem>) => void;
   onReload: () => void;
+  base: string;
 }
 
-const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload }: Props) => {
+const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base }: Props) => {
   const [allGroup, setAllGroup] = useState("");
+  const [site, setSiteState] = useState<SiteSettings>(loadSite);
+  const cache = useRef(new Map<string, Promise<SiteProduct>>());
+  const setSite = (p: Partial<SiteSettings>) => {
+    const next = { ...site, ...p };
+    setSiteState(next);
+    localStorage.setItem(SITE_KEY, JSON.stringify(next));
+  };
+  const lookup = (article: string) => {
+    const k = `${site.site}|${article.trim().toLowerCase()}`;
+    let p = cache.current.get(k);
+    if (!p) {
+      p = siteLookup(base, site.site, article);
+      cache.current.set(k, p);
+      p.catch(() => cache.current.delete(k));
+    }
+    return p;
+  };
   const ready = items.filter((x) => newItemProblems(x).length === 0).length;
 
   return (
@@ -70,6 +108,47 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             Проставить всем
           </Button>
         </div>
+        <div className="flex items-end gap-2 flex-wrap">
+          <div className="flex-1 min-w-[200px] space-y-1">
+            <span className="text-xs text-muted-foreground">Где искать цену и вес</span>
+            <Select value={site.site || "none"} onValueChange={(v) => setSite({ site: (v === "none" ? "" : v) as SiteId })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SITES.map((s) => (
+                  <SelectItem key={s.id || "none"} value={s.id || "none"}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {site.site === "weissgauff" && (
+            <div className="flex rounded-md border border-white/[0.1] p-0.5 text-xs">
+              {(
+                [
+                  ["price", "Цена"],
+                  ["old", "Зачёркнутая цена"],
+                ] as const
+              ).map(([v, l]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setSite({ wgPrice: v })}
+                  className={`px-3 h-9 rounded ${site.wgPrice === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {site.site && (
+          <p className="text-xs text-muted-foreground">
+            Нажмите на поле цены или веса у позиции — появится «Найти на сайте». Ищется по артикулу, по одному товару.
+          </p>
+        )}
       </div>
       <div className="divide-y divide-white/[0.06]">
         {items.map((x) => (
@@ -80,6 +159,8 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             tnved={tnved[x.kind]}
             countries={countries}
             onChange={(p) => onChange(x.idx, p)}
+            site={site}
+            lookup={lookup}
           />
         ))}
       </div>

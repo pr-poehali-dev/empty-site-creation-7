@@ -5,7 +5,9 @@
       "method": "GET",
       "path": "/?action=ping",
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
@@ -13,7 +15,23 @@
       "method": "POST",
       "path": "/?action=create_doc",
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Поиск на сайте без токена запрещён",
+      "method": "POST",
+      "path": "/?action=site_lookup",
+      "body": {
+        "site": "weissgauff",
+        "article": "441835"
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     }
   ]

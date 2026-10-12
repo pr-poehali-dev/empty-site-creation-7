@@ -10,6 +10,7 @@ import urllib.error
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
+from sites import site_lookup
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -1731,6 +1732,9 @@ def handler(event: dict, context) -> dict:
         return resp(401, {'error': 'Доступ только для владельца'})
 
     base = params.get('base') or body.get('base') or 'trade-resurs'
+
+    if action == 'site_lookup':
+        return resp(200, {'result': site_lookup(body.get('site') or '', body.get('article') or '')})
 
     if action == 'bases':
         return resp(200, {'bases': {

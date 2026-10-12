@@ -106,13 +106,21 @@ const NomenRequisites = ({ item, originalName, kind, groups, countries, made, fa
   const parts: Part[] = [];
   if (nameFixed) parts.push({ text: "наим. исправлено", title: `в счёте: ${originalName}` });
   parts.push(has("группа") ? { text: group?.path || "группа" } : { text: "группа?", tone: "bad" });
-  parts.push(has("цена") ? { text: money(item.price) } : { text: "цена?", tone: "bad" });
+  parts.push(
+    has("цена")
+      ? {
+          text: item.priceSrc === "site" ? `${money(item.price)} (сайт)` : money(item.price),
+          tone: item.priceSrc === "site" ? "auto" : undefined,
+          title: item.priceSrc === "site" ? `с сайта ${item.siteUrl || ""}` : "введено вручную",
+        }
+      : { text: "цена?", tone: "bad" },
+  );
   parts.push(
     has("вес")
       ? {
-          text: `${item.weight} кг`,
-          tone: item.weightAuto ? "auto" : undefined,
-          title: item.weightAuto ? `среднее по ${similar.length} похожим (${fmtWeight(avg)} кг)` : "введено вручную",
+          text: item.weightSrc === "site" ? `${item.weight} кг (сайт)` : `${item.weight} кг`,
+          tone: item.weightAuto || item.weightSrc === "site" ? "auto" : undefined,
+          title: item.weightSrc === "site" ? `с сайта ${item.siteUrl || ""}` : item.weightAuto ? `среднее по ${similar.length} похожим (${fmtWeight(avg)} кг)` : "введено вручную",
         }
       : { text: "вес?", tone: "bad" },
   );
