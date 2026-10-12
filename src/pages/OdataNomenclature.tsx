@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import NomenRequisites, { COMMON_REQUISITES } from "@/components/odata/NomenRequisites";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
@@ -88,6 +89,7 @@ const OdataNomenclature = () => {
   const [createResults, setCreateResults] = useState<Record<number, CreateResult>>({});
   const [priceDocs, setPriceDocs] = useState<PriceDocResult[]>([]);
   const [pricedKeys, setPricedKeys] = useState<string[]>([]);
+  const [priceDocByKey, setPriceDocByKey] = useState<Record<string, string>>({});
   const [pricing, setPricing] = useState(false);
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [decidingIdx, setDecidingIdx] = useState<number | null>(null);
@@ -165,6 +167,7 @@ const OdataNomenclature = () => {
     setCreateResults({});
     setPriceDocs([]);
     setPricedKeys([]);
+    setPriceDocByKey({});
     setDecisions({});
     let complete = false;
     try {
@@ -306,6 +309,18 @@ const OdataNomenclature = () => {
     createdCards(results, decs).filter((c) => !done.includes(c.key));
 
   const unpriced = unpricedList(createResults, decisions, pricedKeys).length;
+  const createdCount = createdCards(createResults, decisions).length;
+  const noteCount = newItems.filter((x) => {
+    const r = createResults[x.idx];
+    const d = decisions[x.idx];
+    const m = r?.state === "created" ? r : d?.kind === "create" && d.result.state === "created" ? d.result : null;
+    return m ? m.country === "error" || m.barcode === "taken" || m.barcode === "error" : r?.state === "error";
+  }).length;
+  const newSummary = createdCount
+    ? `Создано ${createdCount} из ${newItems.length}${noteCount ? `, замечания у ${noteCount}` : ""}`
+    : `Новых ${newItems.length}: готовы ${readyNew.length}${
+        pendingNew.length - readyNew.length ? `, не хватает реквизитов ${pendingNew.length - readyNew.length}` : ""
+      }`;
 
   const priceNow = async (results = createResults, decs = decisions, done = pricedKeys) => {
     const rows = unpricedList(results, decs, done);
@@ -313,7 +328,10 @@ const OdataNomenclature = () => {
     setPricing(true);
     const doc = await setBasePrices(base, rows, `Создано сайтом по счёту ${invoice?.file_name || ""}`.trim());
     setPriceDocs((p) => [...p, doc]);
-    if (doc.ok) setPricedKeys((p) => [...p, ...rows.map((r) => r.key)]);
+    if (doc.ok) {
+      setPricedKeys((p) => [...p, ...rows.map((r) => r.key)]);
+      setPriceDocByKey((p) => ({ ...p, ...Object.fromEntries(rows.map((r) => [r.key, doc.number || ""])) }));
+    }
     setPricing(false);
   };
 
@@ -402,6 +420,7 @@ const OdataNomenclature = () => {
     setCreateResults({});
     setPriceDocs([]);
     setPricedKeys([]);
+    setPriceDocByKey({});
     setDecisions({});
     setInvoice(null);
     setMatches([]);
@@ -629,11 +648,39 @@ const OdataNomenclature = () => {
                 <p>Такие позиции не создаются, чтобы не было дублей. Нажмите на строку, чтобы увидеть карточки.</p>
               </div>
             )}
+            {newItems.length > 0 && (
+              <div className="text-[11px] text-muted-foreground rounded-lg border border-white/[0.08] px-3 py-2 space-y-0.5">
+                <div>{newSummary}</div>
+                <div>Для всех новых: {COMMON_REQUISITES}</div>
+              </div>
+            )}
             <NomenMatchTable
               items={items}
               matches={matches}
               filter={filter}
               showHits={usedOpts?.mode === "all"}
+              renderExtra={(i) => {
+                const x = newItems.find((n) => n.idx === i);
+                if (!x) return null;
+                const r = createResults[i];
+                const d = decisions[i];
+                const made =
+                  r?.state === "created" ? r : d?.kind === "create" && d.result.state === "created" ? d.result : null;
+                if (r?.state === "conflict" && !made) return null;
+                return (
+                  <NomenRequisites
+                    item={x}
+                    originalName={items[i]?.name || ""}
+                    kind={tnved[x.kind]}
+                    groups={groups}
+                    countries={countries}
+                    made={made}
+                    failed={r?.state === "error" ? r : d?.kind === "create" && d.result.state === "error" ? d.result : null}
+                    exists={r?.state === "exists" ? r : null}
+                    priceDoc={made?.key && pricedKeys.includes(made.key) ? priceDocByKey[made.key] || "создан" : null}
+                  />
+                );
+              }}
             />
           </section>
         )}

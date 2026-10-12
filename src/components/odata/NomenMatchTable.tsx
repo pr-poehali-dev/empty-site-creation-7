@@ -37,6 +37,7 @@ interface Props {
   matches: (MatchItem | null)[];
   filter: Filter;
   showHits: boolean;
+  renderExtra?: (i: number) => React.ReactNode;
 }
 
 const matchesFilter = (m: MatchItem | null, filter: Filter) => {
@@ -46,7 +47,7 @@ const matchesFilter = (m: MatchItem | null, filter: Filter) => {
   return m.status === filter;
 };
 
-const NomenMatchTable = ({ items, matches, filter, showHits }: Props) => {
+const NomenMatchTable = ({ items, matches, filter, showHits, renderExtra }: Props) => {
   const [open, setOpen] = useState<number | null>(null);
 
   const rows = items
@@ -110,6 +111,7 @@ const NomenMatchTable = ({ items, matches, filter, showHits }: Props) => {
                     )}
                   </div>
                 ) : null}
+                {renderExtra?.(i)}
               </div>
               <span
                 className={`text-xs rounded-md px-2 py-1 shrink-0 flex items-center gap-1 ${
