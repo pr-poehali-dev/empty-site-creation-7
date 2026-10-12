@@ -552,6 +552,8 @@ const OdataNomenclature = () => {
             progress={writeProgress}
             results={writeResults}
             onWrite={writeBarcodes}
+            items={items}
+            matches={matches}
           />
         )}
 

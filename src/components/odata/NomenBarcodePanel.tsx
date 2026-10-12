@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import Icon from "@/components/ui/icon";
-import { BarcodeState, BarcodeWriteResult } from "@/pages/odata/nomenApi";
+import { BarcodeState, BarcodeWriteResult, InvoiceItem, MatchItem } from "@/pages/odata/nomenApi";
+import NomenBarcodeCases, { CaseKind } from "./NomenBarcodeCases";
 import { BC_META } from "./NomenMatchTable";
 
 interface Props {
@@ -11,12 +12,15 @@ interface Props {
   progress: { done: number; total: number };
   results: BarcodeWriteResult[] | null;
   onWrite: (includeOther: boolean) => void;
+  items: InvoiceItem[];
+  matches: (MatchItem | null)[];
 }
 
 const ORDER: BarcodeState[] = ["ok", "none", "other", "taken", "no_invoice", "error"];
 
-const NomenBarcodePanel = ({ counts, writing, progress, results, onWrite }: Props) => {
+const NomenBarcodePanel = ({ counts, writing, progress, results, onWrite, items, matches }: Props) => {
   const [includeOther, setIncludeOther] = useState(false);
+  const [open, setOpen] = useState<CaseKind | null>(null);
   const toWrite = counts.none + (includeOther ? counts.other : 0);
 
   const added = results?.filter((r) => r.state === "added").length || 0;
@@ -29,12 +33,27 @@ const NomenBarcodePanel = ({ counts, writing, progress, results, onWrite }: Prop
         Штрихкоды у найденных карточек
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {ORDER.filter((s) => counts[s] > 0).map((s) => (
-          <span key={s} className={`text-xs rounded-md px-2 py-1 ${BC_META[s].cls}`}>
-            {BC_META[s].label}: {counts[s]}
-          </span>
-        ))}
+        {ORDER.filter((s) => counts[s] > 0).map((s) =>
+          s === "other" || s === "taken" ? (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setOpen(open === s ? null : s)}
+              className={`text-xs rounded-md px-2 py-1 flex items-center gap-1 ring-1 ${
+                open === s ? "ring-current" : "ring-transparent hover:ring-current/40"
+              } ${BC_META[s].cls}`}
+            >
+              {BC_META[s].label}: {counts[s]}
+              <Icon name={open === s ? "ChevronUp" : "ChevronDown"} size={13} />
+            </button>
+          ) : (
+            <span key={s} className={`text-xs rounded-md px-2 py-1 ${BC_META[s].cls}`}>
+              {BC_META[s].label}: {counts[s]}
+            </span>
+          ),
+        )}
       </div>
+      {open && counts[open] > 0 && <NomenBarcodeCases kind={open} items={items} matches={matches} />}
       {counts.taken > 0 && (
         <p className="text-xs text-muted-foreground">
           «ШК занят» — штрихкод из счёта уже записан у другой карточки. 1С его не примет, такие

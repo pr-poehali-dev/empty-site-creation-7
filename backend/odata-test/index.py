@@ -539,7 +539,7 @@ def nomen_match(cfg, rows, mode='single', by='article', exact=True, check_barcod
             else:
                 state = 'other'
             it['bc'] = {'state': state, 'have': have,
-                        'owner': {'code': other['code'], 'name': other['name']} if other else None}
+                        'owner': {'code': other['code'], 'name': other['name'], 'article': other.get('article', '')} if other else None}
     return {'ok': True, 'items': items}
 
 

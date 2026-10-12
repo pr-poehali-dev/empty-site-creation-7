@@ -46,7 +46,7 @@ export type BarcodeState = "ok" | "none" | "other" | "taken" | "no_invoice" | "e
 export interface BarcodeCheck {
   state: BarcodeState;
   have?: string[];
-  owner?: { code: string; name: string } | null;
+  owner?: { code: string; name: string; article?: string } | null;
   error?: string;
 }
 
