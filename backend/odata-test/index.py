@@ -388,15 +388,32 @@ def nomen_find_one(cfg, by, value):
             return [], r['error']
         return [_card(x['Номенклатура']) for x in r['data'].get('value', [])
                 if isinstance(x.get('Номенклатура'), dict)], None
-    field = 'Артикул' if by == 'article' else 'Description'
+    if by == 'name':
+        return find_by_name(cfg, value)
     r = call_odata(cfg, f"Catalog_Номенклатура?$format=json&$top=20&$select={NOMEN_SELECT}"
-                        f"&$filter={field} eq '{_q(value)}' and IsFolder eq false")
+                        f"&$filter=Артикул eq '{_q(value)}' and IsFolder eq false")
     if not r['ok']:
         return [], r['error']
     return [_card(i) for i in r['data'].get('value', [])], None
 
 
-NOMEN_FIELDS = ('article', 'barcode', 'name')
+def norm_name(v):
+    return re.sub(r'\s+', ' ', str(v or '')).strip()
+
+
+def find_by_name(cfg, value):
+    """Наименование совпадает, если отличается только лишними пробелами."""
+    target = norm_name(value)
+    words = sorted(set(target.split(' ')), key=len, reverse=True)[:6]
+    cond = ' and '.join(f"substringof('{_q(w)}',Description) eq true" for w in words)
+    r = call_odata(cfg, f"Catalog_Номенклатура?$format=json&$top=200&$select={NOMEN_SELECT}"
+                        f"&$filter={cond} and IsFolder eq false")
+    if not r['ok']:
+        return [], r['error']
+    return [_card(i) for i in r['data'].get('value', []) if norm_name(i.get('Description')) == target], None
+
+
+NOMEN_FIELDS = ('article', 'name')
 
 
 def card_barcodes(cfg, key):
@@ -435,7 +452,7 @@ def _row_status(active_count):
 
 def nomen_match(cfg, rows, mode='single', by='article', exact=True, check_barcodes=False):
     """Проверяет порцию строк счёта в 1С.
-    mode=single — по одному реквизиту by; mode=all — по артикулу, штрихкоду и наименованию:
+    mode=single — по одному реквизиту by (артикул или наименование); mode=all — по артикулу и наименованию:
     exact — у одной карточки должны совпасть все заполненные в счёте реквизиты, иначе хватит одного.
     check_barcodes — у найденной карточки сверить штрихкоды с штрихкодом из счёта."""
     if mode not in ('single', 'all'):
@@ -443,7 +460,8 @@ def nomen_match(cfg, rows, mode='single', by='article', exact=True, check_barcod
     if mode == 'single' and by not in NOMEN_FIELDS:
         return {'ok': False, 'error': 'Неизвестный реквизит поиска'}
     fields = NOMEN_FIELDS if mode == 'all' else (by,)
-    norm_rows = [{f: str(r.get(f) or '').strip() for f in NOMEN_FIELDS} for r in rows]
+    norm_rows = [{'article': str(r.get('article') or '').strip(), 'name': norm_name(r.get('name')),
+                  'barcode': str(r.get('barcode') or '').strip()} for r in rows]
 
     look = set()
     for r in norm_rows:
@@ -656,33 +674,72 @@ def _num(v):
         return 0.0
 
 
-def create_one_card(cfg, refs, row):
-    """Создаёт одну карточку и записывает её штрихкод. Перед созданием — защита от дублей."""
+def write_barcode(cfg, key, barcode):
+    """Пишет штрихкод карточке, если он свободен. Возвращает словарь с итогом."""
+    if not barcode:
+        return {'barcode': 'none'}
+    owners, err = nomen_find_one(cfg, 'barcode', barcode)
+    if err:
+        return {'barcode': 'error', 'barcode_error': err}
+    other = next((c for c in owners if c['key'] != key), None)
+    if other:
+        return {'barcode': 'taken', 'barcode_owner': {'code': other['code'], 'name': other['name']}}
+    if owners:
+        return {'barcode': 'added'}
+    b = call_odata(cfg, 'InformationRegister_ШтрихкодыНоменклатуры?$format=json', method='POST',
+                   payload={'Штрихкод': barcode, 'Номенклатура_Key': key})
+    if not b['ok']:
+        return {'barcode': 'error', 'barcode_error': b['error']}
+    return {'barcode': 'added'}
+
+
+def precheck_card(cfg, article, name):
+    """Перед созданием: артикул + наименование. Возвращает (state, cards, error)."""
+    tasks = [('name', name)] + ([('article', article)] if article else [])
+    found, errors = _run_parallel(lambda f, v: nomen_find_one(cfg, f, v), tasks, workers=2)
+    if errors:
+        return 'error', [], next(iter(errors.values()))
+    by_key = {}
+    for f, v in tasks:
+        for c in found.get((f, v)) or []:
+            if c['deleted']:
+                continue
+            by_key.setdefault(c['key'], dict(c, matched=[]))['matched'].append(f)
+    cards = list(by_key.values())
+    need = {'name', 'article'} if article else {'name'}
+    if any(need <= set(c['matched']) for c in cards):
+        return 'exists', [c for c in cards if need <= set(c['matched'])], None
+    if cards:
+        return 'conflict', cards, None
+    return 'ok', [], None
+
+
+def with_barcodes(cfg, cards):
+    out, _ = _run_parallel(lambda k: card_barcodes(cfg, k), [(c['key'],) for c in cards], workers=4)
+    return [dict(c, barcodes=out.get((c['key'],)) or []) for c in cards]
+
+
+def create_one_card(cfg, refs, row, force=False):
+    """Создаёт одну карточку и записывает её штрихкод (если он свободен)."""
     article = str(row.get('article') or '').strip()
-    name = re.sub(r'\s+', ' ', str(row.get('name') or '')).strip()
+    name = norm_name(row.get('name'))
     barcode = str(row.get('barcode') or '').strip()
     tnved = str(row.get('tnved') or '').strip()
     group = str(row.get('group_key') or '').strip()
     weight = _num(row.get('weight'))
     base = {'idx': row.get('idx'), 'article': article}
-    if not article or not name or not re.fullmatch(r'[0-9a-f-]{36}', group) or weight <= 0 \
+    if not name or not re.fullmatch(r'[0-9a-f-]{36}', group) or weight <= 0 \
             or not re.fullmatch(r'\d{10}', tnved):
         return dict(base, state='error', error='Не заполнены обязательные реквизиты')
 
-    exist, err = nomen_find_one(cfg, 'article', article)
-    if err:
-        return dict(base, state='error', error=err)
-    alive = [c for c in exist if not c['deleted']]
-    if alive:
-        return dict(base, state='exists', card=alive[0], error='Карточка с таким артикулом уже есть в 1С')
-
-    if barcode:
-        owners, err = nomen_find_one(cfg, 'barcode', barcode)
+    if not force:
+        state, cards, err = precheck_card(cfg, article, name)
         if err:
             return dict(base, state='error', error=err)
-        if owners:
-            o = owners[0]
-            return dict(base, state='error', error=f'Штрихкод {barcode} уже у карточки {o["code"]} — {o["name"]}')
+        if state == 'exists':
+            return dict(base, state='exists', card=cards[0])
+        if state == 'conflict':
+            return dict(base, state='conflict', cards=with_barcodes(cfg, cards[:10]))
 
     tkey = str(row.get('tnved_key') or '').strip()
     if not re.fullmatch(r'[0-9a-f-]{36}', tkey):
@@ -712,22 +769,17 @@ def create_one_card(cfg, refs, row):
     d = r['data']
     res = dict(base, state='created', key=d.get('Ref_Key'), code=(d.get('Code') or '').strip(),
                name=d.get('Description'))
-    if barcode:
-        b = call_odata(cfg, 'InformationRegister_ШтрихкодыНоменклатуры?$format=json', method='POST',
-                       payload={'Штрихкод': barcode, 'Номенклатура_Key': res['key']})
-        res['barcode'] = 'added' if b['ok'] else 'error'
-        if not b['ok']:
-            res['barcode_error'] = b['error']
+    res.update(write_barcode(cfg, res['key'], barcode))
     return res
 
 
-def nomen_create(cfg, rows):
-    """Создаёт порцию карточек номенклатуры (по одной, параллельно)."""
+def nomen_create(cfg, rows, force=False):
+    """Создаёт порцию карточек номенклатуры (по одной, параллельно). force — без проверки на совпадения."""
     refs, err = nomen_refs(cfg)
     if err:
         return {'ok': False, 'error': err}
     rows = rows[:10]
-    out, errors = _run_parallel(lambda i: (create_one_card(cfg, refs, rows[i]), None),
+    out, errors = _run_parallel(lambda i: (create_one_card(cfg, refs, rows[i], force), None),
                                 [(i,) for i in range(len(rows))], workers=4)
     items = []
     for i, row in enumerate(rows):
@@ -1626,7 +1678,14 @@ def handler(event: dict, context) -> dict:
         return resp(200, {'result': {'ok': not err, 'refs': refs, 'error': err}})
 
     if action == 'nomen_create':
-        return resp(200, {'result': nomen_create(cfg, body.get('rows') or [])})
+        return resp(200, {'result': nomen_create(cfg, body.get('rows') or [], bool(body.get('force')))})
+
+    if action == 'nomen_attach_barcode':
+        key = str(body.get('key') or '').strip()
+        bc = str(body.get('barcode') or '').strip()
+        if not re.fullmatch(r'[0-9a-f-]{36}', key) or not bc:
+            return resp(400, {'error': 'Нужны карточка и штрихкод'})
+        return resp(200, {'result': dict({'ok': True}, **write_barcode(cfg, key, bc))})
 
     if action == 'nomen_set_prices':
         return resp(200, {'result': nomen_set_prices(cfg, body.get('rows') or [], body.get('comment') or '')})

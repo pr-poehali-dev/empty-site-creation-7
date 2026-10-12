@@ -1,18 +1,16 @@
 const INVOICE_URL = "https://functions.poehali.dev/da75537b-bd2c-4bb3-b3ee-5cd90f17c9a2";
 const ODATA_URL = "https://functions.poehali.dev/74601b0f-9a91-4dbb-aef5-3cf2cadf93c8";
 
-export type SearchBy = "article" | "barcode" | "name";
+export type SearchBy = "article" | "name";
 export type SearchMode = "single" | "all";
 
 export const SEARCH_BY_TITLES: Record<SearchBy, string> = {
   article: "Артикул",
-  barcode: "Штрихкод",
   name: "Наименование",
 };
 
 export const SEARCH_BY_SHORT: Record<SearchBy, string> = {
   article: "А",
-  barcode: "Ш",
   name: "Н",
 };
 
@@ -187,7 +185,6 @@ export const toNumber = (s: string) => {
 export const newItemProblems = (x: NewItem): string[] => {
   const p: string[] = [];
   if (!x.name.trim()) p.push("наименование");
-  if (!x.article.trim()) p.push("артикул");
   if (!x.groupKey) p.push("группа");
   if (!(toNumber(x.price) > 0)) p.push("цена");
   if (!(toNumber(x.weight) > 0)) p.push("вес");
@@ -195,18 +192,31 @@ export const newItemProblems = (x: NewItem): string[] => {
   return p;
 };
 
+export type BarcodeWrite = "added" | "taken" | "error" | "none";
+
+export interface ConflictCard extends Card1C {
+  barcodes?: string[];
+}
+
 export interface CreateResult {
   idx: number;
   article: string;
-  state: "created" | "exists" | "error";
+  state: "created" | "exists" | "conflict" | "error";
   key?: string;
   code?: string;
   name?: string;
-  barcode?: "added" | "error";
+  barcode?: BarcodeWrite;
   barcode_error?: string;
+  barcode_owner?: { code: string; name: string };
   card?: Card1C;
+  cards?: ConflictCard[];
   error?: string;
 }
+
+export type Decision =
+  | { kind: "create"; result: CreateResult }
+  | { kind: "attach"; card: ConflictCard; barcode: BarcodeWrite; barcode_error?: string; barcode_owner?: { code: string; name: string } }
+  | { kind: "skip" };
 
 export interface PriceDocResult {
   ok: boolean;
@@ -218,9 +228,10 @@ export interface PriceDocResult {
   error?: string;
 }
 
-export const createPortion = async (base: string, list: NewItem[]): Promise<CreateResult[]> =>
+export const createPortion = async (base: string, list: NewItem[], force = false): Promise<CreateResult[]> =>
   (
     await odataPost("nomen_create", base, {
+      force,
       rows: list.map((x) => ({
         idx: x.idx,
         article: x.article.trim(),
@@ -245,3 +256,10 @@ export const setBasePrices = async (
     return { ok: false, error: (e as Error).message };
   }
 };
+
+export const attachBarcode = async (base: string, key: string, barcode: string) =>
+  (await odataPost("nomen_attach_barcode", base, { key, barcode })) as {
+    barcode: BarcodeWrite;
+    barcode_error?: string;
+    barcode_owner?: { code: string; name: string };
+  };

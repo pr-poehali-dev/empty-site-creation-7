@@ -46,19 +46,19 @@ const NomenSearchOptions = ({ opts, onChange, filled, total, disabled }: Props) 
           disabled={disabled}
           onClick={() => set({ mode: "single" })}
           title="По одному реквизиту"
-          hint="Артикул, штрихкод или наименование"
+          hint="Артикул или наименование"
         />
         <Tile
           active={opts.mode === "all"}
           disabled={disabled}
           onClick={() => set({ mode: "all" })}
-          title="По всем трём"
-          hint="Артикул + штрихкод + наименование"
+          title="Артикул + наименование"
+          hint="Оба реквизита сразу"
         />
       </div>
 
       {opts.mode === "single" ? (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {(Object.keys(SEARCH_BY_TITLES) as SearchBy[]).map((k) => (
             <Tile
               key={k}
@@ -99,7 +99,8 @@ const NomenSearchOptions = ({ opts, onChange, filled, total, disabled }: Props) 
         <div>
           <div className="text-sm font-medium">Проверить штрихкоды</div>
           <div className="text-xs text-muted-foreground">
-            У найденных карточек сверить штрихкод со счётом и предложить дописать недостающие
+            Товар по штрихкоду не ищется. У найденных карточек сверить штрихкод со счётом и
+            предложить дописать недостающие
           </div>
         </div>
       </label>

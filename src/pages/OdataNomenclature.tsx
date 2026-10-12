@@ -28,12 +28,16 @@ import {
   newItemProblems,
   setBasePrices,
   toNumber,
+  ConflictCard,
+  Decision,
+  attachBarcode,
 } from "./odata/nomenApi";
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
 import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
 import NomenNewItems from "@/components/odata/NomenNewItems";
 import NomenCreatePanel from "@/components/odata/NomenCreatePanel";
+import NomenDecisions from "@/components/odata/NomenDecisions";
 
 const WRITE_PORTION = 10;
 
@@ -75,7 +79,11 @@ const OdataNomenclature = () => {
   const [tnved, setTnved] = useState<Record<string, TnvedKind>>({});
   const [refsLoading, setRefsLoading] = useState(false);
   const [createResults, setCreateResults] = useState<Record<number, CreateResult>>({});
-  const [priceDoc, setPriceDoc] = useState<PriceDocResult | null>(null);
+  const [priceDocs, setPriceDocs] = useState<PriceDocResult[]>([]);
+  const [pricedKeys, setPricedKeys] = useState<string[]>([]);
+  const [pricing, setPricing] = useState(false);
+  const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [decidingIdx, setDecidingIdx] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [createProgress, setCreateProgress] = useState({ done: 0, total: 0, stage: "" });
 
@@ -88,7 +96,6 @@ const OdataNomenclature = () => {
   const filled = useMemo(
     () => ({
       article: items.filter((x) => x.article).length,
-      barcode: items.filter((x) => x.barcode).length,
       name: items.filter((x) => x.name).length,
     }),
     [items],
@@ -122,7 +129,7 @@ const OdataNomenclature = () => {
       try {
         const d = await parseInvoice(b64, f.name);
         setInvoice(d);
-        const best = (["article", "barcode", "name"] as SearchBy[]).find((k) =>
+        const best = (["article", "name"] as SearchBy[]).find((k) =>
           d.items.every((x) => x[k]),
         );
         setOpts((o) => ({ ...o, by: best || "article" }));
@@ -138,6 +145,7 @@ const OdataNomenclature = () => {
 
   const runCheck = async () => {
     if (!items.length) return;
+    if (unpriced && !window.confirm(`У ${unpriced} созданных карточек нет базовой цены. Всё равно проверить заново?`)) return;
     stopRef.current = false;
     setChecking(true);
     setFilter("all");
@@ -148,7 +156,9 @@ const OdataNomenclature = () => {
     setDone(0);
     setNewItems([]);
     setCreateResults({});
-    setPriceDoc(null);
+    setPriceDocs([]);
+    setPricedKeys([]);
+    setDecisions({});
     let complete = false;
     try {
       for (let i = 0; i < items.length; i += portion) {
@@ -257,48 +267,123 @@ const OdataNomenclature = () => {
 
   const patchAll = (patch: Partial<NewItem>) => setNewItems((prev) => prev.map((x) => ({ ...x, ...patch })));
 
-  const pendingNew = newItems.filter(
-    (x) => createResults[x.idx]?.state !== "created" && createResults[x.idx]?.state !== "exists",
-  );
+  const pendingNew = newItems.filter((x) => !createResults[x.idx] || createResults[x.idx].state === "error");
   const readyNew = pendingNew.filter((x) => newItemProblems(x).length === 0);
+  const conflicts = Object.values(createResults).filter((r) => r.state === "conflict");
+  const pendingDecisions = conflicts.filter((r) => !decisions[r.idx]).length;
+
+  const createdCards = (results: Record<number, CreateResult>, decs: Record<number, Decision>) => {
+    const out: { key: string; price: number }[] = [];
+    newItems.forEach((x) => {
+      const r = results[x.idx];
+      const d = decs[x.idx];
+      const made = r?.state === "created" ? r : d?.kind === "create" && d.result.state === "created" ? d.result : null;
+      if (made?.key) out.push({ key: made.key, price: toNumber(x.price) });
+    });
+    return out;
+  };
+
+  const unpricedList = (results: Record<number, CreateResult>, decs: Record<number, Decision>, done: string[]) =>
+    createdCards(results, decs).filter((c) => !done.includes(c.key));
+
+  const unpriced = unpricedList(createResults, decisions, pricedKeys).length;
+
+  const priceNow = async (results = createResults, decs = decisions, done = pricedKeys) => {
+    const rows = unpricedList(results, decs, done);
+    if (!rows.length) return;
+    setPricing(true);
+    const doc = await setBasePrices(base, rows, `Создано сайтом по счёту ${invoice?.file_name || ""}`.trim());
+    setPriceDocs((p) => [...p, doc]);
+    if (doc.ok) setPricedKeys((p) => [...p, ...rows.map((r) => r.key)]);
+    setPricing(false);
+  };
+
+  const maybeAutoPrice = (results: Record<number, CreateResult>, decs: Record<number, Decision>) => {
+    const left = Object.values(results).filter((r) => r.state === "conflict" && !decs[r.idx]).length;
+    if (left === 0) priceNow(results, decs, pricedKeys);
+  };
 
   const createIn1C = async () => {
     const list = readyNew;
     if (!list.length) return;
     setCreating(true);
-    setPriceDoc(null);
     const acc: Record<number, CreateResult> = { ...createResults };
     const CHUNK = 5;
-    setCreateProgress({ done: 0, total: list.length, stage: "Создаю карточки" });
+    setCreateProgress({ done: 0, total: list.length, stage: "Сверяю и создаю карточки" });
     try {
       for (let i = 0; i < list.length; i += CHUNK) {
         const part = await createPortion(base, list.slice(i, i + CHUNK));
         part.forEach((r) => (acc[r.idx] = r));
         setCreateResults({ ...acc });
-        setCreateProgress({ done: Math.min(i + CHUNK, list.length), total: list.length, stage: "Создаю карточки" });
+        setCreateProgress({ done: Math.min(i + CHUNK, list.length), total: list.length, stage: "Сверяю и создаю карточки" });
       }
     } catch (e) {
       toast({ title: "Создание остановлено", description: (e as Error).message, variant: "destructive" });
     }
-    const priced = list
-      .map((x) => ({ x, r: acc[x.idx] }))
-      .filter(({ r }) => r?.state === "created" && r.key)
-      .map(({ x, r }) => ({ key: r!.key!, price: toNumber(x.price) }));
-    if (priced.length) {
-      setCreateProgress({ done: 0, total: 0, stage: "Устанавливаю базовые цены" });
-      const doc = await setBasePrices(
-        base,
-        priced,
-        `Создано сайтом по счёту ${invoice?.file_name || ""}`.trim(),
-      );
-      setPriceDoc(doc);
-    }
     setCreating(false);
-    const made = Object.values(acc).filter((r) => r.state === "created").length;
-    toast({ title: `Создано в 1С: ${made}` });
+    const made = list.filter((x) => acc[x.idx]?.state === "created").length;
+    const conf = list.filter((x) => acc[x.idx]?.state === "conflict").length;
+    toast({ title: `Создано в 1С: ${made}`, description: conf ? `Нужно решение: ${conf}` : undefined });
+    maybeAutoPrice(acc, decisions);
   };
 
+  const decide = (idx: number, d: Decision) => {
+    const next = { ...decisions, [idx]: d };
+    setDecisions(next);
+    maybeAutoPrice(createResults, next);
+  };
+
+  const decideCreate = async (idx: number) => {
+    const item = newItems.find((x) => x.idx === idx);
+    if (!item) return;
+    setDecidingIdx(idx);
+    try {
+      const [r] = await createPortion(base, [item], true);
+      decide(idx, { kind: "create", result: r });
+    } catch (e) {
+      decide(idx, { kind: "create", result: { idx, article: item.article, state: "error", error: (e as Error).message } });
+    } finally {
+      setDecidingIdx(null);
+    }
+  };
+
+  const decideAttach = async (idx: number, card: ConflictCard) => {
+    const item = newItems.find((x) => x.idx === idx);
+    if (!item?.barcode) return;
+    setDecidingIdx(idx);
+    try {
+      const r = await attachBarcode(base, card.key, item.barcode);
+      decide(idx, { kind: "attach", card, ...r });
+    } catch (e) {
+      decide(idx, { kind: "attach", card, barcode: "error", barcode_error: (e as Error).message });
+    } finally {
+      setDecidingIdx(null);
+    }
+  };
+
+  const undoDecision = (idx: number) =>
+    setDecisions((prev) => {
+      const n = { ...prev };
+      delete n[idx];
+      return n;
+    });
+
+  useEffect(() => {
+    if (!unpriced) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [unpriced]);
+
   const reset = () => {
+    if (unpriced && !window.confirm(`У ${unpriced} созданных карточек нет базовой цены. Всё равно загрузить другой счёт?`)) return;
+    setCreateResults({});
+    setPriceDocs([]);
+    setPricedKeys([]);
+    setDecisions({});
     setInvoice(null);
     setMatches([]);
     setDone(0);
@@ -309,7 +394,7 @@ const OdataNomenclature = () => {
 
   const hasResults = matches.some(Boolean);
   const checked = hasResults && !checking;
-  const busy = checking || writing || creating;
+  const busy = checking || writing || creating || pricing;
 
   const chip = (key: Filter, label: string, cls: string, icon?: string) => (
     <button
@@ -369,7 +454,7 @@ const OdataNomenclature = () => {
               <div className="text-sm min-w-0 flex-1">
                 <div className="truncate">{invoice.file_name}</div>
                 <div className="text-xs text-muted-foreground">
-                  Позиций: {items.length} · с артикулом {filled.article} · со штрихкодом {filled.barcode}
+                  Позиций: {items.length} · с артикулом {filled.article} · со штрихкодом {items.filter((x) => x.barcode).length}
                 </div>
               </div>
               <Button variant="outline" size="sm" onClick={reset} disabled={busy}>
@@ -457,10 +542,28 @@ const OdataNomenclature = () => {
             items={newItems}
             readyCount={readyNew.length}
             results={createResults}
-            priceDoc={priceDoc}
+            priceDocs={priceDocs}
+            unpriced={unpriced}
+            pendingDecisions={pendingDecisions}
             running={creating}
+            pricing={pricing}
             progress={createProgress}
             onCreate={createIn1C}
+            onPriceNow={() => priceNow()}
+          />
+        )}
+
+        {conflicts.length > 0 && (
+          <NomenDecisions
+            conflicts={conflicts}
+            items={newItems}
+            decisions={decisions}
+            busyIdx={decidingIdx}
+            locked={pendingDecisions === 0 && unpriced === 0}
+            onCreate={decideCreate}
+            onAttach={decideAttach}
+            onSkip={(idx) => decide(idx, { kind: "skip" })}
+            onUndo={undoDecision}
           />
         )}
 

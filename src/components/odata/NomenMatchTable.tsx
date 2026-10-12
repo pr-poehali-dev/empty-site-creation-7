@@ -30,7 +30,7 @@ export const BC_META: Record<BarcodeState, { label: string; cls: string }> = {
   error: { label: "ШК: ошибка", cls: "text-rose-400 bg-rose-500/10" },
 };
 
-const FIELDS: SearchBy[] = ["article", "barcode", "name"];
+const FIELDS: SearchBy[] = ["article", "name"];
 
 interface Props {
   items: InvoiceItem[];

@@ -49,10 +49,10 @@ const NomenNewItemRow = ({ item, groups, tnved, onChange }: Props) => {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 ml-9">
-        <Field label="Артикул" bad={bad("артикул")}>
+        <Field label="Артикул (необязательно)">
           <Input value={item.article} onChange={(e) => onChange({ article: e.target.value })} />
         </Field>
-        <Field label="Штрихкод">
+        <Field label="Штрихкод (необязательно)">
           <Input
             value={item.barcode}
             inputMode="numeric"
