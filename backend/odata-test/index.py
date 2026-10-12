@@ -597,14 +597,59 @@ def tnved_code(cfg, key):
     return (r['data'].get('Code') or r['data'].get('Description') or '').strip(), None
 
 
+COUNTRY_FAMILIES = [('холодильн', 'олодильн', 'Холодильники'),
+                    ('морозильн', 'орозильн', 'Морозильники'),
+                    ('стиральн', 'тиральн', 'Стиральные машины')]
+COUNTRY_MIN_SIMILAR = 10
+NOT_TRACEABLE_COUNTRIES = ('643', '112')
+
+
+def country_family(kind):
+    low = str(kind or '').lower()
+    return next((f for f in COUNTRY_FAMILIES if f[0] in low), None)
+
+
+def countries_by_family(cfg, stem):
+    r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=2000&$select=СтранаПроисхождения_Key"
+                        f"&$filter=IsFolder eq false and DeletionMark eq false"
+                        f" and substringof('{_q(stem)}',Description) eq true")
+    if not r['ok']:
+        return None, r['error']
+    counts = {}
+    total = 0
+    for x in r['data'].get('value', []):
+        total += 1
+        c = x.get('СтранаПроисхождения_Key') or EMPTY_GUID
+        c = '' if c == EMPTY_GUID else c
+        counts[c] = counts.get(c, 0) + 1
+    return {'total': total, 'counts': counts}, None
+
+
+def load_countries(cfg):
+    r = call_odata(cfg, "Catalog_СтраныМира?$format=json&$select=Ref_Key,Code,Description,DeletionMark")
+    if not r['ok']:
+        return [], r['error']
+    out = [{'key': x['Ref_Key'], 'code': (x.get('Code') or '').strip(), 'name': (x.get('Description') or '').strip()}
+           for x in r['data'].get('value', []) if not x.get('DeletionMark')]
+    out.sort(key=lambda c: c['name'])
+    return out, None
+
+
+def country_options(counts):
+    opts = [{'key': k, 'count': n} for k, n in counts.items()]
+    opts.sort(key=lambda o: -o['count'])
+    return opts
+
+
 def tnved_by_type(cfg, kind):
     r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1000"
-                        "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара"
+                        "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара,СтранаПроисхождения_Key"
                         f"&$filter=IsFolder eq false and DeletionMark eq false"
                         f" and startswith(Description,'{_q(kind)} ') eq true")
     if not r['ok']:
         return None, r['error']
     counts = {}
+    countries = {}
     total = 0
     weights = []
     for x in r['data'].get('value', []):
@@ -612,21 +657,28 @@ def tnved_by_type(cfg, kind):
         k = x.get('КодТНВЭД_Key')
         if k and k != EMPTY_GUID:
             counts[k] = counts.get(k, 0) + 1
+        c = x.get('СтранаПроисхождения_Key') or EMPTY_GUID
+        c = '' if c == EMPTY_GUID else c
+        countries[c] = countries.get(c, 0) + 1
         try:
             w = float(x.get('ВесПоСертификатуТовара') or 0)
         except (TypeError, ValueError):
             w = 0
         if w > 0:
             weights.append({'name': (x.get('Description') or '').strip(), 'code': (x.get('Code') or '').strip(), 'w': w})
-    return {'total': total, 'counts': counts, 'weights': weights}, None
+    return {'total': total, 'counts': counts, 'weights': weights, 'countries': countries}, None
 
 
 def nomen_tnved(cfg, kinds):
-    """Подбор кода ТНВЭД по похожим товарам: по каждому типу товара — коды и сколько карточек с ними."""
+    """Подбор по похожим товарам: ТНВЭД, вес, а для холодильников/морозильников/стиральных — страна происхождения."""
     kinds = sorted({str(k or '').strip() for k in kinds if str(k or '').strip()})[:40]
     stats, errors = _run_parallel(lambda k: tnved_by_type(cfg, k), [(k,) for k in kinds])
     keys = sorted({g for s in stats.values() if s for g in s['counts']})
     codes, _ = _run_parallel(lambda k: tnved_code(cfg, k), [(k,) for k in keys])
+    need_wide = sorted({country_family(k)[1] for k in kinds if country_family(k)
+                        and (stats.get((k,)) or {}).get('total', 0) < COUNTRY_MIN_SIMILAR})
+    wide, _ = _run_parallel(lambda s: countries_by_family(cfg, s), [(s,) for s in need_wide])
+    countries, cerr = load_countries(cfg) if any(country_family(k) for k in kinds) else ([], None)
     out = {}
     for (k,) in [(k,) for k in kinds]:
         s = stats.get((k,))
@@ -636,7 +688,20 @@ def nomen_tnved(cfg, kinds):
         opts = [{'key': g, 'code': codes.get((g,)) or '', 'count': n} for g, n in s['counts'].items()]
         opts.sort(key=lambda o: -o['count'])
         out[k] = {'similar': s['total'], 'options': opts, 'weights': s['weights']}
-    return {'ok': True, 'kinds': out}
+        fam = country_family(k)
+        if fam:
+            w = wide.get((fam[1],)) if s['total'] < COUNTRY_MIN_SIMILAR else None
+            src = w or {'total': s['total'], 'counts': s['countries']}
+            out[k]['country'] = {'basis': fam[2] if w else k, 'similar': src['total'],
+                                 'options': country_options(src['counts'])}
+    return {'ok': True, 'kinds': out, 'countries': countries, 'countries_error': cerr}
+
+
+def country_code(cfg, key):
+    r = call_odata(cfg, f"Catalog_СтраныМира(guid'{key}')?$format=json&$select=Code,Description")
+    if not r['ok']:
+        return None, r['error']
+    return (r['data'].get('Code') or '').strip(), None
 
 
 def _first_key(cfg, entity, desc):
@@ -777,8 +842,31 @@ def create_one_card(cfg, refs, row, force=False):
     d = r['data']
     res = dict(base, state='created', key=d.get('Ref_Key'), code=(d.get('Code') or '').strip(),
                name=d.get('Description'))
+    res.update(write_country(cfg, res['key'], str(row.get('country_key') or '').strip()))
     res.update(write_barcode(cfg, res['key'], barcode))
     return res
+
+
+def write_country(cfg, key, ckey):
+    """Страна происхождения + галочка «Прослеживаемый товар» (не Россия и не Беларусь)."""
+    if not re.fullmatch(r'[0-9a-f-]{36}', ckey) or ckey == EMPTY_GUID:
+        return {'country': 'none'}
+    code, err = country_code(cfg, ckey)
+    if err:
+        return {'country': 'error', 'country_error': err}
+    traceable = code not in NOT_TRACEABLE_COUNTRIES
+    r = call_odata(cfg, f"Catalog_Номенклатура(guid'{key}')?$format=json", method='PATCH',
+                   payload={'СтранаПроисхождения_Key': ckey, 'ПрослеживаемыйТовар': traceable})
+    if not r['ok']:
+        return {'country': 'error', 'country_error': r['error']}
+    got = r.get('data') or {}
+    if 'СтранаПроисхождения_Key' not in got:
+        g = call_odata(cfg, f"Catalog_Номенклатура(guid'{key}')?$format=json"
+                            "&$select=СтранаПроисхождения_Key,ПрослеживаемыйТовар")
+        got = g.get('data') or {} if g['ok'] else {}
+    if got.get('СтранаПроисхождения_Key') != ckey or bool(got.get('ПрослеживаемыйТовар')) != traceable:
+        return {'country': 'error', 'country_error': '1С не сохранила страну или галочку'}
+    return {'country': 'set', 'traceable': traceable}
 
 
 def nomen_create(cfg, rows, force=False):

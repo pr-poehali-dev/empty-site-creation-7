@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
-import { Group1C } from "@/pages/odata/nomenApi";
+import { Country1C, Group1C } from "@/pages/odata/nomenApi";
 import {
   ExcelRow,
   buildNomenExcel,
@@ -15,18 +15,19 @@ import {
 interface Props {
   rows: ExcelRow[];
   groups: Group1C[];
+  countries: Country1C[];
   invoiceName: string;
   pendingDecisions: number;
 }
 
-const NomenExcelPanel = ({ rows, groups, invoiceName, pendingDecisions }: Props) => {
+const NomenExcelPanel = ({ rows, groups, countries, invoiceName, pendingDecisions }: Props) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<{ count: number; name: string } | null>(null);
 
   const make = async () => {
-    const b64 = buildNomenExcel(rows, groups);
+    const b64 = buildNomenExcel(rows, groups, countries);
     const name = nomenFileName(invoiceName);
     downloadBase64(b64, name);
     setSaving(true);

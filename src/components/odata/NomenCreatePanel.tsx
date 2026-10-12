@@ -184,6 +184,11 @@ const NomenCreatePanel = ({
                         </div>
                       )}
                       {r.barcode === "error" && <div className="text-rose-400">ШК не записан: {r.barcode_error}</div>}
+                      {r.country === "error" && (
+                        <div className="text-amber-400">
+                          Страну и галочку «Прослеживаемый товар» поставьте в 1С вручную: {r.country_error}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

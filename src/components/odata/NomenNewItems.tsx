@@ -8,20 +8,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
-import { Group1C, NewItem, TnvedKind, newItemProblems } from "@/pages/odata/nomenApi";
+import { Country1C, Group1C, NewItem, TnvedKind, newItemProblems } from "@/pages/odata/nomenApi";
 import NomenNewItemRow from "./NomenNewItemRow";
 
 interface Props {
   items: NewItem[];
   groups: Group1C[];
   tnved: Record<string, TnvedKind>;
+  countries: Country1C[];
   loading: boolean;
   onChange: (idx: number, patch: Partial<NewItem>) => void;
   onAll: (patch: Partial<NewItem>) => void;
   onReload: () => void;
 }
 
-const NomenNewItems = ({ items, groups, tnved, loading, onChange, onAll, onReload }: Props) => {
+const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload }: Props) => {
   const [allGroup, setAllGroup] = useState("");
   const ready = items.filter((x) => newItemProblems(x).length === 0).length;
 
@@ -77,6 +78,7 @@ const NomenNewItems = ({ items, groups, tnved, loading, onChange, onAll, onReloa
             item={x}
             groups={groups}
             tnved={tnved[x.kind]}
+            countries={countries}
             onChange={(p) => onChange(x.idx, p)}
           />
         ))}

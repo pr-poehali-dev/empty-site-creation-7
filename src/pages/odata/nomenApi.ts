@@ -151,12 +151,37 @@ export interface SimilarWeight {
   w: number;
 }
 
+export interface Country1C {
+  key: string;
+  code: string;
+  name: string;
+}
+
+export interface CountryKind {
+  basis: string;
+  similar: number;
+  options: { key: string; count: number }[];
+}
+
 export interface TnvedKind {
   similar: number;
   options: TnvedOption[];
   weights?: SimilarWeight[];
+  country?: CountryKind;
   error?: string | null;
 }
+
+export interface TnvedResult {
+  kinds: Record<string, TnvedKind>;
+  countries: Country1C[];
+}
+
+export const NOT_TRACEABLE = ["643", "112"];
+
+export const isTraceable = (countryKey: string, countries: Country1C[]) => {
+  const c = countries.find((x) => x.key === countryKey);
+  return !!c && !NOT_TRACEABLE.includes(c.code);
+};
 
 const WEIGHT_SAMPLE = 10;
 
@@ -190,8 +215,10 @@ export const fmtWeight = (n: number) => String(n).replace(".", ",");
 export const loadGroups = async (base: string): Promise<Group1C[]> =>
   (await withRetry(() => odataPost("nomen_groups", base, {}))).groups;
 
-export const loadTnved = async (base: string, kinds: string[]): Promise<Record<string, TnvedKind>> =>
-  (await withRetry(() => odataPost("nomen_tnved", base, { kinds }))).kinds;
+export const loadTnved = async (base: string, kinds: string[]): Promise<TnvedResult> => {
+  const r = await withRetry(() => odataPost("nomen_tnved", base, { kinds }));
+  return { kinds: r.kinds || {}, countries: r.countries || [] };
+};
 
 export const productKind = (name: string) => {
   const words = name.trim().split(/\s+/);
@@ -210,6 +237,8 @@ export interface NewItem {
   price: string;
   weight: string;
   weightAuto: boolean;
+  countryKey: string;
+  countryTouched: boolean;
   tnved: string;
   tnvedKey: string;
 }
@@ -245,6 +274,9 @@ export interface CreateResult {
   barcode?: BarcodeWrite;
   barcode_error?: string;
   barcode_owner?: { code: string; name: string };
+  country?: "set" | "none" | "error";
+  country_error?: string;
+  traceable?: boolean;
   card?: Card1C;
   cards?: ConflictCard[];
   error?: string;
@@ -278,6 +310,7 @@ export const createPortion = async (base: string, list: NewItem[], force = false
         weight: toNumber(x.weight),
         tnved: x.tnved.trim(),
         tnved_key: x.tnvedKey,
+        country_key: x.countryKey,
       })),
     })
   ).items;

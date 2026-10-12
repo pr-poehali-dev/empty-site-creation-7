@@ -8,7 +8,9 @@ import {
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
 import { useMemo, useState } from "react";
+import NomenCountryField from "./NomenCountryField";
 import {
+  Country1C,
   Group1C,
   NewItem,
   TnvedKind,
@@ -22,6 +24,7 @@ interface Props {
   item: NewItem;
   groups: Group1C[];
   tnved?: TnvedKind;
+  countries: Country1C[];
   onChange: (patch: Partial<NewItem>) => void;
 }
 
@@ -32,7 +35,7 @@ const Field = ({ label, children, bad }: { label: string; children: React.ReactN
   </label>
 );
 
-const NomenNewItemRow = ({ item, groups, tnved, onChange }: Props) => {
+const NomenNewItemRow = ({ item, groups, tnved, countries, onChange }: Props) => {
   const problems = newItemProblems(item);
   const bad = (k: string) => problems.includes(k);
   const options = tnved?.options || [];
@@ -146,6 +149,14 @@ const NomenNewItemRow = ({ item, groups, tnved, onChange }: Props) => {
             />
           )}
         </Field>
+        {tnved?.country && (
+          <NomenCountryField
+            value={item.countryKey}
+            info={tnved.country}
+            countries={countries}
+            onChange={(k) => onChange({ countryKey: k, countryTouched: true })}
+          />
+        )}
       </div>
 
       <div className="ml-9 text-xs text-muted-foreground">

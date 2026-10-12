@@ -16,6 +16,7 @@ import {
   Group1C,
   NewItem,
   TnvedKind,
+  Country1C,
   addBarcodesPortion,
   loadGroups,
   loadTnved,
@@ -82,6 +83,7 @@ const OdataNomenclature = () => {
   const [newItems, setNewItems] = useState<NewItem[]>([]);
   const [groups, setGroups] = useState<Group1C[]>([]);
   const [tnved, setTnved] = useState<Record<string, TnvedKind>>({});
+  const [countries, setCountries] = useState<Country1C[]>([]);
   const [refsLoading, setRefsLoading] = useState(false);
   const [createResults, setCreateResults] = useState<Record<number, CreateResult>>({});
   const [priceDocs, setPriceDocs] = useState<PriceDocResult[]>([]);
@@ -230,17 +232,20 @@ const OdataNomenclature = () => {
         loadTnved(base, Array.from(new Set(list.map((x) => x.kind)))),
       ]);
       setGroups(g);
-      setTnved(t);
+      setTnved(t.kinds);
+      setCountries(t.countries);
       setNewItems((prev) =>
         prev.map((x) => {
           let y = x;
-          const best = t[x.kind]?.options?.[0];
+          const k = t.kinds[x.kind];
+          const best = k?.options?.[0];
           if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
           const manual = x.weight.trim() && !x.weightAuto;
           if (!manual) {
-            const avg = avgWeight(similarWeights(x.name, t[x.kind]?.weights));
+            const avg = avgWeight(similarWeights(x.name, k?.weights));
             y = avg > 0 ? { ...y, weight: fmtWeight(avg), weightAuto: true } : { ...y, weight: "", weightAuto: false };
           }
+          if (!(keepChoice && x.countryTouched)) y = { ...y, countryKey: k?.country?.options?.[0]?.key || "" };
           return y;
         }),
       );
@@ -266,6 +271,8 @@ const OdataNomenclature = () => {
         price: "",
         weight: "",
         weightAuto: false,
+        countryKey: "",
+        countryTouched: false,
         tnved: "",
         tnvedKey: "",
       }));
@@ -542,6 +549,7 @@ const OdataNomenclature = () => {
             items={pendingNew}
             groups={groups}
             tnved={tnved}
+            countries={countries}
             loading={refsLoading}
             onChange={patchNew}
             onAll={patchAll}
@@ -583,6 +591,7 @@ const OdataNomenclature = () => {
           <NomenExcelPanel
             rows={rowsForExcel(newItems, createResults, decisions)}
             groups={groups}
+            countries={countries}
             invoiceName={invoice?.file_name || ""}
             pendingDecisions={pendingDecisions}
           />

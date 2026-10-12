@@ -28,7 +28,8 @@ const decisionText = (d: Decision) => {
           : r.barcode === "error"
             ? ` · ШК не записан: ${r.barcode_error}`
             : "";
-      return { text: `Создана карточка ${r.code}${bc}`, cls: "text-emerald-400" };
+      const ct = r.country === "error" ? " · страну и галочку поставьте вручную" : "";
+      return { text: `Создана карточка ${r.code}${bc}${ct}`, cls: "text-emerald-400" };
     }
     return { text: `Не создана: ${r.error}`, cls: "text-rose-400" };
   }
