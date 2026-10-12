@@ -13,18 +13,24 @@ import {
   MatchStatus,
   ParsedInvoice,
   SearchBy,
+  Group1C,
+  NewItem,
+  TnvedKind,
   addBarcodesPortion,
+  loadGroups,
+  loadTnved,
   matchPortion,
   parseInvoice,
+  productKind,
 } from "./odata/nomenApi";
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
 import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
+import NomenNewItems from "@/components/odata/NomenNewItems";
 
 const WRITE_PORTION = 10;
 
 const NEXT_STEPS = [
-  { icon: "ClipboardList", title: "Заполнение новых позиций", hint: "Группа, базовая цена, вес в кг, ТНВЭД по похожим" },
   { icon: "PackagePlus", title: "Создание в 1С", hint: "Карточка, штрихкод и базовая цена" },
   { icon: "FileSpreadsheet", title: "Excel для других баз", hint: "Только новые позиции, FIFO и «Без НДС»" },
 ];
@@ -58,6 +64,10 @@ const OdataNomenclature = () => {
   const [writing, setWriting] = useState(false);
   const [writeProgress, setWriteProgress] = useState({ done: 0, total: 0 });
   const [writeResults, setWriteResults] = useState<BarcodeWriteResult[] | null>(null);
+  const [newItems, setNewItems] = useState<NewItem[]>([]);
+  const [groups, setGroups] = useState<Group1C[]>([]);
+  const [tnved, setTnved] = useState<Record<string, TnvedKind>>({});
+  const [refsLoading, setRefsLoading] = useState(false);
 
   useEffect(() => {
     if (user.role !== "owner") navigate("/admin/dashboard");
@@ -126,6 +136,8 @@ const OdataNomenclature = () => {
     const res: (MatchItem | null)[] = items.map(() => null);
     setMatches([...res]);
     setDone(0);
+    setNewItems([]);
+    let complete = false;
     try {
       for (let i = 0; i < items.length; i += portion) {
         if (stopRef.current) break;
@@ -134,10 +146,12 @@ const OdataNomenclature = () => {
         setMatches([...res]);
         setDone(Math.min(i + portion, items.length));
       }
+      complete = !stopRef.current;
     } catch (e) {
       toast({ title: "Проверка остановлена", description: (e as Error).message, variant: "destructive" });
     } finally {
       setChecking(false);
+      if (complete) prepareNew(res);
     }
   };
 
@@ -181,11 +195,62 @@ const OdataNomenclature = () => {
     }
   };
 
+  const loadRefs = async (list: NewItem[], keepChoice: boolean) => {
+    setRefsLoading(true);
+    try {
+      const [g, t] = await Promise.all([
+        loadGroups(base),
+        loadTnved(base, Array.from(new Set(list.map((x) => x.kind)))),
+      ]);
+      setGroups(g);
+      setTnved(t);
+      setNewItems((prev) =>
+        prev.map((x) => {
+          if (keepChoice && x.tnved) return x;
+          const best = t[x.kind]?.options?.[0];
+          return best ? { ...x, tnved: best.code, tnvedKey: best.key } : x;
+        }),
+      );
+    } catch (e) {
+      toast({ title: "Не загрузил группы и ТНВЭД", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRefsLoading(false);
+    }
+  };
+
+  const prepareNew = (res: (MatchItem | null)[]) => {
+    const list: NewItem[] = res
+      .map((m, i) => ({ m, it: items[i], i }))
+      .filter(({ m }) => m?.status === "missing")
+      .map(({ it, i }) => ({
+        idx: i,
+        article: it.article,
+        barcode: it.barcode,
+        name: it.name,
+        invoicePrice: it.price,
+        kind: productKind(it.name),
+        groupKey: "",
+        price: "",
+        weight: "",
+        tnved: "",
+        tnvedKey: "",
+      }));
+    setNewItems(list);
+    setTnved({});
+    if (list.length) loadRefs(list, false);
+  };
+
+  const patchNew = (idx: number, patch: Partial<NewItem>) =>
+    setNewItems((prev) => prev.map((x) => (x.idx === idx ? { ...x, ...patch } : x)));
+
+  const patchAll = (patch: Partial<NewItem>) => setNewItems((prev) => prev.map((x) => ({ ...x, ...patch })));
+
   const reset = () => {
     setInvoice(null);
     setMatches([]);
     setDone(0);
     setWriteResults(null);
+    setNewItems([]);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -314,6 +379,26 @@ const OdataNomenclature = () => {
           />
         )}
 
+        {checked && newItems.length === 0 && (
+          <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm">
+            {counts.missing === 0
+              ? "Новых позиций нет — все товары счёта уже есть в 1С."
+              : "Проверка была остановлена. Запустите её до конца, чтобы заполнить новые позиции."}
+          </div>
+        )}
+
+        {checked && newItems.length > 0 && (
+          <NomenNewItems
+            items={newItems}
+            groups={groups}
+            tnved={tnved}
+            loading={refsLoading}
+            onChange={patchNew}
+            onAll={patchAll}
+            onReload={() => loadRefs(newItems, true)}
+          />
+        )}
+
         {invoice && (
           <section className="space-y-3">
             {hasResults && (
@@ -355,13 +440,6 @@ const OdataNomenclature = () => {
           </section>
         )}
 
-        {checked && (
-          <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm">
-            На создание: <b>{counts.missing}</b> — только позиции «Нет в 1С». Заполнение реквизитов
-            появится на следующем шаге.
-          </div>
-        )}
-
         <div className="space-y-2 pt-2">
           {NEXT_STEPS.map((s, i) => (
             <div
@@ -371,7 +449,7 @@ const OdataNomenclature = () => {
               <Icon name={s.icon} size={18} className="text-muted-foreground shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">
-                  {i + 3}. {s.title}
+                  {i + 4}. {s.title}
                 </div>
                 <div className="text-xs text-muted-foreground">{s.hint}</div>
               </div>

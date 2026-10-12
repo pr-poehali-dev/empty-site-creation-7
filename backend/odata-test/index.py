@@ -554,6 +554,65 @@ def nomen_add_barcodes(cfg, rows):
                                   for k, b in tasks]}
 
 
+def nomen_groups(cfg):
+    """Папки номенклатуры (группы) с полным путём."""
+    r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$select=Ref_Key,Description,Parent_Key"
+                        "&$filter=IsFolder eq true and DeletionMark eq false")
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    rows = r['data'].get('value', [])
+    by_key = {x['Ref_Key']: x for x in rows}
+
+    def path(x, depth=0):
+        p = by_key.get(x.get('Parent_Key'))
+        return (path(p, depth + 1) + ' / ' if p and depth < 10 else '') + (x.get('Description') or '')
+
+    groups = sorted(({'key': x['Ref_Key'], 'name': x.get('Description') or '', 'path': path(x)} for x in rows),
+                    key=lambda g: g['path'].lower())
+    return {'ok': True, 'groups': groups}
+
+
+def tnved_code(cfg, key):
+    r = call_odata(cfg, f"Catalog_КлассификаторТНВЭД(guid'{key}')?$format=json&$select=Code,Description")
+    if not r['ok']:
+        return None, r['error']
+    return (r['data'].get('Code') or r['data'].get('Description') or '').strip(), None
+
+
+def tnved_by_type(cfg, kind):
+    r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1000&$select=КодТНВЭД_Key"
+                        f"&$filter=IsFolder eq false and DeletionMark eq false"
+                        f" and startswith(Description,'{_q(kind)} ') eq true")
+    if not r['ok']:
+        return None, r['error']
+    counts = {}
+    total = 0
+    for x in r['data'].get('value', []):
+        total += 1
+        k = x.get('КодТНВЭД_Key')
+        if k and k != EMPTY_GUID:
+            counts[k] = counts.get(k, 0) + 1
+    return {'total': total, 'counts': counts}, None
+
+
+def nomen_tnved(cfg, kinds):
+    """Подбор кода ТНВЭД по похожим товарам: по каждому типу товара — коды и сколько карточек с ними."""
+    kinds = sorted({str(k or '').strip() for k in kinds if str(k or '').strip()})[:40]
+    stats, errors = _run_parallel(lambda k: tnved_by_type(cfg, k), [(k,) for k in kinds])
+    keys = sorted({g for s in stats.values() if s for g in s['counts']})
+    codes, _ = _run_parallel(lambda k: tnved_code(cfg, k), [(k,) for k in keys])
+    out = {}
+    for (k,) in [(k,) for k in kinds]:
+        s = stats.get((k,))
+        if not s:
+            out[k] = {'similar': 0, 'options': [], 'error': errors.get((k,))}
+            continue
+        opts = [{'key': g, 'code': codes.get((g,)) or '', 'count': n} for g, n in s['counts'].items()]
+        opts.sort(key=lambda o: -o['count'])
+        out[k] = {'similar': s['total'], 'options': opts}
+    return {'ok': True, 'kinds': out}
+
+
 NOMEN_SETS_HINTS = ('Номенклатур', 'Штрихкод', 'Цен', 'НДС', 'ЕдиницИзмерения', 'КлассификаторЕдиниц',
                     'ТНВЭД', 'ВЭД', 'Упаковк', 'Весов')
 
@@ -1399,6 +1458,12 @@ def handler(event: dict, context) -> dict:
             cfg, body.get('rows') or [], mode=body.get('mode') or 'single', by=body.get('by') or 'article',
             exact=body.get('exact', True) is not False, check_barcodes=bool(body.get('check_barcodes')),
         )})
+
+    if action == 'nomen_groups':
+        return resp(200, {'result': nomen_groups(cfg)})
+
+    if action == 'nomen_tnved':
+        return resp(200, {'result': nomen_tnved(cfg, body.get('kinds') or [])})
 
     if action == 'nomen_add_barcodes':
         return resp(200, {'result': nomen_add_barcodes(cfg, body.get('rows') or [])})

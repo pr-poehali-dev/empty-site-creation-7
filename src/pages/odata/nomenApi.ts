@@ -134,3 +134,63 @@ export const addBarcodesPortion = (base: string, rows: { key: string; barcode: s
     const res = await odataPost("nomen_add_barcodes", base, { rows });
     return res.items;
   });
+
+export interface Group1C {
+  key: string;
+  name: string;
+  path: string;
+}
+
+export interface TnvedOption {
+  key: string;
+  code: string;
+  count: number;
+}
+
+export interface TnvedKind {
+  similar: number;
+  options: TnvedOption[];
+  error?: string | null;
+}
+
+export const loadGroups = async (base: string): Promise<Group1C[]> =>
+  (await withRetry(() => odataPost("nomen_groups", base, {}))).groups;
+
+export const loadTnved = async (base: string, kinds: string[]): Promise<Record<string, TnvedKind>> =>
+  (await withRetry(() => odataPost("nomen_tnved", base, { kinds }))).kinds;
+
+export const productKind = (name: string) => {
+  const words = name.trim().split(/\s+/);
+  const idx = words.findIndex((w) => /[A-Za-z]/.test(w));
+  return (idx > 0 ? words.slice(0, idx) : words.slice(0, 1)).join(" ");
+};
+
+export interface NewItem {
+  idx: number;
+  article: string;
+  barcode: string;
+  name: string;
+  invoicePrice: number | null;
+  kind: string;
+  groupKey: string;
+  price: string;
+  weight: string;
+  tnved: string;
+  tnvedKey: string;
+}
+
+export const toNumber = (s: string) => {
+  const n = Number(String(s).replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : NaN;
+};
+
+export const newItemProblems = (x: NewItem): string[] => {
+  const p: string[] = [];
+  if (!x.name.trim()) p.push("наименование");
+  if (!x.article.trim()) p.push("артикул");
+  if (!x.groupKey) p.push("группа");
+  if (!(toNumber(x.price) > 0)) p.push("цена");
+  if (!(toNumber(x.weight) > 0)) p.push("вес");
+  if (!/^\d{10}$/.test(x.tnved.trim())) p.push("ТНВЭД");
+  return p;
+};
