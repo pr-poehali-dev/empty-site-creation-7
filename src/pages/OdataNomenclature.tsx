@@ -22,16 +22,22 @@ import {
   matchPortion,
   parseInvoice,
   productKind,
+  CreateResult,
+  PriceDocResult,
+  createPortion,
+  newItemProblems,
+  setBasePrices,
+  toNumber,
 } from "./odata/nomenApi";
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
 import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
 import NomenNewItems from "@/components/odata/NomenNewItems";
+import NomenCreatePanel from "@/components/odata/NomenCreatePanel";
 
 const WRITE_PORTION = 10;
 
 const NEXT_STEPS = [
-  { icon: "PackagePlus", title: "Создание в 1С", hint: "Карточка, штрихкод и базовая цена" },
   { icon: "FileSpreadsheet", title: "Excel для других баз", hint: "Только новые позиции, FIFO и «Без НДС»" },
 ];
 
@@ -68,6 +74,10 @@ const OdataNomenclature = () => {
   const [groups, setGroups] = useState<Group1C[]>([]);
   const [tnved, setTnved] = useState<Record<string, TnvedKind>>({});
   const [refsLoading, setRefsLoading] = useState(false);
+  const [createResults, setCreateResults] = useState<Record<number, CreateResult>>({});
+  const [priceDoc, setPriceDoc] = useState<PriceDocResult | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createProgress, setCreateProgress] = useState({ done: 0, total: 0, stage: "" });
 
   useEffect(() => {
     if (user.role !== "owner") navigate("/admin/dashboard");
@@ -137,6 +147,8 @@ const OdataNomenclature = () => {
     setMatches([...res]);
     setDone(0);
     setNewItems([]);
+    setCreateResults({});
+    setPriceDoc(null);
     let complete = false;
     try {
       for (let i = 0; i < items.length; i += portion) {
@@ -245,6 +257,47 @@ const OdataNomenclature = () => {
 
   const patchAll = (patch: Partial<NewItem>) => setNewItems((prev) => prev.map((x) => ({ ...x, ...patch })));
 
+  const pendingNew = newItems.filter(
+    (x) => createResults[x.idx]?.state !== "created" && createResults[x.idx]?.state !== "exists",
+  );
+  const readyNew = pendingNew.filter((x) => newItemProblems(x).length === 0);
+
+  const createIn1C = async () => {
+    const list = readyNew;
+    if (!list.length) return;
+    setCreating(true);
+    setPriceDoc(null);
+    const acc: Record<number, CreateResult> = { ...createResults };
+    const CHUNK = 5;
+    setCreateProgress({ done: 0, total: list.length, stage: "Создаю карточки" });
+    try {
+      for (let i = 0; i < list.length; i += CHUNK) {
+        const part = await createPortion(base, list.slice(i, i + CHUNK));
+        part.forEach((r) => (acc[r.idx] = r));
+        setCreateResults({ ...acc });
+        setCreateProgress({ done: Math.min(i + CHUNK, list.length), total: list.length, stage: "Создаю карточки" });
+      }
+    } catch (e) {
+      toast({ title: "Создание остановлено", description: (e as Error).message, variant: "destructive" });
+    }
+    const priced = list
+      .map((x) => ({ x, r: acc[x.idx] }))
+      .filter(({ r }) => r?.state === "created" && r.key)
+      .map(({ x, r }) => ({ key: r!.key!, price: toNumber(x.price) }));
+    if (priced.length) {
+      setCreateProgress({ done: 0, total: 0, stage: "Устанавливаю базовые цены" });
+      const doc = await setBasePrices(
+        base,
+        priced,
+        `Создано сайтом по счёту ${invoice?.file_name || ""}`.trim(),
+      );
+      setPriceDoc(doc);
+    }
+    setCreating(false);
+    const made = Object.values(acc).filter((r) => r.state === "created").length;
+    toast({ title: `Создано в 1С: ${made}` });
+  };
+
   const reset = () => {
     setInvoice(null);
     setMatches([]);
@@ -256,7 +309,7 @@ const OdataNomenclature = () => {
 
   const hasResults = matches.some(Boolean);
   const checked = hasResults && !checking;
-  const busy = checking || writing;
+  const busy = checking || writing || creating;
 
   const chip = (key: Filter, label: string, cls: string, icon?: string) => (
     <button
@@ -387,15 +440,27 @@ const OdataNomenclature = () => {
           </div>
         )}
 
-        {checked && newItems.length > 0 && (
+        {checked && pendingNew.length > 0 && (
           <NomenNewItems
-            items={newItems}
+            items={pendingNew}
             groups={groups}
             tnved={tnved}
             loading={refsLoading}
             onChange={patchNew}
             onAll={patchAll}
             onReload={() => loadRefs(newItems, true)}
+          />
+        )}
+
+        {checked && newItems.length > 0 && (
+          <NomenCreatePanel
+            items={newItems}
+            readyCount={readyNew.length}
+            results={createResults}
+            priceDoc={priceDoc}
+            running={creating}
+            progress={createProgress}
+            onCreate={createIn1C}
           />
         )}
 
@@ -449,7 +514,7 @@ const OdataNomenclature = () => {
               <Icon name={s.icon} size={18} className="text-muted-foreground shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">
-                  {i + 4}. {s.title}
+                  {i + 5}. {s.title}
                 </div>
                 <div className="text-xs text-muted-foreground">{s.hint}</div>
               </div>

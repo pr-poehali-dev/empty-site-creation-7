@@ -613,6 +613,166 @@ def nomen_tnved(cfg, kinds):
     return {'ok': True, 'kinds': out}
 
 
+def _first_key(cfg, entity, desc):
+    r = call_odata(cfg, f"{entity}?$format=json&$top=1&$select=Ref_Key"
+                        f"&$filter=Description eq '{_q(desc)}' and DeletionMark eq false")
+    if not r['ok']:
+        return None, r['error']
+    v = r['data'].get('value', [])
+    return (v[0]['Ref_Key'] if v else None), None
+
+
+def nomen_refs(cfg):
+    """Ссылки на справочники, общие для всех новых карточек."""
+    want = {
+        'kind': ('Catalog_ВидыНоменклатуры', 'Товары'),
+        'unit': ('Catalog_КлассификаторЕдиницИзмерения', 'шт'),
+        'group1c': ('Catalog_НоменклатурныеГруппы', 'Основная номенклатурная группа'),
+        'price_type': ('Catalog_ТипыЦенНоменклатуры', 'Базовая'),
+    }
+    out, _ = _run_parallel(lambda k: _first_key(cfg, *want[k]), [(k,) for k in want], workers=4)
+    refs = {k: out.get((k,)) for k in want}
+    missing = [want[k][1] for k, v in refs.items() if not v]
+    if missing:
+        return None, 'В 1С не нашёл: ' + ', '.join(missing)
+    r = call_odata(cfg, f"Catalog_ТипыЦенНоменклатуры(guid'{refs['price_type']}')?$format=json&$select=ВалютаЦены_Key")
+    refs['currency'] = (r.get('data') or {}).get('ВалютаЦены_Key') if r['ok'] else None
+    return refs, None
+
+
+def tnved_key_by_code(cfg, code):
+    r = call_odata(cfg, "Catalog_КлассификаторТНВЭД?$format=json&$top=1&$select=Ref_Key"
+                        f"&$filter=Code eq '{_q(code)}' and DeletionMark eq false")
+    if not r['ok']:
+        return None, r['error']
+    v = r['data'].get('value', [])
+    return (v[0]['Ref_Key'] if v else None), None
+
+
+def _num(v):
+    try:
+        return float(str(v).replace(',', '.').replace(' ', ''))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def create_one_card(cfg, refs, row):
+    """Создаёт одну карточку и записывает её штрихкод. Перед созданием — защита от дублей."""
+    article = str(row.get('article') or '').strip()
+    name = re.sub(r'\s+', ' ', str(row.get('name') or '')).strip()
+    barcode = str(row.get('barcode') or '').strip()
+    tnved = str(row.get('tnved') or '').strip()
+    group = str(row.get('group_key') or '').strip()
+    weight = _num(row.get('weight'))
+    base = {'idx': row.get('idx'), 'article': article}
+    if not article or not name or not re.fullmatch(r'[0-9a-f-]{36}', group) or weight <= 0 \
+            or not re.fullmatch(r'\d{10}', tnved):
+        return dict(base, state='error', error='Не заполнены обязательные реквизиты')
+
+    exist, err = nomen_find_one(cfg, 'article', article)
+    if err:
+        return dict(base, state='error', error=err)
+    alive = [c for c in exist if not c['deleted']]
+    if alive:
+        return dict(base, state='exists', card=alive[0], error='Карточка с таким артикулом уже есть в 1С')
+
+    if barcode:
+        owners, err = nomen_find_one(cfg, 'barcode', barcode)
+        if err:
+            return dict(base, state='error', error=err)
+        if owners:
+            o = owners[0]
+            return dict(base, state='error', error=f'Штрихкод {barcode} уже у карточки {o["code"]} — {o["name"]}')
+
+    tkey = str(row.get('tnved_key') or '').strip()
+    if not re.fullmatch(r'[0-9a-f-]{36}', tkey):
+        tkey, err = tnved_key_by_code(cfg, tnved)
+        if err:
+            return dict(base, state='error', error=err)
+        if not tkey:
+            return dict(base, state='error', error=f'Кода ТНВЭД {tnved} нет в справочнике 1С')
+
+    payload = {
+        'Description': name[:100],
+        'НаименованиеПолное': name,
+        'Артикул': article,
+        'IsFolder': False,
+        'Parent_Key': group,
+        'ВидНоменклатуры_Key': refs['kind'],
+        'ЕдиницаИзмерения_Key': refs['unit'],
+        'НоменклатурнаяГруппа_Key': refs['group1c'],
+        'ВидСтавкиНДС': 'Общая',
+        'ВесПоСертификатуТовара': weight,
+        'КодТНВЭД_Key': tkey,
+        'Услуга': False,
+    }
+    r = call_odata(cfg, 'Catalog_Номенклатура?$format=json', method='POST', payload=payload)
+    if not r['ok']:
+        return dict(base, state='error', error=r['error'])
+    d = r['data']
+    res = dict(base, state='created', key=d.get('Ref_Key'), code=(d.get('Code') or '').strip(),
+               name=d.get('Description'))
+    if barcode:
+        b = call_odata(cfg, 'InformationRegister_ШтрихкодыНоменклатуры?$format=json', method='POST',
+                       payload={'Штрихкод': barcode, 'Номенклатура_Key': res['key']})
+        res['barcode'] = 'added' if b['ok'] else 'error'
+        if not b['ok']:
+            res['barcode_error'] = b['error']
+    return res
+
+
+def nomen_create(cfg, rows):
+    """Создаёт порцию карточек номенклатуры (по одной, параллельно)."""
+    refs, err = nomen_refs(cfg)
+    if err:
+        return {'ok': False, 'error': err}
+    rows = rows[:10]
+    out, errors = _run_parallel(lambda i: (create_one_card(cfg, refs, rows[i]), None),
+                                [(i,) for i in range(len(rows))], workers=4)
+    items = []
+    for i, row in enumerate(rows):
+        res = out.get((i,))
+        if not res:
+            res = {'idx': row.get('idx'), 'article': row.get('article'), 'state': 'error',
+                   'error': errors.get((i,)) or 'Нет ответа'}
+        items.append(res)
+    return {'ok': True, 'items': items}
+
+
+def nomen_set_prices(cfg, rows, comment=''):
+    """Один документ «Установка цен номенклатуры» с типом «Базовая» на все позиции, затем проведение."""
+    refs, err = nomen_refs(cfg)
+    if err:
+        return {'ok': False, 'error': err}
+    goods = []
+    for r in rows:
+        key = str(r.get('key') or '').strip()
+        price = round(_num(r.get('price')), 2)
+        if re.fullmatch(r'[0-9a-f-]{36}', key) and price > 0:
+            line = {'LineNumber': str(len(goods) + 1), 'Номенклатура_Key': key, 'Цена': price}
+            if refs.get('currency'):
+                line['Валюта_Key'] = refs['currency']
+            goods.append(line)
+    if not goods:
+        return {'ok': False, 'error': 'Нет позиций с ценой'}
+    doc = {
+        'Date': datetime.now().strftime('%Y-%m-%dT00:00:00'),
+        'ТипЦен_Key': refs['price_type'],
+        'НеПроводитьНулевыеЗначения': True,
+        'Комментарий': (comment or 'Создано сайтом: новая номенклатура')[:200],
+        'Товары': goods,
+    }
+    r = call_odata(cfg, 'Document_УстановкаЦенНоменклатуры?$format=json', method='POST', payload=doc)
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    d = r['data']
+    key = d.get('Ref_Key')
+    p = call_odata(cfg, f"Document_УстановкаЦенНоменклатуры(guid'{key}')/Post?PostingModeOperational=false",
+                   method='POST', raw=True)
+    return {'ok': True, 'key': key, 'number': d.get('Number'), 'lines': len(goods),
+            'posted': p['ok'], 'post_error': None if p['ok'] else p['error']}
+
+
 NOMEN_SETS_HINTS = ('Номенклатур', 'Штрихкод', 'Цен', 'НДС', 'ЕдиницИзмерения', 'КлассификаторЕдиниц',
                     'ТНВЭД', 'ВЭД', 'Упаковк', 'Весов')
 
@@ -1390,6 +1550,8 @@ def create_product(cfg):
 def mark_deleted(cfg, entity, key):
     if not entity or not key:
         return {'ok': False, 'error': 'Не указан объект для удаления'}
+    if entity.startswith('Document_'):
+        call_odata(cfg, f"{entity}(guid'{key}')/Unpost", method='POST', raw=True)
     r = call_odata(
         cfg, f"{entity}(guid'{key}')?$format=json",
         method='PATCH', payload={'DeletionMark': True}
@@ -1458,6 +1620,16 @@ def handler(event: dict, context) -> dict:
             cfg, body.get('rows') or [], mode=body.get('mode') or 'single', by=body.get('by') or 'article',
             exact=body.get('exact', True) is not False, check_barcodes=bool(body.get('check_barcodes')),
         )})
+
+    if action == 'nomen_refs':
+        refs, err = nomen_refs(cfg)
+        return resp(200, {'result': {'ok': not err, 'refs': refs, 'error': err}})
+
+    if action == 'nomen_create':
+        return resp(200, {'result': nomen_create(cfg, body.get('rows') or [])})
+
+    if action == 'nomen_set_prices':
+        return resp(200, {'result': nomen_set_prices(cfg, body.get('rows') or [], body.get('comment') or '')})
 
     if action == 'nomen_groups':
         return resp(200, {'result': nomen_groups(cfg)})

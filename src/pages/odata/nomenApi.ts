@@ -194,3 +194,54 @@ export const newItemProblems = (x: NewItem): string[] => {
   if (!/^\d{10}$/.test(x.tnved.trim())) p.push("ТНВЭД");
   return p;
 };
+
+export interface CreateResult {
+  idx: number;
+  article: string;
+  state: "created" | "exists" | "error";
+  key?: string;
+  code?: string;
+  name?: string;
+  barcode?: "added" | "error";
+  barcode_error?: string;
+  card?: Card1C;
+  error?: string;
+}
+
+export interface PriceDocResult {
+  ok: boolean;
+  key?: string;
+  number?: string;
+  lines?: number;
+  posted?: boolean;
+  post_error?: string | null;
+  error?: string;
+}
+
+export const createPortion = async (base: string, list: NewItem[]): Promise<CreateResult[]> =>
+  (
+    await odataPost("nomen_create", base, {
+      rows: list.map((x) => ({
+        idx: x.idx,
+        article: x.article.trim(),
+        barcode: x.barcode.trim(),
+        name: x.name.trim(),
+        group_key: x.groupKey,
+        weight: toNumber(x.weight),
+        tnved: x.tnved.trim(),
+        tnved_key: x.tnvedKey,
+      })),
+    })
+  ).items;
+
+export const setBasePrices = async (
+  base: string,
+  rows: { key: string; price: number }[],
+  comment: string,
+): Promise<PriceDocResult> => {
+  try {
+    return await odataPost("nomen_set_prices", base, { rows, comment });
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+};
