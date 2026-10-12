@@ -358,6 +358,51 @@ def entity_fields_from_metadata(cfg, entity_type):
     return re.findall(r'<Property Name="([^"]+)"', block)
 
 
+NOMEN_SETS_HINTS = ('Номенклатур', 'Штрихкод', 'Цен', 'НДС', 'ЕдиницИзмерения', 'КлассификаторЕдиниц',
+                    'ТНВЭД', 'ВЭД', 'Упаковк', 'Весов')
+
+
+def _entity_props(xml, name):
+    m = re.search(r'<EntityType Name="' + re.escape(name) + r'"[^>]*>(.*?)</EntityType>', xml, re.S)
+    if not m:
+        return []
+    return [{'name': n, 'type': t} for n, t in re.findall(r'<Property Name="([^"]+)" Type="([^"]+)"', m.group(1))]
+
+
+def _short(v):
+    if isinstance(v, list):
+        return [_short(x) for x in v[:2]]
+    if isinstance(v, dict):
+        return {k: _short(x) for k, x in v.items() if not k.endswith('@navigationLinkUrl')}
+    return v
+
+
+def nomen_schema(cfg):
+    """Только чтение: структура карточки номенклатуры и связанных справочников/регистров."""
+    r = call_odata(cfg, '$metadata', raw=True)
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    xml = r.get('text') or ''
+    sets = sorted(set(re.findall(r'<EntitySet Name="([^"]+)"', xml)))
+    related = [s for s in sets if any(h in s for h in NOMEN_SETS_HINTS)
+               and not s.startswith(('ChartOf', 'Task_', 'BusinessProcess'))]
+    out = {'ok': True, 'related_sets': related,
+           'nomen_props': _entity_props(xml, 'Catalog_Номенклатура'), 'samples': {}}
+    q = ("Catalog_Номенклатура?$format=json&$top=2&$filter=IsFolder eq false and DeletionMark eq false"
+         " and substringof('Weissgauff', Description)")
+    s = call_odata(cfg, q)
+    out['samples']['Catalog_Номенклатура'] = _short((s.get('data') or {}).get('value')) if s['ok'] else s['error']
+    g = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=300&$select=Ref_Key,Description,Parent_Key"
+                        "&$filter=IsFolder eq true and DeletionMark eq false")
+    out['groups'] = [x.get('Description') for x in (g.get('data') or {}).get('value', [])] if g['ok'] else g['error']
+    for name in related:
+        if name == 'Catalog_Номенклатура' or name.endswith('_RecordType') or '_' in name.split('_', 1)[1]:
+            continue
+        rr = call_odata(cfg, f'{name}?$format=json&$top=3')
+        out['samples'][name] = _short((rr.get('data') or {}).get('value')) if rr['ok'] else rr['error']
+    return out
+
+
 def gtd_schema(cfg):
     """Узнаёт, в каком реквизите справочника «Номера ГТД» лежит сам номер."""
     fields = []
@@ -1152,6 +1197,18 @@ def handler(event: dict, context) -> dict:
 
     if action == 'match_products':
         return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
+
+    if action == 'nomen_schema':
+        return resp(200, {'result': nomen_schema(cfg)})
+
+    if action == 'odata_read':
+        path = params.get('path') or ''
+        if path == '$metadata_sets':
+            r = call_odata(cfg, '$metadata', raw=True)
+            sets = re.findall(r'<EntitySet Name="([^"]+)"', r.get('text') or '')
+            q = (params.get('q') or '').lower()
+            return resp(200, {'result': [s for s in sets if q in s.lower()]})
+        return resp(200, {'result': call_odata(cfg, path)})
 
     if action == 'gtd_schema':
         return resp(200, {'result': gtd_schema(cfg)})
