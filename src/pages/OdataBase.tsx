@@ -23,6 +23,12 @@ const SECTIONS = [
     hint: "Со страной, ГТД и РНПТ из файла",
     icon: "PackagePlus",
   },
+  {
+    path: "nomenclature",
+    title: "Создание номенклатуры в 1С",
+    hint: "Проверить счёт и завести новые товары",
+    icon: "PackageSearch",
+  },
 ];
 
 const OdataBase = () => {
