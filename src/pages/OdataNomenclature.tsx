@@ -5,24 +5,33 @@ import Icon from "@/components/ui/icon";
 import { useToast } from "@/hooks/use-toast";
 import { findBase } from "./odata/bases";
 import {
+  BarcodeState,
+  BarcodeWriteResult,
   InvoiceItem,
   MatchItem,
+  MatchOptions,
   MatchStatus,
   ParsedInvoice,
-  SEARCH_BY_TITLES,
   SearchBy,
+  addBarcodesPortion,
   matchPortion,
   parseInvoice,
 } from "./odata/nomenApi";
-import NomenMatchTable, { Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
+import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
+import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
+import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
 
-const PORTION = 20;
+const WRITE_PORTION = 10;
 
 const NEXT_STEPS = [
   { icon: "ClipboardList", title: "Заполнение новых позиций", hint: "Группа, базовая цена, вес в кг, ТНВЭД по похожим" },
   { icon: "PackagePlus", title: "Создание в 1С", hint: "Карточка, штрихкод и базовая цена" },
   { icon: "FileSpreadsheet", title: "Excel для других баз", hint: "Только новые позиции, FIFO и «Без НДС»" },
 ];
+
+const emptyBc = (): Record<BarcodeState, number> => ({
+  ok: 0, none: 0, other: 0, taken: 0, no_invoice: 0, error: 0,
+});
 
 const OdataNomenclature = () => {
   const navigate = useNavigate();
@@ -35,11 +44,20 @@ const OdataNomenclature = () => {
 
   const [parsing, setParsing] = useState(false);
   const [invoice, setInvoice] = useState<ParsedInvoice | null>(null);
-  const [by, setBy] = useState<SearchBy>("article");
+  const [opts, setOpts] = useState<MatchOptions>({
+    mode: "single",
+    by: "article",
+    exact: true,
+    checkBarcodes: false,
+  });
+  const [usedOpts, setUsedOpts] = useState<MatchOptions | null>(null);
   const [matches, setMatches] = useState<(MatchItem | null)[]>([]);
   const [checking, setChecking] = useState(false);
   const [done, setDone] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
+  const [writing, setWriting] = useState(false);
+  const [writeProgress, setWriteProgress] = useState({ done: 0, total: 0 });
+  const [writeResults, setWriteResults] = useState<BarcodeWriteResult[] | null>(null);
 
   useEffect(() => {
     if (user.role !== "owner") navigate("/admin/dashboard");
@@ -57,10 +75,20 @@ const OdataNomenclature = () => {
   );
 
   const counts = useMemo(() => {
-    const c: Record<MatchStatus, number> = { found: 0, multiple: 0, missing: 0, empty: 0, error: 0 };
+    const c: Record<MatchStatus, number> = {
+      found: 0, multiple: 0, partial: 0, missing: 0, empty: 0, error: 0,
+    };
     matches.forEach((m) => m && c[m.status]++);
     return c;
   }, [matches]);
+
+  const bcCounts = useMemo(() => {
+    const c = emptyBc();
+    matches.forEach((m) => m?.bc && c[m.bc.state]++);
+    return c;
+  }, [matches]);
+
+  const portion = opts.mode === "all" || opts.checkBarcodes ? 10 : 20;
 
   const onFile = (f: File) => {
     const reader = new FileReader();
@@ -70,13 +98,14 @@ const OdataNomenclature = () => {
       setMatches([]);
       setDone(0);
       setFilter("all");
+      setWriteResults(null);
       try {
         const d = await parseInvoice(b64, f.name);
         setInvoice(d);
         const best = (["article", "barcode", "name"] as SearchBy[]).find((k) =>
           d.items.every((x) => x[k]),
         );
-        setBy(best || "article");
+        setOpts((o) => ({ ...o, by: best || "article" }));
       } catch (e) {
         setInvoice(null);
         toast({ title: (e as Error).message, variant: "destructive" });
@@ -92,16 +121,18 @@ const OdataNomenclature = () => {
     stopRef.current = false;
     setChecking(true);
     setFilter("all");
+    setWriteResults(null);
+    setUsedOpts(opts);
     const res: (MatchItem | null)[] = items.map(() => null);
     setMatches([...res]);
     setDone(0);
     try {
-      for (let i = 0; i < items.length; i += PORTION) {
+      for (let i = 0; i < items.length; i += portion) {
         if (stopRef.current) break;
-        const part = await matchPortion(base, by, items.slice(i, i + PORTION));
+        const part = await matchPortion(base, opts, items.slice(i, i + portion));
         part.forEach((m, j) => (res[i + j] = m));
         setMatches([...res]);
-        setDone(Math.min(i + PORTION, items.length));
+        setDone(Math.min(i + portion, items.length));
       }
     } catch (e) {
       toast({ title: "Проверка остановлена", description: (e as Error).message, variant: "destructive" });
@@ -110,14 +141,71 @@ const OdataNomenclature = () => {
     }
   };
 
+  const writeBarcodes = async (includeOther: boolean) => {
+    const targets = matches
+      .map((m, i) => ({ m, it: items[i] }))
+      .filter(
+        ({ m }) =>
+          m?.card_key && (m.bc?.state === "none" || (includeOther && m.bc?.state === "other")),
+      )
+      .map(({ m, it }) => ({ key: m!.card_key!, barcode: it.barcode }));
+    if (!targets.length) return;
+    setWriting(true);
+    setWriteResults(null);
+    setWriteProgress({ done: 0, total: targets.length });
+    const all: BarcodeWriteResult[] = [];
+    try {
+      for (let i = 0; i < targets.length; i += WRITE_PORTION) {
+        const part = await addBarcodesPortion(base, targets.slice(i, i + WRITE_PORTION));
+        all.push(...part);
+        setWriteProgress({ done: Math.min(i + WRITE_PORTION, targets.length), total: targets.length });
+      }
+    } catch (e) {
+      toast({ title: "Запись остановлена", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      const byKey = new Map(all.map((r) => [r.key + "|" + r.barcode, r]));
+      setMatches((prev) =>
+        prev.map((m, i) => {
+          if (!m?.card_key || !m.bc) return m;
+          const r = byKey.get(m.card_key + "|" + items[i].barcode);
+          if (!r) return m;
+          if (r.state === "added" || r.state === "exists") {
+            return { ...m, bc: { ...m.bc, state: "ok", have: [...(m.bc.have || []), items[i].barcode] } };
+          }
+          if (r.state === "taken") return { ...m, bc: { ...m.bc, state: "taken", owner: r.owner } };
+          return { ...m, bc: { ...m.bc, state: "error", error: r.error } };
+        }),
+      );
+      setWriteResults(all);
+      setWriting(false);
+    }
+  };
+
   const reset = () => {
     setInvoice(null);
     setMatches([]);
     setDone(0);
+    setWriteResults(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const checked = matches.some(Boolean) && !checking;
+  const hasResults = matches.some(Boolean);
+  const checked = hasResults && !checking;
+  const busy = checking || writing;
+
+  const chip = (key: Filter, label: string, cls: string, icon?: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setFilter(key)}
+      className={`text-xs rounded-md px-2.5 py-1.5 border flex items-center gap-1 ${
+        filter === key ? "border-primary" : "border-white/[0.08]"
+      } ${cls}`}
+    >
+      {icon && <Icon name={icon} size={13} />}
+      {label}
+    </button>
+  );
 
   return (
     <div className="min-h-screen">
@@ -166,7 +254,7 @@ const OdataNomenclature = () => {
                   Позиций: {items.length} · с артикулом {filled.article} · со штрихкодом {filled.barcode}
                 </div>
               </div>
-              <Button variant="outline" size="sm" onClick={reset} disabled={checking}>
+              <Button variant="outline" size="sm" onClick={reset} disabled={busy}>
                 Другой счёт
               </Button>
             </div>
@@ -177,38 +265,25 @@ const OdataNomenclature = () => {
           <section className="rounded-xl border border-white/[0.08] bg-card p-4 space-y-3">
             <div className="font-semibold flex items-center gap-2">
               <Icon name="Search" size={18} className="text-primary" />
-              2. По какому реквизиту искать в 1С?
+              2. Как искать в 1С
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {(Object.keys(SEARCH_BY_TITLES) as SearchBy[]).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  disabled={checking}
-                  onClick={() => setBy(k)}
-                  className={`rounded-lg border p-2.5 text-left transition-colors ${
-                    by === k
-                      ? "border-primary bg-primary/10"
-                      : "border-white/[0.08] hover:bg-white/[0.04]"
-                  }`}
-                >
-                  <div className="text-sm font-medium">{SEARCH_BY_TITLES[k]}</div>
-                  <div className="text-xs text-muted-foreground">
-                    в счёте {filled[k]} из {items.length}
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
+            <NomenSearchOptions
+              opts={opts}
+              onChange={setOpts}
+              filled={filled}
+              total={items.length}
+              disabled={busy}
+            />
+            <div className="flex items-center gap-3 flex-wrap">
               {checking ? (
                 <Button variant="outline" onClick={() => (stopRef.current = true)}>
                   <Icon name="Square" size={14} />
                   Остановить
                 </Button>
               ) : (
-                <Button onClick={runCheck}>
+                <Button onClick={runCheck} disabled={writing}>
                   <Icon name="Search" size={16} />
-                  {matches.some(Boolean) ? "Проверить заново" : "Проверить в 1С"}
+                  {hasResults ? "Проверить заново" : "Проверить в 1С"}
                 </Button>
               )}
               {(checking || done > 0) && (
@@ -229,50 +304,61 @@ const OdataNomenclature = () => {
           </section>
         )}
 
+        {checked && usedOpts?.checkBarcodes && (
+          <NomenBarcodePanel
+            counts={bcCounts}
+            writing={writing}
+            progress={writeProgress}
+            results={writeResults}
+            onWrite={writeBarcodes}
+          />
+        )}
+
         {invoice && (
           <section className="space-y-3">
-            {matches.some(Boolean) && (
+            {hasResults && (
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFilter("all")}
-                  className={`text-xs rounded-md px-2.5 py-1.5 border ${
-                    filter === "all" ? "border-primary bg-primary/10" : "border-white/[0.08]"
-                  }`}
-                >
-                  Все · {items.length}
-                </button>
+                {chip("all", `Все · ${items.length}`, "")}
                 {(Object.keys(STATUS_META) as MatchStatus[])
                   .filter((s) => counts[s] > 0)
-                  .map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setFilter(s)}
-                      className={`text-xs rounded-md px-2.5 py-1.5 border flex items-center gap-1 ${
-                        filter === s ? "border-primary" : "border-white/[0.08]"
-                      } ${STATUS_META[s].cls}`}
-                    >
-                      <Icon name={STATUS_META[s].icon} size={13} />
-                      {STATUS_META[s].label} · {counts[s]}
-                    </button>
-                  ))}
+                  .map((s) =>
+                    chip(s, `${STATUS_META[s].label} · ${counts[s]}`, STATUS_META[s].cls, STATUS_META[s].icon),
+                  )}
+                {usedOpts?.checkBarcodes &&
+                  (["none", "other", "taken"] as BarcodeState[])
+                    .filter((s) => bcCounts[s] > 0)
+                    .map((s) =>
+                      chip(`bc_${s}` as Filter, `${BC_META[s].label} · ${bcCounts[s]}`, BC_META[s].cls),
+                    )}
               </div>
             )}
-            {checked && counts.multiple > 0 && (
-              <div className="text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
-                «Несколько» — в 1С больше одной карточки с этим значением. Такие позиции считаются
-                существующими и создаваться не будут. Нажмите на строку, чтобы увидеть карточки.
+            {checked && (counts.multiple > 0 || counts.partial > 0) && (
+              <div className="text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200 space-y-1">
+                {counts.multiple > 0 && (
+                  <p>«Несколько» — в 1С больше одной подходящей карточки.</p>
+                )}
+                {counts.partial > 0 && (
+                  <p>
+                    «Частично» — часть реквизитов совпала, но не все у одной карточки. Значки А / Ш / Н
+                    показывают, что нашлось.
+                  </p>
+                )}
+                <p>Такие позиции не создаются, чтобы не было дублей. Нажмите на строку, чтобы увидеть карточки.</p>
               </div>
             )}
-            <NomenMatchTable items={items} matches={matches} filter={filter} />
+            <NomenMatchTable
+              items={items}
+              matches={matches}
+              filter={filter}
+              showHits={usedOpts?.mode === "all"}
+            />
           </section>
         )}
 
         {checked && (
           <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm">
-            На создание: <b>{counts.missing}</b> {counts.missing === 1 ? "позиция" : "позиций"}. Заполнение
-            реквизитов появится на следующем шаге.
+            На создание: <b>{counts.missing}</b> — только позиции «Нет в 1С». Заполнение реквизитов
+            появится на следующем шаге.
           </div>
         )}
 

@@ -396,40 +396,162 @@ def nomen_find_one(cfg, by, value):
     return [_card(i) for i in r['data'].get('value', [])], None
 
 
-def nomen_match(cfg, rows, by):
-    """Проверяет порцию строк счёта: есть / несколько / нет. Поиск по одному значению, параллельно."""
-    if by not in ('article', 'barcode', 'name'):
-        return {'ok': False, 'error': 'Неизвестный реквизит поиска'}
-    values = [str(r.get(by) or '').strip() for r in rows]
-    uniq = sorted({v for v in values if v})
-    found, errors = {}, {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(nomen_find_one, cfg, by, v): v for v in uniq}
+NOMEN_FIELDS = ('article', 'barcode', 'name')
+
+
+def card_barcodes(cfg, key):
+    r = call_odata(cfg, "InformationRegister_ШтрихкодыНоменклатуры?$format=json&$select=Штрихкод"
+                        f"&$filter=Номенклатура_Key eq guid'{key}'")
+    if not r['ok']:
+        return None, r['error']
+    return [str(x.get('Штрихкод') or '').strip() for x in r['data'].get('value', [])], None
+
+
+def _run_parallel(fn, tasks, workers=8):
+    out, errors = {}, {}
+    if not tasks:
+        return out, errors
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(fn, *t): t for t in tasks}
         for fut in as_completed(futures):
-            v = futures[fut]
+            t = futures[fut]
             try:
-                cards, err = fut.result()
+                res, err = fut.result()
             except Exception as e:
-                cards, err = [], str(e)[:200]
-            found[v] = cards
+                res, err = None, str(e)[:200]
+            out[t] = res
             if err:
-                errors[v] = err
+                errors[t] = err
+    return out, errors
+
+
+def _row_status(active_count):
+    if active_count == 1:
+        return 'found'
+    if active_count > 1:
+        return 'multiple'
+    return 'missing'
+
+
+def nomen_match(cfg, rows, mode='single', by='article', exact=True, check_barcodes=False):
+    """Проверяет порцию строк счёта в 1С.
+    mode=single — по одному реквизиту by; mode=all — по артикулу, штрихкоду и наименованию:
+    exact — у одной карточки должны совпасть все заполненные в счёте реквизиты, иначе хватит одного.
+    check_barcodes — у найденной карточки сверить штрихкоды с штрихкодом из счёта."""
+    if mode not in ('single', 'all'):
+        return {'ok': False, 'error': 'Неизвестный режим поиска'}
+    if mode == 'single' and by not in NOMEN_FIELDS:
+        return {'ok': False, 'error': 'Неизвестный реквизит поиска'}
+    fields = NOMEN_FIELDS if mode == 'all' else (by,)
+    norm_rows = [{f: str(r.get(f) or '').strip() for f in NOMEN_FIELDS} for r in rows]
+
+    look = set()
+    for r in norm_rows:
+        for f in fields:
+            if r[f]:
+                look.add((f, r[f]))
+        if check_barcodes and r['barcode']:
+            look.add(('barcode', r['barcode']))
+    found, errors = _run_parallel(lambda f, v: nomen_find_one(cfg, f, v), sorted(look))
+
     items = []
-    for v in values:
-        cards = found.get(v, [])
+    for r in norm_rows:
+        filled = [f for f in fields if r[f]]
+        err = next((errors[(f, r[f])] for f in filled if (f, r[f]) in errors), None)
+        by_key, hits = {}, {}
+        for f in fields:
+            if not r[f]:
+                hits[f] = None
+                continue
+            cards = found.get((f, r[f])) or []
+            hits[f] = any(not c['deleted'] for c in cards)
+            for c in cards:
+                entry = by_key.setdefault(c['key'], dict(c, matched=[]))
+                entry['matched'].append(f)
+        cards = list(by_key.values())
         active = [c for c in cards if not c['deleted']]
-        if not v:
+        if not filled:
             status = 'empty'
-        elif v in errors:
+        elif err:
             status = 'error'
-        elif len(active) == 1:
-            status = 'found'
-        elif len(active) > 1:
-            status = 'multiple'
+        elif mode == 'single' or not exact:
+            status = _row_status(len(active))
         else:
-            status = 'missing'
-        items.append({'value': v, 'status': status, 'cards': cards, 'error': errors.get(v)})
+            full = [c for c in active if all(f in c['matched'] for f in filled)]
+            status = _row_status(len(full))
+            if status == 'missing' and active:
+                status = 'partial'
+            if full:
+                for c in active:
+                    c['full'] = c in full
+        items.append({
+            'value': r[by] if mode == 'single' else '',
+            'status': status, 'cards': cards, 'hits': hits, 'error': err,
+        })
+
+    if check_barcodes:
+        targets = {}
+        for r, it in zip(norm_rows, items):
+            if it['status'] != 'found':
+                continue
+            card = next((c for c in it['cards'] if not c['deleted'] and c.get('full', True)), None)
+            if card and r['barcode']:
+                it['card_key'] = card['key']
+                targets[(card['key'],)] = True
+        codes, code_err = _run_parallel(lambda k: card_barcodes(cfg, k), list(targets))
+        for r, it in zip(norm_rows, items):
+            if it['status'] != 'found':
+                continue
+            if not r['barcode']:
+                it['bc'] = {'state': 'no_invoice'}
+                continue
+            key = it.get('card_key')
+            if (key,) in code_err:
+                it['bc'] = {'state': 'error', 'error': code_err[(key,)]}
+                continue
+            have = codes.get((key,)) or []
+            owners = [c for c in (found.get(('barcode', r['barcode'])) or [])]
+            other = next((c for c in owners if c['key'] != key), None)
+            if r['barcode'] in have:
+                state = 'ok'
+            elif other:
+                state = 'taken'
+            elif not have:
+                state = 'none'
+            else:
+                state = 'other'
+            it['bc'] = {'state': state, 'have': have,
+                        'owner': {'code': other['code'], 'name': other['name']} if other else None}
     return {'ok': True, 'items': items}
+
+
+def add_one_barcode(cfg, key, barcode):
+    cards, err = nomen_find_one(cfg, 'barcode', barcode)
+    if err:
+        return {'state': 'error', 'error': err}, None
+    owner = next((c for c in cards if c['key'] != key), None)
+    if owner:
+        return {'state': 'taken', 'owner': {'code': owner['code'], 'name': owner['name']}}, None
+    if cards:
+        return {'state': 'exists'}, None
+    r = call_odata(cfg, 'InformationRegister_ШтрихкодыНоменклатуры?$format=json', method='POST',
+                   payload={'Штрихкод': barcode, 'Номенклатура_Key': key})
+    if not r['ok']:
+        return {'state': 'error', 'error': r['error']}, None
+    return {'state': 'added'}, None
+
+
+def nomen_add_barcodes(cfg, rows):
+    """Дописывает штрихкоды карточкам: перед записью проверяет, что штрихкод никому не принадлежит."""
+    tasks = []
+    for r in rows:
+        key = str(r.get('key') or '').strip()
+        bc = str(r.get('barcode') or '').strip()
+        if re.fullmatch(r'[0-9a-f-]{36}', key) and bc:
+            tasks.append((key, bc))
+    out, _ = _run_parallel(lambda k, b: add_one_barcode(cfg, k, b), tasks, workers=4)
+    return {'ok': True, 'items': [{'key': k, 'barcode': b, **(out.get((k, b)) or {'state': 'error'})}
+                                  for k, b in tasks]}
 
 
 NOMEN_SETS_HINTS = ('Номенклатур', 'Штрихкод', 'Цен', 'НДС', 'ЕдиницИзмерения', 'КлассификаторЕдиниц',
@@ -1273,7 +1395,13 @@ def handler(event: dict, context) -> dict:
         return resp(200, {'result': match_products(cfg, body.get('rows') or [])})
 
     if action == 'nomen_match':
-        return resp(200, {'result': nomen_match(cfg, body.get('rows') or [], body.get('by') or 'article')})
+        return resp(200, {'result': nomen_match(
+            cfg, body.get('rows') or [], mode=body.get('mode') or 'single', by=body.get('by') or 'article',
+            exact=body.get('exact', True) is not False, check_barcodes=bool(body.get('check_barcodes')),
+        )})
+
+    if action == 'nomen_add_barcodes':
+        return resp(200, {'result': nomen_add_barcodes(cfg, body.get('rows') or [])})
 
     if action == 'nomen_schema':
         return resp(200, {'result': nomen_schema(cfg)})
