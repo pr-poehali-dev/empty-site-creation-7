@@ -12,11 +12,13 @@ import ItemRow from "./receiving-daily/ItemRow";
 import LastCheck from "./receiving-daily/LastCheck";
 import PastReceivings from "./receiving-daily/PastReceivings";
 import SearchBox from "./receiving-daily/SearchBox";
+import Stopwatch, { STOPWATCH_KEY, stopwatchOn } from "./receiving-daily/Stopwatch";
 import {
   KIND_TITLES,
   closeReceiving,
   findCurrent,
   loadState,
+  markTaken,
   openReceiving,
   receivingDate,
   receivingTimes,
@@ -36,7 +38,10 @@ const ReceivingDaily = () => {
   const [sp] = useSearchParams();
   const kind = sp.get("kind") || "";
 
-  const [stage, setStage] = useState<"loading" | "work" | "done" | "error">("loading");
+  const [stage, setStage] = useState<"loading" | "start" | "work" | "done" | "error">("loading");
+  const [starting, setStarting] = useState(false);
+  const [takenAt, setTakenAt] = useState(0);
+  const [swOn, setSwOn] = useState(stopwatchOn);
   const [finished, setFinished] = useState<Counters>(EMPTY);
   const [error, setError] = useState("");
   const [receiving, setReceiving] = useState<Receiving | null>(null);
@@ -83,10 +88,11 @@ const ReceivingDaily = () => {
           setReceiving(d.receiving);
           setCounters(d.counters);
           setItems(d.items);
+          setStage("work");
+          return;
         }
-        // Открытой нет — экран готов к работе, но в базе ничего не создаём:
-        // приёмка появится при первой проверенной единице. Зашёл и ушёл — пустой не будет.
-        setStage("work");
+        // Открытой нет — сначала «НАЧАТЬ»: нажатие и есть начало рабочего времени.
+        setStage("start");
       })
       .catch((e) => {
         if (!alive) return;
@@ -127,7 +133,27 @@ const ReceivingDaily = () => {
     setListOpen(false);
     setResult("");
     setClosing(false);
-    setStage("work");
+    setStage("start");
+  };
+
+  const begin = async () => {
+    setStarting(true);
+    try {
+      const r = await openReceiving(kind);
+      receivingRef.current = r;
+      setReceiving(r);
+      setStage("work");
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const toggleStopwatch = () => {
+    const next = !swOn;
+    localStorage.setItem(STOPWATCH_KEY, next ? "1" : "0");
+    setSwOn(next);
   };
 
   const refresh = useCallback(async (id: number, r?: string) => {
@@ -144,6 +170,10 @@ const ReceivingDaily = () => {
     setNotFound("");
     setResumeFactory(false);
     setCurrent(item);
+    setTakenAt(Date.now());
+    // Начало работы над единицей пишем по часам телефона; сбой сети работу не останавливает.
+    const rid = receivingRef.current?.id;
+    if (rid) markTaken(rid, item.id).catch(() => {});
   }, []);
 
   const handleScan = useCallback(
@@ -241,7 +271,13 @@ const ReceivingDaily = () => {
     if (!receiving) return;
     setClosing(true);
     try {
-      await closeReceiving(receiving.id);
+      const res = await closeReceiving(receiving.id);
+      if (res.deleted) {
+        setAskFinish(false);
+        toast({ title: "Пустая приёмка не сохранена" });
+        startNew();
+        return;
+      }
       // Остаёмся здесь: возврат на «Приёмки» у мастера с одним видом
       // сразу снова открывал экран приёмки.
       setFinished(counters);
@@ -260,6 +296,33 @@ const ReceivingDaily = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Icon name="Loader2" size={28} className="animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (stage === "start") {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <header className="border-b border-white/[0.08] bg-card">
+          <div className="max-w-2xl mx-auto flex items-center gap-2 px-4 py-3">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={goBack}>
+              <Icon name="ArrowLeft" size={18} />
+            </Button>
+            <h1 className="text-base font-semibold truncate">{title}</h1>
+          </div>
+        </header>
+        <main className="max-w-2xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
+          <button
+            onClick={begin}
+            disabled={starting}
+            className="w-full aspect-[2/1] max-h-64 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-emerald-950 flex flex-col items-center justify-center gap-2 shadow-lg disabled:opacity-60 transition-colors"
+          >
+            <Icon name={starting ? "Loader2" : "Play"} size={44} className={starting ? "animate-spin" : ""} />
+            <span className="text-3xl font-bold tracking-wide">НАЧАТЬ</span>
+            <span className="text-sm opacity-80">время начала запишется с телефона</span>
+          </button>
+          <PastReceivings backTo={`/admin/receiving-daily?kind=${encodeURIComponent(kind)}`} />
+        </main>
       </div>
     );
   }
@@ -359,12 +422,23 @@ const ReceivingDaily = () => {
           <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
             <Icon name="ScanLine" size={20} className="text-emerald-400" />
           </div>
-          <div className="text-sm">
+          <div className="text-sm flex-1 min-w-0">
             <div className="font-medium">Сканер готов</div>
             <div className="text-xs text-muted-foreground">
               Пикайте товар — или найдите вручную ниже
             </div>
           </div>
+          <button
+            onClick={toggleStopwatch}
+            className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${
+              swOn
+                ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-200"
+                : "border-white/[0.1] text-muted-foreground"
+            }`}
+          >
+            <Icon name="Timer" size={14} />
+            Секундомер
+          </button>
         </div>
 
         <SearchBox onPick={takeItem} onCameraCode={handleScan} />
@@ -481,6 +555,8 @@ const ReceivingDaily = () => {
           onCancel={() => setAskFinish(false)}
         />
       )}
+
+      {current && swOn && takenAt > 0 && <Stopwatch since={takenAt} />}
 
       {current && (
         <CheckDialog

@@ -36,6 +36,8 @@ export interface DailyItem {
   daily_receiving_id: number | null;
   /** Перемещения между складами после решения мастера. */
   moves?: ItemMove[];
+  /** Секунды от взятия в работу до итога. Нет — до ленты времени или не засекли. */
+  work_sec?: number | null;
 }
 
 /** Куда мастер отправил товар. Отгрузки тут нет: она списание, а не склад. */
@@ -91,6 +93,8 @@ export interface Receiving {
   /** Время с телефона мастера в момент открытия и нажатия «Закончить». */
   opened_local?: string | null;
   closed_local?: string | null;
+  /** Время последнего итога с телефона — конец, если «Закончить» не нажали. */
+  last_result_local?: string | null;
 }
 
 const hhmm = (local?: string | null, server?: string | null): string => {
@@ -105,12 +109,39 @@ const hhmm = (local?: string | null, server?: string | null): string => {
   return "";
 };
 
-/** Начало и окончание приёмки. Закрытая системой — без времени окончания. */
+const toDate = (v?: string | null): Date | null => {
+  if (!v) return null;
+  const d = new Date(String(v).replace(" ", "T"));
+  return isNaN(d.getTime()) ? null : d;
+};
+
+/** Начало и окончание приёмки. «Закончить» не нажали — конец по последнему итогу. */
 export function receivingTimes(r: Receiving): { start: string; end: string } {
   const start = hhmm(r.opened_local, r.opened_at);
   if (!r.closed) return { start, end: "" };
-  if (r.auto_closed) return { start, end: "авто" };
+  if (r.auto_closed) return { start, end: hhmm(r.last_result_local) || "авто" };
   return { start, end: hhmm(r.closed_local, r.closed_at) };
+}
+
+/** «4 ч 35 мин» / «12 мин» / «40 с». */
+export function fmtDuration(sec?: number | null): string {
+  if (sec == null || sec < 0) return "";
+  const s = Math.round(sec);
+  if (s < 60) return `${s} с`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 && m < 10 ? `${m} мин ${s % 60} с` : `${m} мин`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} ч ${m % 60} мин` : `${h} ч`;
+}
+
+/** Длительность приёмки по часам телефона. Открытая — не считаем. */
+export function receivingDuration(r: Receiving): string {
+  if (!r.closed || !r.opened_local) return "";
+  const end = r.auto_closed ? r.last_result_local : r.closed_local || r.last_result_local;
+  const a = toDate(r.opened_local);
+  const b = toDate(end);
+  if (!a || !b || b < a) return "";
+  return fmtDuration((b.getTime() - a.getTime()) / 1000);
 }
 
 export function nowLocal(): string {
@@ -218,7 +249,12 @@ export const loadArchive = (id: number, q = "", result = "") =>
     `action=state&id=${id}&limit=500&q=${encodeURIComponent(q)}${result ? `&result=${result}` : ""}`
   );
 
-export const closeReceiving = (id: number) => post<{ ok: boolean }>({ action: "close", id, local_time: nowLocal() });
+export const closeReceiving = (id: number) =>
+  post<{ ok: boolean; deleted?: boolean }>({ action: "close", id, local_time: nowLocal() });
+
+/** Взял единицу в работу — начало отсчёта времени по ней. */
+export const markTaken = (receiving_id: number, item_id: number) =>
+  post<{ ok: boolean }>({ action: "mark", receiving_id, item_id, local_time: nowLocal() });
 
 /** Удалить можно только пустую закрытую и только свою — решает сервер. */
 export const deleteReceiving = (id: number) =>
@@ -230,7 +266,7 @@ export const scanCode = (code: string) =>
   );
 
 export const saveCheck = (payload: CheckPayload) =>
-  post<{ ok: boolean; counters: Counters }>({ action: "check", ...payload });
+  post<{ ok: boolean; counters: Counters }>({ action: "check", ...payload, local_time: nowLocal() });
 
 export const saveFactoryCode = (item_id: number, code: string) =>
   post<{ ok: boolean; updated: number; tech_name: string }>({
@@ -240,7 +276,7 @@ export const saveFactoryCode = (item_id: number, code: string) =>
   });
 
 export const undoCheck = (item_id: number, receiving_id: number) =>
-  post<{ ok: boolean; counters: Counters }>({ action: "undo", item_id, receiving_id });
+  post<{ ok: boolean; counters: Counters }>({ action: "undo", item_id, receiving_id, local_time: nowLocal() });
 
 /** Убрать позицию из приёмки: результат снимается, товар уходит в общий пул. */
 export const removeItem = (item_id: number, receiving_id: number) =>
@@ -248,6 +284,7 @@ export const removeItem = (item_id: number, receiving_id: number) =>
     action: "item_remove",
     item_id,
     receiving_id,
+    local_time: nowLocal(),
   });
 
 export const searchItems = (q: string) =>

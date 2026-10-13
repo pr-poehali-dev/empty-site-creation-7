@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import MoveHistory from "./MoveHistory";
-import { OUTCOME_WAREHOUSE, isMoved, type DailyItem } from "./dailyApi";
+import { OUTCOME_WAREHOUSE, fmtDuration, isMoved, type DailyItem } from "./dailyApi";
 
 interface Props {
   item: DailyItem;
@@ -39,6 +39,11 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
             {item.supplier_barcode}
             {item.warehouse ? ` · ${item.warehouse}` : ""}
             {item.invoice_weight ? ` · ${Number(item.invoice_weight)} кг` : ""}
+            {" · "}
+            <span className="tabular-nums" title="От взятия в работу до итога">
+              <Icon name="Timer" size={11} className="inline -mt-0.5 mr-0.5" />
+              {fmtDuration(item.work_sec) || "—"}
+            </span>
           </div>
           {moved && (
             <div className="text-[11px] text-amber-300/90 mt-0.5">

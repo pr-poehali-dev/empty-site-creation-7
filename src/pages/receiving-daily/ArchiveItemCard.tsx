@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import MoveHistory from "./MoveHistory";
-import type { DailyItem } from "./dailyApi";
+import { fmtDuration, type DailyItem } from "./dailyApi";
 
 interface Props {
   item: DailyItem;
@@ -49,6 +49,7 @@ const ArchiveItemCard = ({ item, onClose }: Props) => {
 
           <div className="space-y-1">
             <Row label="Штрихкод:" value={item.supplier_barcode} />
+            <Row label="Время работы:" value={fmtDuration(item.work_sec) || "—"} />
             {item.factory_barcode && (
               <Row label="Заводской:" value={item.factory_barcode} />
             )}

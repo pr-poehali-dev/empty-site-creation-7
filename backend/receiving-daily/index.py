@@ -5,6 +5,8 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from worklog import last_results, log_event, work_seconds
+
 CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -244,10 +246,15 @@ def checked_list(cur, receiving_id, limit=30, q='', result=''):
         f"SELECT {ITEM_COLS} FROM receiving_items WHERE {where} "
         f"ORDER BY checked_at DESC NULLS LAST, id DESC LIMIT {int(limit)}"
     )
-    return attach_moves(cur, [dict(r) for r in cur.fetchall()])
+    items = attach_moves(cur, [dict(r) for r in cur.fetchall()])
+    secs = work_seconds(cur, receiving_id, [i['id'] for i in items])
+    for it in items:
+        it['work_sec'] = secs.get(int(it['id']))
+    return items
 
 
 def state(cur, receiving, limit=30, q='', result=''):
+    receiving['last_result_local'] = last_results(cur, [receiving['id']]).get(int(receiving['id']))
     return {
         'receiving': receiving,
         'counters': counters(cur, receiving['id']),
@@ -281,6 +288,7 @@ def act_open(cur, actor, body):
     )
     row = cur.fetchone()
     if row:
+        log_event(cur, actor, row['id'], 'start', None, body.get('local_time'))
         return dict(row), None
     # Запрет в базе сработал: два нажатия одновременно. Отдаём победившую приёмку.
     existing = find_open(cur, actor, kind, work_date)
@@ -340,6 +348,27 @@ def act_close(cur, actor, body):
     )
     if not cur.fetchone():
         return None, 'Приёмка уже закрыта или чужая'
+    # Нажали «НАЧАТЬ» и сразу «Закончить» — работы не было, пустую не храним.
+    cur.execute(f"SELECT COUNT(*) AS n FROM receiving_items WHERE daily_receiving_id={rid}")
+    if int(cur.fetchone()['n']) == 0:
+        cur.execute(f"DELETE FROM receiving_work_events WHERE receiving_id={rid}")
+        cur.execute(f"DELETE FROM daily_receivings WHERE id={rid}")
+        return {'ok': True, 'deleted': True}, None
+    log_event(cur, actor, rid, 'end', None, body.get('local_time'))
+    return {'ok': True}, None
+
+
+def act_mark(cur, actor, body):
+    """Сотрудник взял единицу в работу: скан или выбор вручную — начало отсчёта."""
+    rid = int(body.get('receiving_id') or 0)
+    item_id = int(body.get('item_id') or 0)
+    if not rid or not item_id:
+        return None, 'Не указана приёмка или единица'
+    cur.execute(f"SELECT closed FROM daily_receivings WHERE id={rid} AND {_owner_filter(actor)} LIMIT 1")
+    row = cur.fetchone()
+    if not row or row['closed']:
+        return None, 'Приёмка закрыта или чужая'
+    log_event(cur, actor, rid, 'scan', item_id, body.get('local_time'))
     return {'ok': True}, None
 
 
@@ -462,6 +491,7 @@ def act_check(cur, actor, body):
     # Попадание на склад через приёмку — такое же событие пути, как перемещение.
     # Раньше его не писали, и повторные заходы в тот же склад исчезали из истории.
     log_move(cur, item_id, item.get('warehouse'), WAREHOUSES[outcome], actor, 'check')
+    log_event(cur, actor, rid, 'result', item_id, body.get('local_time'))
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 
@@ -525,6 +555,7 @@ def act_undo(cur, actor, body):
         return None, 'Эту проверку уже не отменить'
 
     log_move(cur, item_id, was, None, actor, 'remove')
+    log_event(cur, actor, rid, 'undo', item_id, body.get('local_time'))
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 
@@ -566,6 +597,7 @@ def act_item_remove(cur, actor, body):
         return None, 'Этой позиции в приёмке уже нет'
 
     log_move(cur, item_id, was, None, actor, 'remove')
+    log_event(cur, actor, rid, 'undo', item_id, body.get('local_time'))
     return {'ok': True, 'counters': counters(cur, rid)}, None
 
 
@@ -651,12 +683,15 @@ def act_list(cur, actor, params):
                 by_id[row['rid']][row['r']] = int(row['n'])
         for r in rows:
             r['counters'] = by_id[int(r['id'])]
+        last = last_results(cur, ids)
+        for r in rows:
+            r['last_result_local'] = last.get(int(r['id']))
 
     return {'rows': rows, 'total': total, 'see_all': actor['_see_all']}, None
 
 
 def handler(event: dict, context) -> dict:
-    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую."""
+    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую. Ведёт ленту рабочего времени сотрудника: начало, взял единицу, итог, отмена, конец — по часам телефона."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -713,6 +748,7 @@ def handler(event: dict, context) -> dict:
             'check': lambda: act_check(cur, actor, body),
             'factory': lambda: act_factory(cur, body),
             'undo': lambda: act_undo(cur, actor, body),
+            'mark': lambda: act_mark(cur, actor, body),
         }
         if action in handlers:
             data, err = handlers[action]()

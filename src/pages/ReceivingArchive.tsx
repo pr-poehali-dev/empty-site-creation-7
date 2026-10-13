@@ -12,6 +12,7 @@ import {
   KIND_TITLES,
   OUTCOME_WAREHOUSE,
   receivingDate,
+  receivingDuration,
   receivingTimes,
   deleteReceiving,
   isMoved,
@@ -142,7 +143,9 @@ const ReceivingArchive = () => {
               {receiving
                 ? `№${receiving.id} · ${receivingDate(receiving.work_date)}${
                     receivingTimes(receiving).start
-                      ? ` · ${receivingTimes(receiving).start} – ${receivingTimes(receiving).end || "…"}`
+                      ? ` · ${receivingTimes(receiving).start} – ${receivingTimes(receiving).end || "…"}${
+                          receivingDuration(receiving) ? ` · ${receivingDuration(receiving)}` : ""
+                        }`
                       : ""
                   }`
                 : ""}

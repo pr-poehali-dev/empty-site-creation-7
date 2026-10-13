@@ -5,7 +5,9 @@
       "method": "GET",
       "path": "/",
       "expectedStatus": 200,
-      "expectedBody": {"status": "ok"},
+      "expectedBody": {
+        "status": "ok"
+      },
       "bodyMatcher": "partial"
     },
     {
@@ -13,52 +15,99 @@
       "method": "GET",
       "path": "/?action=meta",
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Открыть приёмку без токена нельзя",
       "method": "POST",
       "path": "/",
-      "body": {"action": "open", "kind": "kind_check", "work_date": "2026-09-24"},
+      "body": {
+        "action": "open",
+        "kind": "kind_check",
+        "work_date": "2026-09-24"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Записать проверку без токена нельзя",
       "method": "POST",
       "path": "/",
-      "body": {"action": "check", "item_id": 1, "receiving_id": 1, "outcome": "sale"},
+      "body": {
+        "action": "check",
+        "item_id": 1,
+        "receiving_id": 1,
+        "outcome": "sale"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Заводской штрихкод без токена нельзя",
       "method": "POST",
       "path": "/",
-      "body": {"action": "factory", "item_id": 1, "code": "123"},
+      "body": {
+        "action": "factory",
+        "item_id": 1,
+        "code": "123"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Удалить приёмку без токена нельзя",
       "method": "POST",
       "path": "/",
-      "body": {"action": "delete", "id": 1},
+      "body": {
+        "action": "delete",
+        "id": 1
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Отмена без токена нельзя",
       "method": "POST",
       "path": "/",
-      "body": {"action": "undo", "item_id": 1, "receiving_id": 1},
+      "body": {
+        "action": "undo",
+        "item_id": 1,
+        "receiving_id": 1
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Отметка взятия в работу без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "mark",
+        "item_id": 1,
+        "receiving_id": 1
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     }
   ]
