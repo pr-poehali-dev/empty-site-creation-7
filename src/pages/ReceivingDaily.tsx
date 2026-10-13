@@ -242,7 +242,7 @@ const ReceivingDaily = () => {
       try {
         const r = isWipe ? await wipeScan(code) : await scanCode(code);
         if (r.found && r.item) {
-          takeItem(r.item, ("status" in r && r.status) || "ready", Boolean(r.can_fix));
+          takeItem(r.item, ("status" in r ? (r.status as WipeStatus | undefined) : undefined) || "ready", Boolean(r.can_fix));
         } else {
           setCurrent(null);
           setNotFound(code);
@@ -602,7 +602,7 @@ const ReceivingDaily = () => {
             <Icon name="List" size={16} className="text-muted-foreground" />
             <span className="text-sm font-medium flex-1">
               {result
-                ? `${counterTitle(result, isWipe)}: ${counters[result] ?? 0}`
+                ? `${counterTitle(result, isWipe)}: ${counters[result as keyof Counters] ?? 0}`
                 : isWipe
                   ? "Обработано в этой приёмке"
                   : "Проверено в этой приёмке"}

@@ -230,7 +230,7 @@ const ReceivingArchive = () => {
             <Icon name="List" size={16} className="text-muted-foreground" />
             <span className="text-sm font-medium flex-1">
               {result
-                ? `${counterTitle(result, isWipe)}: ${counters[result] ?? 0}`
+                ? `${counterTitle(result, isWipe)}: ${counters[result as keyof Counters] ?? 0}`
                 : isWipe
                   ? "Обработанный товар"
                   : "Проверенный товар"}

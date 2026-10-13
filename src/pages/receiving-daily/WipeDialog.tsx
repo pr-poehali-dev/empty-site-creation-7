@@ -85,7 +85,7 @@ const WipeDialog = ({
   const [look, setLook] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const fix = async () => {
+  const moveToWipe = async () => {
     setBusy(true);
     try {
       const r = await wipeFix(receivingId, item.id);
@@ -212,7 +212,7 @@ const WipeDialog = ({
                 <p className="text-sm text-muted-foreground">Сейчас: {item.warehouse || "—"}</p>
               </div>
               <Big
-                onClick={fix}
+                onClick={moveToWipe}
                 disabled={busy}
                 cls="bg-sky-500 text-sky-950 hover:bg-sky-400"
                 icon="Sparkles"

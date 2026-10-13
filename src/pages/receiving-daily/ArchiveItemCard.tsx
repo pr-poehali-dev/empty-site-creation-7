@@ -17,7 +17,7 @@ const RESULTS: Record<string, { text: string; cls: string }> = {
   scrap: { text: "Утиль", cls: "text-rose-300" },
 };
 
-const dt = (v: string | null) =>
+const dt = (v?: string | null) =>
   v ? new Date(v).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) : "";
 
 const Row = ({ label, value }: { label: string; value: string }) => (
