@@ -1,0 +1,12 @@
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_result TEXT NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_look TEXT NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_traces TEXT NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_by INTEGER NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_by_name TEXT NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_at TIMESTAMPTZ NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_local TIMESTAMP NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS wipe_receiving_id INTEGER NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS master_fixed_from TEXT NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS master_fixed_by_name TEXT NULL;
+ALTER TABLE receiving_items ADD COLUMN IF NOT EXISTS master_fixed_at TIMESTAMPTZ NULL;
+CREATE INDEX IF NOT EXISTS idx_receiving_items_wipe_rid ON receiving_items (wipe_receiving_id);

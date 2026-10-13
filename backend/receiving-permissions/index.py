@@ -56,6 +56,8 @@ CATALOG_FIELDS = [
     ('checked_by_name', 'Кто проверил'),
     ('checked_at', 'Когда проверил'),
     ('warehouse', 'Склад'),
+    ('wipe_look', 'Внешний вид (протирка)'),
+    ('wipe_traces', 'Следы использования (протирка)'),
 ]
 
 PRICE_FIELDS = [('price', 'Цена из загрузки')]

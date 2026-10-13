@@ -64,11 +64,15 @@ const ReceivingRowItem = ({ row, full = false, deleting, onOpen, onDelete }: Pro
         </div>
         {full && (
           <div className="mt-1.5">
-            <OutcomeChips counters={row.counters} showZero={row.kind === "kind_check"} />
+            <OutcomeChips
+              counters={row.counters}
+              showZero={row.kind === "kind_check" || row.kind === "kind_plain"}
+              wipe={row.kind === "kind_plain"}
+            />
           </div>
         )}
       </div>
-      {!full && <OutcomeChips counters={row.counters} />}
+      {!full && <OutcomeChips counters={row.counters} wipe={row.kind === "kind_plain"} />}
     </button>
 
     {row.can_delete ? (

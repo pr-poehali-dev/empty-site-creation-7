@@ -86,6 +86,11 @@ def build_xlsx(data, meta):
         a.border = Border(left=Side(style='thick', color=color), right=thin, top=thin, bottom=thin)
         b.font = Font(bold=True, color='333333')
         r += 1
+    if data.get('fixed'):
+        ws.cell(r, 1, 'Исправлено протиркой (было СГП)').alignment = Alignment(indent=2)
+        c = ws.cell(r, 2, data['fixed'])
+        c.alignment = Alignment(horizontal='center')
+        r += 1
     r += 1
 
     ws.cell(r, 1, '2. Проверенный товар за период').font = sec_font
@@ -284,7 +289,10 @@ def build_pdf(data, meta):
     indent = Table([['', split]], colWidths=[8 * mm, 96 * mm], hAlign='LEFT')
     indent.setStyle(TableStyle([('LEFTPADDING', (0, 0), (-1, -1), 0),
                                 ('TOPPADDING', (0, 0), (-1, -1), 3)]))
-    story += [total_box, indent, p('2. Проверенный товар за период', 'sec')]
+    story += [total_box, indent]
+    if data.get('fixed'):
+        story.append(p(f"Исправлено протиркой (было СГП): {data['fixed']}", 'meta'))
+    story.append(p('2. Проверенный товар за период', 'sec'))
 
     num_w = 18 * mm
     order_w = 24 * mm

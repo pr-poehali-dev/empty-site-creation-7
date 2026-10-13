@@ -1,11 +1,13 @@
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import MoveHistory from "./MoveHistory";
-import { fmtDuration, type DailyItem } from "./dailyApi";
+import { OUTCOME_WAREHOUSE, fmtDuration, wipeText, type DailyItem } from "./dailyApi";
 
 interface Props {
   item: DailyItem;
   onClose: () => void;
+  /** Приёмка протирки: результат — итог протирки. */
+  wipe?: boolean;
 }
 
 const RESULTS: Record<string, { text: string; cls: string }> = {
@@ -26,8 +28,13 @@ const Row = ({ label, value }: { label: string; value: string }) => (
 );
 
 /** Итог проверки, только чтение: в закрытую приёмку возврата для правки нет. */
-const ArchiveItemCard = ({ item, onClose }: Props) => {
-  const res = RESULTS[item.check_result || ""];
+const ArchiveItemCard = ({ item, onClose, wipe = false }: Props) => {
+  const res = wipe
+    ? {
+        text: wipeText(item) || "не записан",
+        cls: item.wipe_result === "scrap" ? "text-rose-300" : "text-emerald-300",
+      }
+    : RESULTS[item.check_result || ""];
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
@@ -88,6 +95,23 @@ const ArchiveItemCard = ({ item, onClose }: Props) => {
             </div>
           )}
 
+          {item.master_fixed_from && (
+            <div className="rounded-lg bg-sky-500/10 border border-sky-500/25 p-2.5 text-xs">
+              Исправлено протиркой: было {OUTCOME_WAREHOUSE[item.master_fixed_from] || item.master_fixed_from}
+              {item.master_fixed_by_name ? ` · ${item.master_fixed_by_name}` : ""}
+              {item.master_fixed_at ? ` · ${dt(item.master_fixed_at)}` : ""}
+            </div>
+          )}
+
+          {!wipe && item.wipe_result && (
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2.5 text-xs">
+              <div className="text-[11px] text-muted-foreground mb-0.5">Протирка</div>
+              {wipeText(item)}
+              {item.wipe_by_name ? ` · ${item.wipe_by_name}` : ""}
+              {item.wipe_local || item.wipe_at ? ` · ${dt(item.wipe_local || item.wipe_at)}` : ""}
+            </div>
+          )}
+
           <div>
             <div className="text-[11px] text-muted-foreground mb-1">
               Путь товара
@@ -98,6 +122,9 @@ const ArchiveItemCard = ({ item, onClose }: Props) => {
           <div className="text-[11px] text-muted-foreground border-t border-white/[0.06] pt-2">
             {item.checked_by_name ? `Проверил: ${item.checked_by_name}` : "Кто проверил — не записано"}
             {item.checked_at ? ` · ${dt(item.checked_at)}` : ""}
+            {wipe && item.wipe_by_name
+              ? ` · Протёр(ла): ${item.wipe_by_name}${item.wipe_local || item.wipe_at ? `, ${dt(item.wipe_local || item.wipe_at)}` : ""}`
+              : ""}
           </div>
         </div>
       </div>

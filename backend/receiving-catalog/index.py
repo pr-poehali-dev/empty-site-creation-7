@@ -20,7 +20,7 @@ TEXT_FIELDS = [
 ]
 NUM_FIELDS = ['weight_gross', 'weight_net', 'volume', 'price', 'invoice_weight']
 BOOL_FIELDS = ['has_package', 'defect_confirmed', 'new_defect']
-READONLY_FIELDS = ['checked_by_name', 'checked_at']
+READONLY_FIELDS = ['checked_by_name', 'checked_at', 'wipe_look', 'wipe_traces']
 
 ALL_FIELDS = TEXT_FIELDS + NUM_FIELDS + BOOL_FIELDS + READONLY_FIELDS
 

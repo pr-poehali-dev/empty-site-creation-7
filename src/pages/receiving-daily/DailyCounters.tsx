@@ -8,7 +8,13 @@ const CELLS = [
   { key: "scrap", title: "В утиль", icon: "Trash2", color: "text-rose-400", bg: "bg-rose-500/15", ring: "ring-rose-400" },
 ] as const;
 
-export const counterTitle = (key: string) => CELLS.find((c) => c.key === key)?.title || "";
+const WIPE_CELLS = [
+  { key: "sale", title: "Готово", icon: "CircleCheck", color: "text-emerald-400", bg: "bg-emerald-500/15", ring: "ring-emerald-400" },
+  { key: "scrap", title: "Утиль", icon: "Trash2", color: "text-rose-400", bg: "bg-rose-500/15", ring: "ring-rose-400" },
+] as const;
+
+export const counterTitle = (key: string, wipe = false) =>
+  (wipe ? WIPE_CELLS : CELLS).find((c) => c.key === key)?.title || "";
 
 interface Props {
   counters: Counters;
@@ -16,11 +22,13 @@ interface Props {
   active?: string;
   /** Нажали плитку: та же — снять фильтр, другая — переключить. */
   onPick?: (key: string) => void;
+  /** Приёмка протирки: две плитки — «Готово» и «Утиль». */
+  wipe?: boolean;
 }
 
-const DailyCounters = ({ counters, active = "", onPick }: Props) => (
-  <div className="grid grid-cols-4 gap-2">
-    {CELLS.map((c) => {
+const DailyCounters = ({ counters, active = "", onPick, wipe = false }: Props) => (
+  <div className={`grid gap-2 ${wipe ? "grid-cols-2" : "grid-cols-4"}`}>
+    {(wipe ? WIPE_CELLS : CELLS).map((c) => {
       const n = counters[c.key] ?? 0;
       const on = active === c.key;
       const clickable = Boolean(onPick) && (n > 0 || on);

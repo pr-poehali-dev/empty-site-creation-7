@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from worklog import last_results, log_event, work_seconds
+import wipe
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -35,7 +36,9 @@ ITEM_COLS = (
     'id, supplier_barcode, tech_name, serial_number, declared_defect, brand, model, '
     'product_group, direction, order_number, supplier_code, weight_gross, weight_net, '
     'has_package, invoice_weight, factory_barcode, defect_confirmed, new_defect, '
-    'new_defect_text, check_result, warehouse, checked_at, checked_by_name, daily_receiving_id'
+    'new_defect_text, check_result, warehouse, checked_at, checked_by_name, daily_receiving_id, '
+    'wipe_result, wipe_look, wipe_traces, wipe_by_name, wipe_at, wipe_local, wipe_receiving_id, '
+    'master_fixed_from, master_fixed_by_name, master_fixed_at'
 )
 
 
@@ -153,7 +156,13 @@ def find_open(cur, actor, kind, work_date):
     return dict(row) if row else None
 
 
-def counters(cur, receiving_id):
+def counters(cur, receiving_id, kind=None):
+    if kind is None:
+        cur.execute(f"SELECT kind FROM daily_receivings WHERE id={int(receiving_id)} LIMIT 1")
+        row = cur.fetchone()
+        kind = row['kind'] if row else ''
+    if kind == wipe.WIPE_KIND:
+        return wipe.counters(cur, receiving_id)
     cur.execute(
         f"SELECT COALESCE(check_result,'') AS r, COUNT(*) AS n FROM receiving_items "
         f"WHERE daily_receiving_id={int(receiving_id)} GROUP BY 1"
@@ -235,16 +244,19 @@ def attach_moves(cur, items):
 RESULTS = ('sale', 'wipe', 'repair', 'scrap')
 
 
-def checked_list(cur, receiving_id, limit=30, q='', result=''):
-    where = f"daily_receiving_id={int(receiving_id)}"
+def checked_list(cur, receiving_id, limit=30, q='', result='', kind=''):
+    is_wipe = kind == wipe.WIPE_KIND
+    field = 'wipe_receiving_id' if is_wipe else 'daily_receiving_id'
+    where = f"{field}={int(receiving_id)}"
     if result in RESULTS:
-        where += f" AND check_result='{result}'"
+        where += f" AND {'wipe_result' if is_wipe else 'check_result'}='{result}'"
     match = goods_match(q)
     if match:
         where += f" AND {match}"
+    order = 'wipe_at' if is_wipe else 'checked_at'
     cur.execute(
         f"SELECT {ITEM_COLS} FROM receiving_items WHERE {where} "
-        f"ORDER BY checked_at DESC NULLS LAST, id DESC LIMIT {int(limit)}"
+        f"ORDER BY {order} DESC NULLS LAST, id DESC LIMIT {int(limit)}"
     )
     items = attach_moves(cur, [dict(r) for r in cur.fetchall()])
     secs = work_seconds(cur, receiving_id, [i['id'] for i in items])
@@ -257,8 +269,8 @@ def state(cur, receiving, limit=30, q='', result=''):
     receiving['last_result_local'] = last_results(cur, [receiving['id']]).get(int(receiving['id']))
     return {
         'receiving': receiving,
-        'counters': counters(cur, receiving['id']),
-        'items': checked_list(cur, receiving['id'], limit, q, result),
+        'counters': counters(cur, receiving['id'], receiving.get('kind')),
+        'items': checked_list(cur, receiving['id'], limit, q, result, receiving.get('kind') or ''),
     }
 
 
@@ -349,7 +361,10 @@ def act_close(cur, actor, body):
     if not cur.fetchone():
         return None, 'Приёмка уже закрыта или чужая'
     # Нажали «НАЧАТЬ» и сразу «Закончить» — работы не было, пустую не храним.
-    cur.execute(f"SELECT COUNT(*) AS n FROM receiving_items WHERE daily_receiving_id={rid}")
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM receiving_items "
+        f"WHERE daily_receiving_id={rid} OR wipe_receiving_id={rid}"
+    )
     if int(cur.fetchone()['n']) == 0:
         cur.execute(f"DELETE FROM receiving_work_events WHERE receiving_id={rid}")
         cur.execute(f"DELETE FROM daily_receivings WHERE id={rid}")
@@ -394,7 +409,8 @@ def act_delete(cur, actor, body):
         return None, 'Сначала закончите приёмку'
 
     cur.execute(
-        f"SELECT COUNT(*) AS n FROM receiving_items WHERE daily_receiving_id={rid}"
+        f"SELECT COUNT(*) AS n FROM receiving_items "
+        f"WHERE daily_receiving_id={rid} OR wipe_receiving_id={rid}"
     )
     if int(cur.fetchone()['n']) > 0:
         return None, 'В приёмке есть товар — такую не удаляем'
@@ -454,6 +470,11 @@ def act_check(cur, actor, body):
         return None, 'Не указана единица или приёмка'
     if outcome not in OUTCOMES:
         return None, 'Неизвестный исход проверки'
+
+    cur.execute(f"SELECT kind FROM daily_receivings WHERE id={rid} LIMIT 1")
+    rk = cur.fetchone()
+    if rk and rk['kind'] == wipe.WIPE_KIND:
+        return None, 'В протирке проверка мастера недоступна'
 
     cur.execute(f"SELECT {ITEM_COLS} FROM receiving_items WHERE id={item_id} LIMIT 1")
     item = cur.fetchone()
@@ -653,7 +674,7 @@ def act_list(cur, actor, params):
 
     cur.execute(
         f"SELECT d.*, (SELECT COUNT(*) FROM receiving_items i "
-        f"WHERE i.daily_receiving_id=d.id) AS qty "
+        f"WHERE i.daily_receiving_id=d.id OR i.wipe_receiving_id=d.id) AS qty "
         f"FROM daily_receivings d WHERE {where} "
         f"ORDER BY d.work_date DESC, d.id DESC LIMIT {limit} OFFSET {offset}"
     )
@@ -683,6 +704,8 @@ def act_list(cur, actor, params):
                 by_id[row['rid']][row['r']] = int(row['n'])
         for r in rows:
             r['counters'] = by_id[int(r['id'])]
+            if r['kind'] == wipe.WIPE_KIND:
+                r['counters'] = wipe.counters(cur, r['id'])
         last = last_results(cur, ids)
         for r in rows:
             r['last_result_local'] = last.get(int(r['id']))
@@ -690,8 +713,15 @@ def act_list(cur, actor, params):
     return {'rows': rows, 'total': total, 'see_all': actor['_see_all']}, None
 
 
+def act_wipe_guard(actor, perms):
+    '''Протирка — по праву на раздел «Рабочий товар без проверки».'''
+    if can(actor, perms, wipe.WIPE_KIND):
+        return None
+    return None, 'Раздел протирки вам не открыт'
+
+
 def handler(event: dict, context) -> dict:
-    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую. Ведёт ленту рабочего времени сотрудника: начало, взял единицу, итог, отмена, конец — по часам телефона."""
+    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую. Раздел «без проверки» — протирка: скан, исправление решения мастера СГП→Протирка, итог «Готово» (внешний вид, следы) или «Утиль», отмена итога. Ведёт ленту рабочего времени сотрудника: начало, взял единицу, итог, отмена, конец — по часам телефона."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -749,6 +779,10 @@ def handler(event: dict, context) -> dict:
             'factory': lambda: act_factory(cur, body),
             'undo': lambda: act_undo(cur, actor, body),
             'mark': lambda: act_mark(cur, actor, body),
+            'wipe_scan': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_scan(cur, ITEM_COLS, params),
+            'wipe_fix': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_fix(cur, ITEM_COLS, actor, _owner_filter(actor), body),
+            'wipe_done': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_done(cur, ITEM_COLS, actor, _owner_filter(actor), body),
+            'wipe_undo': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_undo(cur, actor, _owner_filter(actor), body),
         }
         if action in handlers:
             data, err = handlers[action]()

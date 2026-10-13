@@ -8,16 +8,23 @@ const CHIPS = [
   { key: "scrap", icon: "Trash2", cls: "text-rose-400", title: "В утиль" },
 ] as const;
 
+const WIPE_CHIPS = [
+  { key: "sale", icon: "CircleCheck", cls: "text-emerald-400", title: "Готово" },
+  { key: "scrap", icon: "Trash2", cls: "text-rose-400", title: "Утиль" },
+] as const;
+
 interface Props {
   counters?: Counters;
   /** Пустые исходы обычно прячем, но в общем списке колонки должны совпадать. */
   showZero?: boolean;
+  /** Приёмка протирки — два значка. */
+  wipe?: boolean;
 }
 
 /** Чем кончилась приёмка — четырьмя значками, без захода внутрь. */
-const OutcomeChips = ({ counters, showZero = false }: Props) => {
+const OutcomeChips = ({ counters, showZero = false, wipe = false }: Props) => {
   if (!counters) return null;
-  const cells = CHIPS.filter((c) => showZero || (counters[c.key] ?? 0) > 0);
+  const cells = (wipe ? WIPE_CHIPS : CHIPS).filter((c) => showZero || (counters[c.key] ?? 0) > 0);
   if (cells.length === 0) {
     return <span className="text-xs text-muted-foreground">пусто</span>;
   }

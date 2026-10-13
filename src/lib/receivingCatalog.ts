@@ -27,6 +27,13 @@ export const FIELD_TITLES: Record<string, string> = {
   checked_by_name: "Кто проверил",
   checked_at: "Когда проверил",
   warehouse: "Склад",
+  wipe_look: "Внешний вид",
+  wipe_traces: "Следы",
+};
+
+const WIPE_VALUES: Record<string, Record<string, string>> = {
+  wipe_look: { new: "Как новый", excellent: "Отличное", good: "Хорошее" },
+  wipe_traces: { none: "Без следов", used: "Со следами" },
 };
 
 export const GROUP_FIELDS = ["product_group", "brand", "model", "direction", "price"];
@@ -46,6 +53,8 @@ export const TECH_COLUMNS = [
   "warehouse",
   "price",
   "factory_barcode",
+  "wipe_look",
+  "wipe_traces",
 ];
 
 export interface CatalogMeta {
@@ -98,5 +107,6 @@ export const cellText = (field: string, value: unknown) => {
   if (value == null || value === "") return "—";
   if (BOOL_FIELDS.includes(field)) return value ? "да" : "нет";
   if (field === "price") return money(value);
+  if (WIPE_VALUES[field]) return WIPE_VALUES[field][String(value)] || String(value);
   return String(value);
 };

@@ -17,6 +17,7 @@ import {
   deleteReceiving,
   isMoved,
   loadArchive,
+  wipeText,
   type Counters,
   type DailyItem,
   type Receiving,
@@ -129,6 +130,7 @@ const ReceivingArchive = () => {
   }
 
   const title = KIND_TITLES[receiving?.kind || ""] || "Приёмка";
+  const isWipe = receiving?.kind === "kind_plain";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -197,7 +199,7 @@ const ReceivingArchive = () => {
           </div>
         )}
 
-        <DailyCounters counters={counters} active={result} onPick={setResult} />
+        <DailyCounters counters={counters} active={result} onPick={setResult} wipe={isWipe} />
 
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -227,7 +229,11 @@ const ReceivingArchive = () => {
           <div className="px-4 py-3 flex items-center gap-2 border-b border-white/[0.06]">
             <Icon name="List" size={16} className="text-muted-foreground" />
             <span className="text-sm font-medium flex-1">
-              {result ? `${counterTitle(result)}: ${counters[result] ?? 0}` : "Проверенный товар"}
+              {result
+                ? `${counterTitle(result, isWipe)}: ${counters[result] ?? 0}`
+                : isWipe
+                  ? "Обработанный товар"
+                  : "Проверенный товар"}
             </span>
             {result && (
               <button
@@ -254,7 +260,7 @@ const ReceivingArchive = () => {
                   key={it.id}
                   onClick={() => setOpen(it)}
                   className={`w-full rounded-lg px-2.5 py-1 text-left transition-colors flex items-center gap-3 ${
-                    isMoved(it)
+                    !isWipe && !it.wipe_result && isMoved(it)
                       ? "border-2 border-amber-500 bg-amber-950/25"
                       : "border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.04]"
                   }`}
@@ -265,7 +271,17 @@ const ReceivingArchive = () => {
                       {it.supplier_barcode}
                       {it.warehouse ? ` · ${it.warehouse}` : ""}
                     </div>
-                    {isMoved(it) && (
+                    {isWipe && it.wipe_result && (
+                      <div className={`text-[11px] mt-0.5 ${it.wipe_result === "scrap" ? "text-rose-300" : "text-emerald-300"}`}>
+                        {wipeText(it)}
+                      </div>
+                    )}
+                    {it.master_fixed_from && (
+                      <div className="text-[11px] text-sky-300 mt-0.5">
+                        Исправлено протиркой: было {OUTCOME_WAREHOUSE[it.master_fixed_from] || it.master_fixed_from}
+                      </div>
+                    )}
+                    {!isWipe && !it.wipe_result && isMoved(it) && (
                       <div className="text-[11px] text-amber-300/90 mt-0.5">
                         Мастер: {OUTCOME_WAREHOUSE[it.check_result || ""]} →
                         сейчас: {it.warehouse}
@@ -295,7 +311,7 @@ const ReceivingArchive = () => {
         />
       )}
 
-      {open && <ArchiveItemCard item={open} onClose={() => setOpen(null)} />}
+      {open && <ArchiveItemCard item={open} wipe={isWipe} onClose={() => setOpen(null)} />}
     </div>
   );
 };

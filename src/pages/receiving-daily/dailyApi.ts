@@ -38,7 +38,81 @@ export interface DailyItem {
   moves?: ItemMove[];
   /** Секунды от взятия в работу до итога. Нет — до ленты времени или не засекли. */
   work_sec?: number | null;
+  /** Итог протирки: sale — готово, в СГП; scrap — утиль. */
+  wipe_result?: string | null;
+  wipe_look?: string | null;
+  wipe_traces?: string | null;
+  wipe_by_name?: string | null;
+  wipe_at?: string | null;
+  wipe_local?: string | null;
+  wipe_receiving_id?: number | null;
+  /** Протирка исправила решение мастера: что было (sale), кто и когда. */
+  master_fixed_from?: string | null;
+  master_fixed_by_name?: string | null;
+  master_fixed_at?: string | null;
 }
+
+export const WIPE_KIND = "kind_plain";
+
+export const LOOK_TITLES: Record<string, string> = {
+  new: "Как новый",
+  excellent: "Отличное",
+  good: "Хорошее",
+};
+
+export const TRACE_TITLES: Record<string, string> = {
+  none: "Без следов использования",
+  used: "Со следами использования",
+};
+
+/** «Готово · отличное · без следов» / «Утиль». */
+export const wipeText = (it: DailyItem): string => {
+  if (!it.wipe_result) return "";
+  if (it.wipe_result === "scrap") return "Утиль";
+  const look = LOOK_TITLES[it.wipe_look || ""];
+  const tr = it.wipe_traces === "used" ? "со следами" : it.wipe_traces === "none" ? "без следов" : "";
+  return ["Готово", look?.toLowerCase(), tr].filter(Boolean).join(" · ");
+};
+
+export type WipeStatus = "ready" | "sale" | "repair" | "scrap" | "unchecked" | "done";
+
+export const wipeScan = (code: string, item_id?: number) =>
+  get<{ found: boolean; status?: WipeStatus; item?: DailyItem; code?: string }>(
+    item_id ? `action=wipe_scan&item_id=${item_id}` : `action=wipe_scan&code=${encodeURIComponent(code)}`
+  );
+
+export const wipeFix = (receiving_id: number, item_id: number) =>
+  post<{ ok: boolean; status: WipeStatus; item: DailyItem }>({
+    action: "wipe_fix",
+    receiving_id,
+    item_id,
+    local_time: nowLocal(),
+  });
+
+export const wipeDone = (
+  receiving_id: number,
+  item_id: number,
+  result: "sale" | "scrap",
+  look?: string,
+  traces?: string
+) =>
+  post<{ ok: boolean; counters: Counters }>({
+    action: "wipe_done",
+    receiving_id,
+    item_id,
+    result,
+    look,
+    traces,
+    local_time: nowLocal(),
+  });
+
+export const wipeUndo = (receiving_id: number, item_id: number) =>
+  post<{ ok: boolean; counters: Counters }>({
+    action: "wipe_undo",
+    receiving_id,
+    item_id,
+    local_time: nowLocal(),
+  });
 
 /** Куда мастер отправил товар. Отгрузки тут нет: она списание, а не склад. */
 export const OUTCOME_WAREHOUSE: Record<string, string> = {

@@ -25,13 +25,21 @@ const Line = ({
   <div className="flex items-baseline gap-2 text-xs">
     <Icon
       name={
-        kind === "check" ? "UserCheck" : kind === "remove" ? "Undo2" : "ArrowRight"
+        kind === "check"
+          ? "UserCheck"
+          : kind === "remove"
+            ? "Undo2"
+            : kind === "wipe" || kind === "fix"
+              ? "Sparkles"
+              : "ArrowRight"
       }
       size={12}
       className={`shrink-0 self-center ${
         kind === "check"
           ? "text-emerald-400"
-          : kind === "remove"
+          : kind === "wipe" || kind === "fix"
+            ? "text-sky-400"
+            : kind === "remove"
             ? "text-muted-foreground"
             : "text-amber-400"
       }`}
@@ -42,6 +50,10 @@ const Line = ({
       {where}
       {kind === "check" && (
         <span className="text-emerald-300/80 font-normal"> (приёмка)</span>
+      )}
+      {kind === "wipe" && <span className="text-sky-300/80 font-normal"> (протирка)</span>}
+      {kind === "fix" && (
+        <span className="text-sky-300/80 font-normal"> (исправлено протиркой)</span>
       )}
     </span>
     <span className="text-muted-foreground ml-auto shrink-0">{when}</span>

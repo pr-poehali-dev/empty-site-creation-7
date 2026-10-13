@@ -2,23 +2,25 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import MoveHistory from "./MoveHistory";
-import { OUTCOME_WAREHOUSE, fmtDuration, isMoved, type DailyItem } from "./dailyApi";
+import { OUTCOME_WAREHOUSE, fmtDuration, isMoved, wipeText, type DailyItem } from "./dailyApi";
 
 interface Props {
   item: DailyItem;
   canRemove: boolean;
   busy: boolean;
   onRemove: (item: DailyItem) => void;
+  /** Приёмка протирки: показываем её итог, рамку расхождения со складом не рисуем. */
+  wipe?: boolean;
 }
 
 /** Строка проверенной позиции. Убрать её может только тот, кому дано право.
  *
  * Оранжевая рамка — товар увели с того склада, куда его отправил мастер.
  * Решение мастера при этом остаётся: счётчики считают его работу, а не склад. */
-const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
+const ItemRow = ({ item, canRemove, busy, onRemove, wipe = false }: Props) => {
   const [confirm, setConfirm] = useState(false);
   const [open, setOpen] = useState(false);
-  const moved = isMoved(item);
+  const moved = !wipe && !item.wipe_result && isMoved(item);
   const planned = OUTCOME_WAREHOUSE[item.check_result || ""];
 
   return (
@@ -50,6 +52,19 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
               Мастер: {planned} → сейчас: {item.warehouse}
             </div>
           )}
+          {item.wipe_result && (
+            <div
+              className={`text-[11px] mt-0.5 ${item.wipe_result === "scrap" ? "text-rose-300" : "text-emerald-300"}`}
+            >
+              {wipe ? "" : `Протирка (${item.wipe_by_name || "—"}): `}
+              {wipeText(item)}
+            </div>
+          )}
+          {item.master_fixed_from && (
+            <div className="text-[11px] text-sky-300 mt-0.5">
+              Исправлено протиркой: было {OUTCOME_WAREHOUSE[item.master_fixed_from] || item.master_fixed_from}
+            </div>
+          )}
         </button>
 
         {open && <MoveHistory item={item} />}
@@ -57,8 +72,9 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
         {confirm && (
           <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.08] p-2">
             <p className="text-xs text-amber-200">
-              Убрать из приёмки? Товар вернётся в общий пул, его можно будет
-              принять заново.
+              {wipe
+                ? "Отменить итог протирки? Товар снова будет на складе «Протирка»."
+                : "Убрать из приёмки? Товар вернётся в общий пул, его можно будет принять заново."}
             </p>
             <div className="flex gap-2 mt-2">
               <Button
@@ -88,7 +104,7 @@ const ItemRow = ({ item, canRemove, busy, onRemove }: Props) => {
           variant="ghost"
           size="sm"
           className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-rose-300"
-          title="Убрать из приёмки"
+          title={wipe ? "Отменить итог протирки" : "Убрать из приёмки"}
           onClick={() => setConfirm(true)}
         >
           <Icon name="Trash2" size={15} />

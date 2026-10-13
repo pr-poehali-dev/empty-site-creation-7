@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
-import type { DailyItem } from "./dailyApi";
+import { wipeText, type DailyItem } from "./dailyApi";
 
 interface Props {
   item: DailyItem;
@@ -17,7 +17,13 @@ const LABELS: Record<string, { text: string; cls: string }> = {
 
 /** Тапнул не ту кнопку — откат последнего, чтобы мастер не искал единицу заново. */
 const LastCheck = ({ item, busy, onUndo }: Props) => {
-  const label = LABELS[item.check_result || ""] || {
+  const label = (item.wipe_result
+    ? {
+        text: wipeText(item),
+        cls: item.wipe_result === "scrap" ? "text-rose-300" : "text-emerald-300",
+      }
+    : null) ||
+    LABELS[item.check_result || ""] || {
     text: "Записано",
     cls: "text-foreground",
   };

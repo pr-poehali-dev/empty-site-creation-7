@@ -222,6 +222,8 @@ def collect(cur, params):
     )
     by = {r['r']: int(r['n']) for r in cur.fetchall()}
     total = sum(by.values())
+    cur.execute(f"SELECT COUNT(*) AS n FROM receiving_items WHERE {where} AND master_fixed_from IS NOT NULL")
+    fixed = int(cur.fetchone()['n'])
     split = shares({o: by.get(o, 0) for o in OUTCOMES}, total)
 
     tech = "COALESCE(NULLIF(btrim(tech_name),''),'без наименования')"
@@ -288,6 +290,7 @@ def collect(cur, params):
         'date_to': date_to,
         'master': master,
         'total': total,
+        'fixed': fixed,
         'split': split,
         'checked': checked,
         'warehouses': warehouses,

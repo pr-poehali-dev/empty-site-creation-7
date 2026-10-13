@@ -13,6 +13,7 @@ import LastCheck from "./receiving-daily/LastCheck";
 import PastReceivings from "./receiving-daily/PastReceivings";
 import SearchBox from "./receiving-daily/SearchBox";
 import Stopwatch, { STOPWATCH_KEY, stopwatchOn } from "./receiving-daily/Stopwatch";
+import WipeDialog from "./receiving-daily/WipeDialog";
 import {
   KIND_TITLES,
   closeReceiving,
@@ -25,6 +26,10 @@ import {
   removeItem,
   scanCode,
   undoCheck,
+  WIPE_KIND,
+  wipeScan,
+  wipeUndo,
+  type WipeStatus,
   type Counters,
   type DailyItem,
   type Receiving,
@@ -37,6 +42,7 @@ const ReceivingDaily = () => {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const kind = sp.get("kind") || "";
+  const isWipe = kind === WIPE_KIND;
 
   const [stage, setStage] = useState<"loading" | "start" | "work" | "done" | "error">("loading");
   const [starting, setStarting] = useState(false);
@@ -48,6 +54,7 @@ const ReceivingDaily = () => {
   const [counters, setCounters] = useState<Counters>(EMPTY);
   const [items, setItems] = useState<DailyItem[]>([]);
   const [current, setCurrent] = useState<DailyItem | null>(null);
+  const [wipeStatus, setWipeStatus] = useState<WipeStatus>("ready");
   const [last, setLast] = useState<DailyItem | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [notFound, setNotFound] = useState("");
@@ -166,22 +173,38 @@ const ReceivingDaily = () => {
     }
   }, []);
 
-  const takeItem = useCallback((item: DailyItem) => {
+  const takeItem = useCallback((item: DailyItem, status: WipeStatus = "ready") => {
     setNotFound("");
     setResumeFactory(false);
+    setWipeStatus(status);
     setCurrent(item);
     setTakenAt(Date.now());
     // Начало работы над единицей пишем по часам телефона; сбой сети работу не останавливает.
+    // В протирке время идёт только по единице, которую можно протирать.
     const rid = receivingRef.current?.id;
-    if (rid) markTaken(rid, item.id).catch(() => {});
-  }, []);
+    if (rid && (!isWipe || status === "ready" || status === "sale")) markTaken(rid, item.id).catch(() => {});
+  }, [isWipe]);
+
+  /** Выбор вручную в протирке — статус всё равно спрашиваем у сервера. */
+  const pickItem = useCallback(
+    async (item: DailyItem) => {
+      if (!isWipe) return takeItem(item);
+      try {
+        const r = await wipeScan("", item.id);
+        if (r.found && r.item) takeItem(r.item, r.status || "ready");
+      } catch (e) {
+        toast({ title: (e as Error).message, variant: "destructive" });
+      }
+    },
+    [isWipe, takeItem]
+  );
 
   const handleScan = useCallback(
     async (code: string) => {
       try {
-        const r = await scanCode(code);
+        const r = isWipe ? await wipeScan(code) : await scanCode(code);
         if (r.found && r.item) {
-          takeItem(r.item);
+          takeItem(r.item, ("status" in r && r.status) || "ready");
         } else {
           setCurrent(null);
           setNotFound(code);
@@ -190,7 +213,7 @@ const ReceivingDaily = () => {
         toast({ title: (e as Error).message, variant: "destructive" });
       }
     },
-    [takeItem]
+    [takeItem, isWipe]
   );
 
   // Вернулись с камеры, которую открывали из шага заводского кода, —
@@ -238,7 +261,7 @@ const ReceivingDaily = () => {
     if (!last || !receiving) return;
     setUndoing(true);
     try {
-      const r = await undoCheck(last.id, receiving.id);
+      const r = isWipe ? await wipeUndo(receiving.id, last.id) : await undoCheck(last.id, receiving.id);
       setCounters(r.counters);
       setLast(null);
       if (listOpen) refresh(receiving.id);
@@ -254,7 +277,7 @@ const ReceivingDaily = () => {
     if (!receiving) return;
     setRemovingId(item.id);
     try {
-      const r = await removeItem(item.id, receiving.id);
+      const r = isWipe ? await wipeUndo(receiving.id, item.id) : await removeItem(item.id, receiving.id);
       setCounters(r.counters);
       // Убрали ту, что висит в «последней проверке» — убираем и оттуда.
       setLast((p) => (p?.id === item.id ? null : p));
@@ -328,12 +351,17 @@ const ReceivingDaily = () => {
   }
 
   if (stage === "done") {
-    const rows = [
-      { label: "На продажу", n: finished.sale, color: "text-emerald-400" },
-      { label: "На протирку", n: finished.wipe, color: "text-sky-400" },
-      { label: "Под ремонт", n: finished.repair, color: "text-amber-400" },
-      { label: "В утиль", n: finished.scrap, color: "text-rose-400" },
-    ];
+    const rows = isWipe
+      ? [
+          { label: "Готово", n: finished.sale, color: "text-emerald-400" },
+          { label: "Утиль", n: finished.scrap, color: "text-rose-400" },
+        ]
+      : [
+          { label: "На продажу", n: finished.sale, color: "text-emerald-400" },
+          { label: "На протирку", n: finished.wipe, color: "text-sky-400" },
+          { label: "Под ремонт", n: finished.repair, color: "text-amber-400" },
+          { label: "В утиль", n: finished.scrap, color: "text-rose-400" },
+        ];
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="w-full max-w-sm rounded-xl border border-white/[0.08] bg-card p-6">
@@ -342,7 +370,7 @@ const ReceivingDaily = () => {
           </div>
           <p className="font-semibold text-center mb-1">Приёмка закрыта</p>
           <p className="text-sm text-muted-foreground text-center mb-4">
-            {title} · проверено {finished.total} шт.
+            {title} · {isWipe ? "обработано" : "проверено"} {finished.total} шт.
           </p>
           <div className="rounded-lg bg-white/[0.03] divide-y divide-white/[0.06] mb-5">
             {rows.map((r) => (
@@ -392,7 +420,7 @@ const ReceivingDaily = () => {
               {receiving
                 ? `№${receiving.id} · ${receivingDate(receiving.work_date)}${receivingTimes(receiving).start ? ` · начало ${receivingTimes(receiving).start}` : ""}${receiving.employee_name ? ` · ${receiving.employee_name}` : ""} · `
                 : ""}
-              Проверено: {counters.total}
+              {isWipe ? "Обработано" : "Проверено"}: {counters.total}
             </p>
           </div>
           <Button
@@ -441,7 +469,7 @@ const ReceivingDaily = () => {
           </button>
         </div>
 
-        <SearchBox onPick={takeItem} onCameraCode={handleScan} />
+        <SearchBox onPick={pickItem} onCameraCode={handleScan} />
 
         {notFound && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-4">
@@ -474,6 +502,7 @@ const ReceivingDaily = () => {
         )}
 
         <DailyCounters
+          wipe={isWipe}
           counters={counters}
           active={result}
           onPick={(k) => {
@@ -495,8 +524,10 @@ const ReceivingDaily = () => {
             <Icon name="List" size={16} className="text-muted-foreground" />
             <span className="text-sm font-medium flex-1">
               {result
-                ? `${counterTitle(result)}: ${counters[result] ?? 0}`
-                : "Проверено в этой приёмке"}
+                ? `${counterTitle(result, isWipe)}: ${counters[result] ?? 0}`
+                : isWipe
+                  ? "Обработано в этой приёмке"
+                  : "Проверено в этой приёмке"}
             </span>
             {result ? (
               <span
@@ -524,14 +555,15 @@ const ReceivingDaily = () => {
             <div className="border-t border-white/[0.06] max-h-80 overflow-y-auto p-2 space-y-2">
               {items.length === 0 ? (
                 <p className="px-4 py-4 text-sm text-muted-foreground text-center">
-                  Пока ничего не проверено
+                  {isWipe ? "Пока ничего не обработано" : "Пока ничего не проверено"}
                 </p>
               ) : (
                 items.map((it) => (
                   <ItemRow
                     key={it.id}
                     item={it}
-                    canRemove={canRemove}
+                    wipe={isWipe}
+                    canRemove={isWipe || canRemove}
                     busy={removingId === it.id}
                     onRemove={removeFromReceiving}
                   />
@@ -558,7 +590,17 @@ const ReceivingDaily = () => {
 
       {current && swOn && takenAt > 0 && <Stopwatch since={takenAt} />}
 
-      {current && (
+      {current && isWipe && receiving && (
+        <WipeDialog
+          item={current}
+          status={wipeStatus}
+          receivingId={receiving.id}
+          onDone={afterCheck}
+          onClose={() => setCurrent(null)}
+        />
+      )}
+
+      {current && !isWipe && (
         <CheckDialog
           item={current}
           getReceivingId={ensureReceiving}
