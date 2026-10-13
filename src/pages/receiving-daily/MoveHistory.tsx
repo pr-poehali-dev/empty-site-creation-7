@@ -31,7 +31,9 @@ const Line = ({
             ? "Undo2"
             : kind === "wipe" || kind === "fix"
               ? "Sparkles"
-              : "ArrowRight"
+              : kind === "fixcheck" || kind === "wipefix"
+                ? "PencilLine"
+                : "ArrowRight"
       }
       size={12}
       className={`shrink-0 self-center ${
@@ -39,6 +41,8 @@ const Line = ({
           ? "text-emerald-400"
           : kind === "wipe" || kind === "fix"
             ? "text-sky-400"
+            : kind === "fixcheck" || kind === "wipefix"
+              ? "text-yellow-300"
             : kind === "remove"
             ? "text-muted-foreground"
             : "text-amber-400"
@@ -52,6 +56,9 @@ const Line = ({
         <span className="text-emerald-300/80 font-normal"> (приёмка)</span>
       )}
       {kind === "wipe" && <span className="text-sky-300/80 font-normal"> (протирка)</span>}
+      {(kind === "fixcheck" || kind === "wipefix") && (
+        <span className="text-yellow-300/80 font-normal"> (исправление ошибки)</span>
+      )}
       {kind === "fix" && (
         <span className="text-sky-300/80 font-normal"> (исправлено протиркой)</span>
       )}

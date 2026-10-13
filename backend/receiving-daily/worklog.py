@@ -7,7 +7,7 @@ result — выбрал итог, undo — итог отменён или еди
 """
 import re
 
-EVENTS = ('start', 'scan', 'result', 'undo', 'end')
+EVENTS = ('start', 'scan', 'result', 'undo', 'end', 'fix_on', 'fix_off', 'fix_scan', 'fix_result')
 
 
 def _esc(s):

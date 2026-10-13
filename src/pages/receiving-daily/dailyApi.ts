@@ -50,6 +50,11 @@ export interface DailyItem {
   master_fixed_from?: string | null;
   master_fixed_by_name?: string | null;
   master_fixed_at?: string | null;
+  /** Исправлено в режиме «Исправление ошибки»: итог мастера / итог протирки. */
+  fixed_at?: string | null;
+  fixed_local?: string | null;
+  fixed_by_name?: string | null;
+  wipe_fixed_at?: string | null;
 }
 
 export const WIPE_KIND = "kind_plain";
@@ -77,7 +82,7 @@ export const wipeText = (it: DailyItem): string => {
 export type WipeStatus = "ready" | "sale" | "repair" | "scrap" | "unchecked" | "done";
 
 export const wipeScan = (code: string, item_id?: number) =>
-  get<{ found: boolean; status?: WipeStatus; item?: DailyItem; code?: string }>(
+  get<{ found: boolean; status?: WipeStatus; item?: DailyItem; code?: string; can_fix?: boolean }>(
     item_id ? `action=wipe_scan&item_id=${item_id}` : `action=wipe_scan&code=${encodeURIComponent(code)}`
   );
 
@@ -169,6 +174,9 @@ export interface Receiving {
   closed_local?: string | null;
   /** Время последнего итога с телефона — конец, если «Закончить» не нажали. */
   last_result_local?: string | null;
+  /** Исправлений в приёмке и секунд в режиме исправления. */
+  fix_count?: number;
+  fix_sec?: number;
 }
 
 const hhmm = (local?: string | null, server?: string | null): string => {
@@ -327,15 +335,39 @@ export const closeReceiving = (id: number) =>
   post<{ ok: boolean; deleted?: boolean }>({ action: "close", id, local_time: nowLocal() });
 
 /** Взял единицу в работу — начало отсчёта времени по ней. */
-export const markTaken = (receiving_id: number, item_id: number) =>
-  post<{ ok: boolean }>({ action: "mark", receiving_id, item_id, local_time: nowLocal() });
+export const markTaken = (receiving_id: number, item_id: number, fix = false) =>
+  post<{ ok: boolean }>({ action: "mark", receiving_id, item_id, fix, local_time: nowLocal() });
+
+/** Включение и выключение режима «Исправление ошибки» — в ленту времени. */
+export const setFixMode = (receiving_id: number, on: boolean) =>
+  post<{ ok: boolean }>({ action: "fix_mode", receiving_id, on, local_time: nowLocal() });
+
+export const fixCheck = (payload: CheckPayload) =>
+  post<{ ok: boolean; warehouse: string }>({ action: "fix_check", ...payload, local_time: nowLocal() });
+
+export const fixWipe = (
+  receiving_id: number,
+  item_id: number,
+  result: "sale" | "scrap",
+  look?: string,
+  traces?: string
+) =>
+  post<{ ok: boolean }>({
+    action: "fix_wipe",
+    receiving_id,
+    item_id,
+    result,
+    look,
+    traces,
+    local_time: nowLocal(),
+  });
 
 /** Удалить можно только пустую закрытую и только свою — решает сервер. */
 export const deleteReceiving = (id: number) =>
   post<{ ok: boolean; deleted: number }>({ action: "delete", id });
 
 export const scanCode = (code: string) =>
-  get<{ found: boolean; item?: DailyItem; code?: string }>(
+  get<{ found: boolean; item?: DailyItem; code?: string; can_fix?: boolean }>(
     `action=scan&code=${encodeURIComponent(code)}`
   );
 

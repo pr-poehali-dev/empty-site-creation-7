@@ -6,6 +6,7 @@ import {
   LOOK_TITLES,
   OUTCOME_WAREHOUSE,
   TRACE_TITLES,
+  fixWipe,
   wipeDone,
   wipeFix,
   type Counters,
@@ -19,6 +20,9 @@ interface Props {
   receivingId: number;
   onDone: (counters: Counters, item: DailyItem) => void;
   onClose: () => void;
+  /** Режим «Исправление ошибки»: новый итог по уже обработанной единице. */
+  fix?: boolean;
+  onFixed?: () => void;
 }
 
 const dt = (v?: string | null) =>
@@ -65,9 +69,18 @@ const Big = ({
 );
 
 /** Окно протирки: что делать с единицей решает решение мастера, а не склад. */
-const WipeDialog = ({ item: start, status: startStatus, receivingId, onDone, onClose }: Props) => {
+const WipeDialog = ({
+  item: start,
+  status: startStatus,
+  receivingId,
+  onDone,
+  onClose,
+  fix = false,
+  onFixed,
+}: Props) => {
   const [item, setItem] = useState(start);
-  const [status, setStatus] = useState<WipeStatus>(startStatus);
+  // В исправлении обработанная единица идёт по обычным шагам «Готово/Утиль».
+  const [status, setStatus] = useState<WipeStatus>(fix && startStatus === "done" ? "ready" : startStatus);
   const [step, setStep] = useState<"choose" | "look" | "traces">("choose");
   const [look, setLook] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,6 +101,17 @@ const WipeDialog = ({ item: start, status: startStatus, receivingId, onDone, onC
 
   const save = async (result: "sale" | "scrap", traces?: string) => {
     setBusy(true);
+    if (fix) {
+      try {
+        await fixWipe(receivingId, item.id, result, look || undefined, traces);
+        toast({ title: "Итог исправлен" });
+        onFixed?.();
+      } catch (e) {
+        toast({ title: (e as Error).message, variant: "destructive" });
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const r = await wipeDone(receivingId, item.id, result, look || undefined, traces);
       onDone(r.counters, {
@@ -106,7 +130,16 @@ const WipeDialog = ({ item: start, status: startStatus, receivingId, onDone, onC
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="w-full sm:max-w-md bg-card border-t sm:border border-white/[0.1] sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto">
+      <div
+        className={`w-full sm:max-w-md bg-card sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto ${
+          fix ? "border-4 border-amber-400" : "border-t sm:border border-white/[0.1]"
+        }`}
+      >
+        {fix && (
+          <div className="bg-amber-400 text-amber-950 text-center text-sm font-bold py-1.5">
+            ИСПРАВЛЕНИЕ ОШИБКИ
+          </div>
+        )}
         <div className="px-4 py-3 border-b border-white/[0.08] flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="text-[13px] leading-4 break-words">{item.tech_name}</div>
@@ -193,6 +226,20 @@ const WipeDialog = ({ item: start, status: startStatus, receivingId, onDone, onC
 
           {status === "ready" && step === "choose" && (
             <>
+              {fix && item.wipe_result && (
+                <div className="rounded-lg bg-amber-500/15 border border-amber-500/30 p-2.5 text-xs text-amber-100">
+                  Сейчас: {item.wipe_by_name || "—"}
+                  {item.wipe_local || item.wipe_at ? `, ${dt(item.wipe_local || item.wipe_at)}` : ""} —{" "}
+                  <b>
+                    {item.wipe_result === "scrap"
+                      ? "Утиль"
+                      : `Готово, ${(LOOK_TITLES[item.wipe_look || ""] || "").toLowerCase()}, ${(
+                          TRACE_TITLES[item.wipe_traces || ""] || ""
+                        ).toLowerCase()}`}
+                  </b>
+                  . Выберите заново — прежний итог сохранится в истории.
+                </div>
+              )}
               <div className="text-xs text-muted-foreground">
                 {master(item)}, отправил {OUT_TEXT[item.check_result || "wipe"]}
                 {item.master_fixed_from

@@ -7,6 +7,7 @@ from psycopg2.extras import RealDictCursor
 
 from worklog import last_results, log_event, work_seconds
 import wipe
+import fixes
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -38,7 +39,8 @@ ITEM_COLS = (
     'has_package, invoice_weight, factory_barcode, defect_confirmed, new_defect, '
     'new_defect_text, check_result, warehouse, checked_at, checked_by_name, daily_receiving_id, '
     'wipe_result, wipe_look, wipe_traces, wipe_by_name, wipe_at, wipe_local, wipe_receiving_id, '
-    'master_fixed_from, master_fixed_by_name, master_fixed_at'
+    'master_fixed_from, master_fixed_by_name, master_fixed_at, fixed_at, fixed_local, fixed_by_name, '
+    'wipe_fixed_at'
 )
 
 
@@ -267,6 +269,7 @@ def checked_list(cur, receiving_id, limit=30, q='', result='', kind=''):
 
 def state(cur, receiving, limit=30, q='', result=''):
     receiving['last_result_local'] = last_results(cur, [receiving['id']]).get(int(receiving['id']))
+    receiving['fix_count'], receiving['fix_sec'] = fixes.fix_summary(cur, receiving['id'])
     return {
         'receiving': receiving,
         'counters': counters(cur, receiving['id'], receiving.get('kind')),
@@ -383,7 +386,7 @@ def act_mark(cur, actor, body):
     row = cur.fetchone()
     if not row or row['closed']:
         return None, 'Приёмка закрыта или чужая'
-    log_event(cur, actor, rid, 'scan', item_id, body.get('local_time'))
+    log_event(cur, actor, rid, 'fix_scan' if body.get('fix') else 'scan', item_id, body.get('local_time'))
     return {'ok': True}, None
 
 
@@ -421,7 +424,7 @@ def act_delete(cur, actor, body):
     return {'ok': True, 'deleted': rid}, None
 
 
-def act_scan(cur, params):
+def act_scan(cur, params, actor=None):
     """Выстрел сканера: только штрихкод поставщика — он один индивидуален.
     Заводской код общий на всю позицию, по нему вернулась бы случайная единица."""
     code = (params.get('code') or '').strip()
@@ -435,7 +438,10 @@ def act_scan(cur, params):
     row = cur.fetchone()
     if not row:
         return {'found': False, 'code': code}, None
-    return {'found': True, 'item': dict(row)}, None
+    item = dict(row)
+    cur.execute(f"SELECT checked_by FROM receiving_items WHERE id={int(item['id'])}")
+    item['checked_by'] = cur.fetchone()['checked_by']
+    return {'found': True, 'item': item, 'can_fix': fixes.can_fix_check(actor, item) if actor else False}, None
 
 
 def act_search(cur, params):
@@ -721,7 +727,7 @@ def act_wipe_guard(actor, perms):
 
 
 def handler(event: dict, context) -> dict:
-    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую. Раздел «без проверки» — протирка: скан, исправление решения мастера СГП→Протирка, итог «Готово» (внешний вид, следы) или «Утиль», отмена итога. Ведёт ленту рабочего времени сотрудника: начало, взял единицу, итог, отмена, конец — по часам телефона."""
+    """Дневная приёмка: открыть или продолжить сессию за день, сканировать товар, искать по штрихкоду и заказ-наряду, записывать исход проверки с упаковкой и весом, проставлять заводской штрихкод по всей модели, отменять последнее действие, считать исходы, закрывать приёмку и удалять пустую закрытую. Раздел «без проверки» — протирка: скан, исправление решения мастера СГП→Протирка, итог «Готово» (внешний вид, следы) или «Утиль», отмена итога. Режим «Исправление ошибки»: новый итог по своему уже обработанному товару (владелец — любому), с записью «было → стало». Ведёт ленту рабочего времени сотрудника: начало, взял единицу, итог, отмена, конец — по часам телефона."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -768,7 +774,7 @@ def handler(event: dict, context) -> dict:
         handlers = {
             'current': lambda: act_current(cur, actor, params),
             'state': lambda: act_state(cur, actor, params),
-            'scan': lambda: act_scan(cur, params),
+            'scan': lambda: act_scan(cur, params, actor),
             'search': lambda: act_search(cur, params),
             'list': lambda: act_list(cur, actor, params),
             'open': lambda: act_open(cur, actor, body),
@@ -779,7 +785,10 @@ def handler(event: dict, context) -> dict:
             'factory': lambda: act_factory(cur, body),
             'undo': lambda: act_undo(cur, actor, body),
             'mark': lambda: act_mark(cur, actor, body),
-            'wipe_scan': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_scan(cur, ITEM_COLS, params),
+            'fix_mode': lambda: fixes.act_fix_mode(cur, actor, _owner_filter(actor), body),
+            'fix_check': lambda: fixes.act_fix_check(cur, ITEM_COLS, actor, _owner_filter(actor), body, _pick_weight),
+            'fix_wipe': lambda: act_wipe_guard(actor, perms) or fixes.act_fix_wipe(cur, ITEM_COLS, actor, _owner_filter(actor), body),
+            'wipe_scan': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_scan(cur, ITEM_COLS, params, actor),
             'wipe_fix': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_fix(cur, ITEM_COLS, actor, _owner_filter(actor), body),
             'wipe_done': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_done(cur, ITEM_COLS, actor, _owner_filter(actor), body),
             'wipe_undo': lambda: act_wipe_guard(actor, perms) or wipe.act_wipe_undo(cur, actor, _owner_filter(actor), body),

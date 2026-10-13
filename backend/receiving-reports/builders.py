@@ -86,11 +86,12 @@ def build_xlsx(data, meta):
         a.border = Border(left=Side(style='thick', color=color), right=thin, top=thin, bottom=thin)
         b.font = Font(bold=True, color='333333')
         r += 1
-    if data.get('fixed'):
-        ws.cell(r, 1, 'Исправлено протиркой (было СГП)').alignment = Alignment(indent=2)
-        c = ws.cell(r, 2, data['fixed'])
-        c.alignment = Alignment(horizontal='center')
-        r += 1
+    for key, label in (('fixed', 'Исправлено протиркой (было СГП)'), ('fixed_self', 'Исправлено самим мастером')):
+        if data.get(key):
+            ws.cell(r, 1, label).alignment = Alignment(indent=2)
+            c = ws.cell(r, 2, data[key])
+            c.alignment = Alignment(horizontal='center')
+            r += 1
     r += 1
 
     ws.cell(r, 1, '2. Проверенный товар за период').font = sec_font
@@ -292,6 +293,8 @@ def build_pdf(data, meta):
     story += [total_box, indent]
     if data.get('fixed'):
         story.append(p(f"Исправлено протиркой (было СГП): {data['fixed']}", 'meta'))
+    if data.get('fixed_self'):
+        story.append(p(f"Исправлено самим мастером: {data['fixed_self']}", 'meta'))
     story.append(p('2. Проверенный товар за период', 'sec'))
 
     num_w = 18 * mm

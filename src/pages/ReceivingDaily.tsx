@@ -26,6 +26,8 @@ import {
   removeItem,
   scanCode,
   undoCheck,
+  fmtDuration,
+  setFixMode,
   WIPE_KIND,
   wipeScan,
   wipeUndo,
@@ -55,6 +57,11 @@ const ReceivingDaily = () => {
   const [items, setItems] = useState<DailyItem[]>([]);
   const [current, setCurrent] = useState<DailyItem | null>(null);
   const [wipeStatus, setWipeStatus] = useState<WipeStatus>("ready");
+  const [fixOn, setFixOn] = useState(false);
+  const fixRef = useRef(false);
+  fixRef.current = fixOn;
+  /** Окно открыто в режиме исправления (режим мог сам выключиться по скану). */
+  const [fixItem, setFixItem] = useState(false);
   const [last, setLast] = useState<DailyItem | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [notFound, setNotFound] = useState("");
@@ -173,25 +180,56 @@ const ReceivingDaily = () => {
     }
   }, []);
 
-  const takeItem = useCallback((item: DailyItem, status: WipeStatus = "ready") => {
-    setNotFound("");
-    setResumeFactory(false);
-    setWipeStatus(status);
-    setCurrent(item);
-    setTakenAt(Date.now());
-    // Начало работы над единицей пишем по часам телефона; сбой сети работу не останавливает.
-    // В протирке время идёт только по единице, которую можно протирать.
+  const switchFix = useCallback((on: boolean) => {
+    setFixOn(on);
+    fixRef.current = on;
     const rid = receivingRef.current?.id;
-    if (rid && (!isWipe || status === "ready" || status === "sale")) markTaken(rid, item.id).catch(() => {});
-  }, [isWipe]);
+    if (rid) setFixMode(rid, on).catch(() => {});
+  }, []);
+
+  const takeItem = useCallback(
+    (item: DailyItem, status: WipeStatus = "ready", canFix = false) => {
+      setNotFound("");
+      setResumeFactory(false);
+      // В режиме исправления: товар уже обработан — правим; впервые здесь — режим выключается сам.
+      let fix = false;
+      if (fixRef.current) {
+        const processed = isWipe ? status === "done" : Boolean(item.check_result);
+        if (!processed) {
+          switchFix(false);
+          toast({ title: "Товар здесь впервые — режим исправления выключен" });
+        } else if (!canFix) {
+          toast({ title: "Исправлять можно только свои итоги", variant: "destructive" });
+          return;
+        } else {
+          fix = true;
+        }
+      }
+      setFixItem(fix);
+      setWipeStatus(status);
+      setCurrent(item);
+      setTakenAt(Date.now());
+      // Начало работы над единицей пишем по часам телефона; сбой сети работу не останавливает.
+      // В протирке время идёт только по единице, которую можно протирать.
+      const rid = receivingRef.current?.id;
+      if (rid && (fix || !isWipe || status === "ready" || status === "sale")) {
+        markTaken(rid, item.id, fix).catch(() => {});
+      }
+    },
+    [isWipe, switchFix]
+  );
 
   /** Выбор вручную в протирке — статус всё равно спрашиваем у сервера. */
   const pickItem = useCallback(
     async (item: DailyItem) => {
-      if (!isWipe) return takeItem(item);
+      if (!isWipe) {
+        if (!fixRef.current) return takeItem(item);
+        const r = await scanCode(item.supplier_barcode).catch(() => null);
+        return takeItem(r?.item || item, "ready", Boolean(r?.can_fix));
+      }
       try {
         const r = await wipeScan("", item.id);
-        if (r.found && r.item) takeItem(r.item, r.status || "ready");
+        if (r.found && r.item) takeItem(r.item, r.status || "ready", Boolean(r.can_fix));
       } catch (e) {
         toast({ title: (e as Error).message, variant: "destructive" });
       }
@@ -204,7 +242,7 @@ const ReceivingDaily = () => {
       try {
         const r = isWipe ? await wipeScan(code) : await scanCode(code);
         if (r.found && r.item) {
-          takeItem(r.item, ("status" in r && r.status) || "ready");
+          takeItem(r.item, ("status" in r && r.status) || "ready", Boolean(r.can_fix));
         } else {
           setCurrent(null);
           setNotFound(code);
@@ -250,6 +288,20 @@ const ReceivingDaily = () => {
     onScan: handleScan,
   });
 
+  const afterFix = () => {
+    setCurrent(null);
+    setFixItem(false);
+    if (receivingRef.current) {
+      loadState(receivingRef.current.id, resultRef.current)
+        .then((d) => {
+          setCounters(d.counters);
+          setItems(d.items);
+          setReceiving(d.receiving);
+        })
+        .catch(() => {});
+    }
+  };
+
   const afterCheck = (c: Counters, item: DailyItem) => {
     setCounters(c);
     setCurrent(null);
@@ -294,6 +346,7 @@ const ReceivingDaily = () => {
     if (!receiving) return;
     setClosing(true);
     try {
+      if (fixRef.current) switchFix(false);
       const res = await closeReceiving(receiving.id);
       if (res.deleted) {
         setAskFinish(false);
@@ -408,8 +461,14 @@ const ReceivingDaily = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className={`min-h-screen flex flex-col ${fixOn ? "bg-amber-400/25" : ""}`}>
       <header className="border-b border-white/[0.08] bg-card flex-shrink-0 sticky top-0 z-10">
+        {fixOn && (
+          <div className="bg-amber-400 text-amber-950 text-center text-sm font-bold py-1.5 flex items-center justify-center gap-2">
+            <Icon name="PencilLine" size={16} />
+            РЕЖИМ ИСПРАВЛЕНИЯ ОШИБКИ
+          </div>
+        )}
         <div className="max-w-2xl mx-auto flex items-center gap-2 px-4 py-3">
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={goBack}>
             <Icon name="ArrowLeft" size={18} />
@@ -468,6 +527,25 @@ const ReceivingDaily = () => {
             Секундомер
           </button>
         </div>
+
+        <button
+          onClick={() => switchFix(!fixOn)}
+          disabled={!receiving}
+          className={`w-full rounded-xl border-2 px-3 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+            fixOn
+              ? "border-amber-400 bg-amber-400 text-amber-950 shadow-inner"
+              : "border-amber-400/40 text-amber-300 hover:bg-amber-400/10"
+          }`}
+        >
+          <Icon name="PencilLine" size={16} />
+          {fixOn ? "Исправление ошибки — включено (нажмите, чтобы выйти)" : "Исправление ошибки"}
+        </button>
+        {receiving && (receiving.fix_count ?? 0) > 0 && (
+          <div className="text-xs text-amber-300 -mt-2 px-1">
+            Исправлений: {receiving.fix_count}
+            {receiving.fix_sec ? ` · ${fmtDuration(receiving.fix_sec)}` : ""}
+          </div>
+        )}
 
         <SearchBox onPick={pickItem} onCameraCode={handleScan} />
 
@@ -597,6 +675,8 @@ const ReceivingDaily = () => {
           receivingId={receiving.id}
           onDone={afterCheck}
           onClose={() => setCurrent(null)}
+          fix={fixItem}
+          onFixed={afterFix}
         />
       )}
 
@@ -608,6 +688,8 @@ const ReceivingDaily = () => {
           onClose={() => setCurrent(null)}
           resumeFactory={resumeFactory}
           onCameraOpen={rememberFactory}
+          fix={fixItem}
+          onFixed={afterFix}
         />
       )}
     </div>

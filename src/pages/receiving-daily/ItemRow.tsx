@@ -60,6 +60,13 @@ const ItemRow = ({ item, canRemove, busy, onRemove, wipe = false }: Props) => {
               {wipeText(item)}
             </div>
           )}
+          {(item.fixed_at || item.wipe_fixed_at) && (
+            <div className="text-[11px] text-yellow-300 mt-0.5">
+              <Icon name="PencilLine" size={11} className="inline -mt-0.5 mr-0.5" />
+              Исправлено
+              {item.fixed_by_name && item.fixed_at ? ` (${item.fixed_by_name})` : ""}
+            </div>
+          )}
           {item.master_fixed_from && (
             <div className="text-[11px] text-sky-300 mt-0.5">
               Исправлено протиркой: было {OUTCOME_WAREHOUSE[item.master_fixed_from] || item.master_fixed_from}

@@ -65,7 +65,7 @@ def _item(cur, cols, where):
     return dict(row) if row else None
 
 
-def act_wipe_scan(cur, cols, params):
+def act_wipe_scan(cur, cols, params, actor=None):
     code = (params.get('code') or '').strip()
     item_id = int(params.get('item_id') or 0)
     if item_id:
@@ -76,7 +76,10 @@ def act_wipe_scan(cur, cols, params):
         return {'found': False}, None
     if not item:
         return {'found': False, 'code': code}, None
-    return {'found': True, 'status': status_of(item), 'item': item}, None
+    cur.execute(f"SELECT wipe_by FROM receiving_items WHERE id={int(item['id'])}")
+    wb = cur.fetchone()['wipe_by']
+    mine = bool(actor and (actor['is_owner'] or (actor.get('manager_id') and wb == actor['manager_id'])))
+    return {'found': True, 'status': status_of(item), 'item': item, 'can_fix': mine}, None
 
 
 def act_wipe_fix(cur, cols, actor, owner_filter, body):

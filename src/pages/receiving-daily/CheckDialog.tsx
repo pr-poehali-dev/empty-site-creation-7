@@ -6,6 +6,8 @@ import CheckFactoryStep from "./CheckFactoryStep";
 import CheckOutcomeStep from "./CheckOutcomeStep";
 import CheckPackageStep from "./CheckPackageStep";
 import {
+  fixCheck,
+  wipeText,
   saveCheck,
   saveFactoryCode,
   type Counters,
@@ -21,6 +23,9 @@ interface Props {
   onClose: () => void;
   resumeFactory?: boolean;
   onCameraOpen?: () => void;
+  /** Режим «Исправление ошибки»: новый итог по уже проверенной единице. */
+  fix?: boolean;
+  onFixed?: () => void;
 }
 
 type Stage = "package" | "factory" | "outcome";
@@ -40,6 +45,8 @@ const CheckDialog = ({
   onClose,
   resumeFactory,
   onCameraOpen,
+  fix = false,
+  onFixed,
 }: Props) => {
   const noFactoryYet = !item.factory_barcode?.trim();
   const [stage, setStage] = useState<Stage>(resumeFactory ? "factory" : "package");
@@ -75,6 +82,18 @@ const CheckDialog = ({
     setBusy(true);
     try {
       const receivingId = await getReceivingId();
+      if (fix) {
+        await fixCheck({
+          item_id: item.id,
+          receiving_id: receivingId,
+          outcome,
+          has_package: hasPackage ?? undefined,
+          ...defects,
+        });
+        toast({ title: "Итог исправлен" });
+        onFixed?.();
+        return;
+      }
       const r = await saveCheck({
         item_id: item.id,
         receiving_id: receivingId,
@@ -91,7 +110,16 @@ const CheckDialog = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="w-full sm:max-w-md bg-card border-t sm:border border-white/[0.1] sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto">
+      <div
+        className={`w-full sm:max-w-md bg-card sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto ${
+          fix ? "border-4 border-amber-400" : "border-t sm:border border-white/[0.1]"
+        }`}
+      >
+        {fix && (
+          <div className="bg-amber-400 text-amber-950 text-center text-sm font-bold py-1.5">
+            ИСПРАВЛЕНИЕ ОШИБКИ
+          </div>
+        )}
         <div className="sticky top-0 bg-card border-b border-white/[0.08] px-4 py-3 flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="text-[11px] text-muted-foreground">
@@ -120,6 +148,14 @@ const CheckDialog = ({
             {item.model && <div className="break-all">Модель: {item.model}</div>}
           </div>
 
+          {fix && item.wipe_result && (
+            <div className="rounded-lg bg-sky-500/15 border border-sky-500/30 p-2.5 text-xs text-sky-100">
+              <Icon name="Sparkles" size={14} className="inline mr-1 -mt-0.5" />
+              Протирка уже обработала{item.wipe_by_name ? ` (${item.wipe_by_name})` : ""}:{" "}
+              <b>{wipeText(item)}</b>. Её итог и склад останутся, изменится только ваше решение.
+            </div>
+          )}
+
           {item.check_result && (
             <div className="rounded-lg bg-amber-500/15 border border-amber-500/30 p-2.5 text-xs text-amber-200">
               <Icon name="TriangleAlert" size={14} className="inline mr-1 -mt-0.5" />
@@ -131,7 +167,7 @@ const CheckDialog = ({
                   <b className="font-semibold text-amber-100">{PREV_RESULT[item.check_result]}</b>
                 </>
               )}
-              . Новый выбор перезапишет прежний результат.
+              {fix ? ". Выберите новый итог — прежний сохранится в истории." : ". Новый выбор перезапишет прежний результат."}
             </div>
           )}
 
