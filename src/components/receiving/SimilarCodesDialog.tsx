@@ -301,26 +301,57 @@ const SimilarCodesDialog = ({
                     <div className="text-xs text-muted-foreground">{unitsText(p.units)}</div>
                   </div>
                 ))}
-                {!transfer ? (
-                  <Button
-                    variant="outline"
-                    className="w-full h-10 border-white/[0.1]"
-                    onClick={() => setTransfer(true)}
-                  >
-                    <Icon name="ArrowRightLeft" size={15} className="mr-1.5" />
-                    Это другой товар — перенести код
-                  </Button>
-                ) : (
-                  <AssignCodePanel
-                    code={code}
-                    place={`${place}_move`}
-                    moveFrom={info.positions}
-                    scannerEnabled={!saving}
-                    onCameraOpen={onCameraOpen}
-                    onConfirmChange={setAssigning}
-                    onDone={(n) => onReplaced(code, n)}
-                  />
-                )}
+                <div
+                  className={`rounded-xl border transition-colors ${
+                    transfer
+                      ? "border-amber-500/50 bg-amber-500/[0.06]"
+                      : "border-white/[0.1] bg-white/[0.02]"
+                  }`}
+                >
+                  {!assigning && (
+                    <button
+                      type="button"
+                      onClick={() => setTransfer((v) => !v)}
+                      aria-expanded={transfer}
+                      className="w-full h-11 px-3 flex items-center gap-2 text-left"
+                    >
+                      <span
+                        className={`flex-1 text-sm ${
+                          transfer ? "text-amber-200" : "text-muted-foreground"
+                        }`}
+                      >
+                        Код записан не на тот товар?
+                      </span>
+                      <Icon
+                        name="ChevronDown"
+                        size={18}
+                        className={`shrink-0 transition-transform duration-200 ${
+                          transfer ? "rotate-180 text-amber-200" : "text-muted-foreground"
+                        }`}
+                      />
+                    </button>
+                  )}
+                  {transfer && (
+                    <div className={`px-3 pb-3 space-y-3 ${assigning ? "pt-3" : ""}`}>
+                      {!assigning && (
+                        <p className="text-xs text-amber-200 flex items-start gap-1.5">
+                          <Icon name="TriangleAlert" size={14} className="shrink-0 mt-0.5" />
+                          Переносите, только если проверили товар физически: код уберётся у
+                          товара выше и перейдёт к выбранному.
+                        </p>
+                      )}
+                      <AssignCodePanel
+                        code={code}
+                        place={`${place}_move`}
+                        moveFrom={info.positions}
+                        scannerEnabled={!saving}
+                        onCameraOpen={onCameraOpen}
+                        onConfirmChange={setAssigning}
+                        onDone={(n) => onReplaced(code, n)}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
