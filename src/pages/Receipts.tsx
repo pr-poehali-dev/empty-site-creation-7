@@ -27,6 +27,7 @@ const ACTIONS = [
   { key: "catalog_edit", icon: "BookOpen", label: "Каталог приёмки" },
   { key: "_stock", icon: "Warehouse", label: "Склады и остатки" },
   { key: "_barcodes", icon: "ScanBarcode", label: "Контроль штрихкодов" },
+  { key: "_counterparties", icon: "Users", label: "Контрагенты" },
   { key: "report_summary", icon: "FileBarChart", label: "Отчёты" },
 ];
 
@@ -49,7 +50,9 @@ const Receipts = () => {
         ? canList
         : a.key === "_barcodes"
           ? isOwner
-          : can(a.key)
+          : a.key === "_counterparties"
+            ? can("cp_see") || can("cp_edit")
+            : can(a.key)
   );
   const goBack = () => {
     if (screen !== "home") {
@@ -82,6 +85,7 @@ const Receipts = () => {
       if (a.key === "upload_files") return navigate("/admin/receiving-upload");
       if (a.key === "_stock") return navigate("/admin/receiving-stock");
       if (a.key === "_barcodes") return navigate("/admin/barcode-control");
+      if (a.key === "_counterparties") return navigate("/admin/receiving-counterparties");
       if (a.key === "report_summary") return navigate("/admin/receiving-reports");
       return navigate("/admin/receiving-catalog");
     },

@@ -1,0 +1,7 @@
+{
+  "tests": [
+    {"name": "Проверка живости", "method": "GET", "path": "/", "expectedStatus": 200, "expectedBody": {"status": "ok"}, "bodyMatcher": "partial"},
+    {"name": "Список без токена закрыт", "method": "GET", "path": "/?action=list", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
+    {"name": "Сохранение без токена нельзя", "method": "POST", "path": "/", "body": {"action": "save", "name": "Тест"}, "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"}
+  ]
+}
