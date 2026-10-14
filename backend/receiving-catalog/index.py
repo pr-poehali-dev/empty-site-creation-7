@@ -122,6 +122,9 @@ def _where(params, extra=''):
         parts.append(
             f"(btrim(COALESCE(factory_barcode,''))='{e}' "
             f"OR btrim(COALESCE(factory_barcode_2,''))='{e}' "
+            f"OR (btrim(COALESCE(product_group,'')), btrim(COALESCE(brand,'')), "
+            f"btrim(COALESCE(model,''))) IN (SELECT product_group, brand, model "
+            f"FROM position_codes WHERE code='{e}') "
             f"OR btrim(COALESCE(supplier_barcode,''))='{e}' "
             f"OR supplier_barcode ILIKE '%{e}%' OR order_number ILIKE '%{e}%')"
         )

@@ -8,6 +8,7 @@ import { saveScanSnapshot, useScanSnapshot } from "@/hooks/useCameraScan";
 import CameraScanButton from "@/components/receiving/CameraScanButton";
 import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
 import { useSimilarCodes } from "@/hooks/useSimilarCodes";
+import { useReceivingPerms } from "@/hooks/useReceivingPerms";
 import MovePanel from "./receiving-stock/MovePanel";
 import ShowMore from "./receiving-stock/ShowMore";
 import StockDirRow from "./receiving-stock/StockDirRow";
@@ -40,6 +41,7 @@ const ReceivingStock = () => {
     query: string;
   }>("stock_search");
   const similar = useSimilarCodes("stock");
+  const { can } = useReceivingPerms();
   const [warehouses, setWarehouses] = useState<{ key: string; name: string }[]>([]);
   const [totals, setTotals] = useState<WarehouseTotal[]>([]);
   const [active, setActive] = useState("");
@@ -206,6 +208,17 @@ const ReceivingStock = () => {
               {active}: {totalOf(active)} шт.
             </p>
           </div>
+          {can("docs_access") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => navigate("/admin/receiving-documents")}
+            >
+              <Icon name="FileText" size={16} className="sm:mr-1" />
+              <span className="hidden sm:inline">Документы</span>
+            </Button>
+          )}
           <Button
             variant={moveOpen ? "default" : "outline"}
             size="sm"

@@ -558,7 +558,15 @@ def act_factory(cur, body):
         f"UPDATE receiving_items SET factory_barcode='{e}' "
         f"WHERE {where} AND (factory_barcode IS NULL OR factory_barcode='') RETURNING id"
     )
-    return {'ok': True, 'updated': len(cur.fetchall()), 'tech_name': tech}, None
+    updated = len(cur.fetchall())
+    if g or b or m:
+        # У позиции может быть несколько заводских кодов — запоминаем и этот.
+        cur.execute(
+            f"INSERT INTO position_codes (code, product_group, brand, model, source) "
+            f"VALUES ('{e}', '{_esc(g)}', '{_esc(b)}', '{_esc(m)}', 'daily') "
+            f"ON CONFLICT DO NOTHING"
+        )
+    return {'ok': True, 'updated': updated, 'tech_name': tech}, None
 
 
 def act_undo(cur, actor, body):

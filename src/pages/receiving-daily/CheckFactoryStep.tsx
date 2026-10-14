@@ -4,11 +4,17 @@ import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 import CameraScanButton from "@/components/receiving/CameraScanButton";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { toast } from "@/hooks/use-toast";
 import {
   CHECKSUM_BAD_TEXT,
+  assignCode,
   checksumState,
   findSimilar,
+  loadCodeInfo,
+  samePosition,
+  type CodeInfo,
   type CodeSummary,
+  type Position,
 } from "@/lib/barcodeFix";
 import type { DailyItem } from "./dailyApi";
 
@@ -24,6 +30,8 @@ interface Warn {
   checksumBad: boolean;
   exists: boolean;
   similar: CodeSummary[];
+  /** Код уже числится за другими товарами — возможно, там его присвоили по ошибке. */
+  others: CodeInfo["positions"];
 }
 
 /**
@@ -36,15 +44,39 @@ const CheckFactoryStep = ({ item, onDone, onSkip, onCameraOpen }: Props) => {
   const [value, setValue] = useState("");
   const [warn, setWarn] = useState<Warn | null>(null);
   const [checking, setChecking] = useState(false);
+  const [moving, setMoving] = useState(false);
+
+  const myPos: Position = {
+    product_group: (item.product_group || "").trim(),
+    brand: (item.brand || "").trim(),
+    model: (item.model || "").trim(),
+  };
+
+  const othersOf = async (code: string) => {
+    try {
+      const info = await loadCodeInfo(code);
+      return info.positions.filter((p) => !samePosition(p, myPos));
+    } catch {
+      return [];
+    }
+  };
 
   const liveBad = checksumState(value) === "bad";
 
-  const fromScanner = (raw: string) => {
+  const fromScanner = async (raw: string) => {
     const code = raw.trim();
-    if (!code) return;
+    if (!code || checking) return;
     if (checksumState(code) === "bad") {
       setValue(code);
-      setWarn({ code, checksumBad: true, exists: false, similar: [] });
+      setWarn({ code, checksumBad: true, exists: false, similar: [], others: [] });
+      return;
+    }
+    setChecking(true);
+    const others = await othersOf(code);
+    setChecking(false);
+    if (others.length > 0) {
+      setValue(code);
+      setWarn({ code, checksumBad: false, exists: true, similar: [], others });
       return;
     }
     onDone(code);
@@ -58,21 +90,40 @@ const CheckFactoryStep = ({ item, onDone, onSkip, onCameraOpen }: Props) => {
     const checksumBad = checksumState(code) === "bad";
     let exists = false;
     let similar: CodeSummary[] = [];
+    let others: CodeInfo["positions"] = [];
     setChecking(true);
     try {
       const r = await findSimilar(code);
       exists = r.exists;
       similar = r.candidates.slice(0, 3);
+      if (exists) {
+        others = await othersOf(code);
+        exists = others.length > 0;
+      }
     } catch {
       /* сеть подвела — сверку с базой пропускаем, контрольное число проверено и так */
     } finally {
       setChecking(false);
     }
     if (checksumBad || exists || similar.length > 0) {
-      setWarn({ code, checksumBad, exists, similar });
+      setWarn({ code, checksumBad, exists, similar, others });
       return;
     }
     onDone(code);
+  };
+
+  const moveHere = async () => {
+    if (!warn) return;
+    setMoving(true);
+    try {
+      await assignCode(warn.code, myPos, warn.others);
+      toast({ title: "Код перенесён на этот товар" });
+      onDone(warn.code);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setMoving(false);
+    }
   };
 
   const edit = (v: string) => {
@@ -134,10 +185,39 @@ const CheckFactoryStep = ({ item, onDone, onSkip, onCameraOpen }: Props) => {
             </p>
           )}
           {warn.exists && (
-            <p className="text-sm text-amber-200 flex items-start gap-1.5">
-              <Icon name="TriangleAlert" size={16} className="shrink-0 mt-0.5" />
-              Такой код уже есть в базе — проверьте, что это та же модель
-            </p>
+            <div className="space-y-1.5">
+              <p className="text-sm text-amber-200 flex items-start gap-1.5">
+                <Icon name="TriangleAlert" size={16} className="shrink-0 mt-0.5" />
+                Такой код уже записан у другого товара:
+              </p>
+              {warn.others.map((o, i) => (
+                <div key={i} className="rounded-lg bg-black/20 px-2.5 py-1.5">
+                  <div className="text-sm break-words">{o.name || "без наименования"}</div>
+                  <div className="text-xs text-muted-foreground">{o.units} шт.</div>
+                </div>
+              ))}
+              {warn.others.length > 0 && (
+                <Button
+                  variant="outline"
+                  className="w-full h-10 border-amber-500/40 text-amber-200"
+                  disabled={moving}
+                  onClick={moveHere}
+                >
+                  {moving ? (
+                    <Icon name="Loader2" size={15} className="animate-spin" />
+                  ) : (
+                    <>
+                      <Icon name="ArrowRightLeft" size={15} className="mr-1.5" />
+                      Там ошибка — перенести код сюда
+                    </>
+                  )}
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Если это и правда одна модель с разными названиями — нажмите «Цифры верны»,
+                код будет у обоих товаров.
+              </p>
+            </div>
           )}
           {warn.similar.length > 0 && (
             <div className="space-y-1.5">

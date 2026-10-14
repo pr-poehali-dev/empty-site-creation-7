@@ -135,10 +135,16 @@ def _stock_where(wh, q):
         where += (
             f" AND (model ILIKE '%{e}%' OR brand ILIKE '%{e}%' "
             f"OR product_group ILIKE '%{e}%' OR supplier_barcode ILIKE '%{e}%' "
-            f"OR order_number ILIKE '%{e}%' OR factory_barcode ILIKE '%{e}%')"
+            f"OR order_number ILIKE '%{e}%' OR factory_barcode ILIKE '%{e}%' "
+            f"OR {POS_KEY} IN (SELECT product_group, brand, model FROM position_codes "
+            f"WHERE code='{_esc(q)}'))"
         )
     return where
 
+
+POS_KEY = (
+    "(btrim(COALESCE(product_group,'')), btrim(COALESCE(brand,'')), btrim(COALESCE(model,'')))"
+)
 
 PAGE = 200
 DIR_SQL = "COALESCE(NULLIF(btrim(direction),''),'')"
@@ -243,7 +249,11 @@ def act_find(cur, allowed, params):
     cur.execute(
         f"SELECT {ITEM_COLS} FROM receiving_items "
         f"WHERE supplier_barcode='{e}' OR factory_barcode='{e}' "
-        f"OR factory_barcode_2='{e}' OR order_number='{e}' LIMIT 1"
+        f"OR factory_barcode_2='{e}' OR order_number='{e}' "
+        f"OR {POS_KEY} IN (SELECT product_group, brand, model FROM position_codes "
+        f"WHERE code='{e}') "
+        f"ORDER BY (supplier_barcode='{e}' OR order_number='{e}') DESC, "
+        f"(warehouse IS NULL), id LIMIT 1"
     )
     row = cur.fetchone()
     if not row:

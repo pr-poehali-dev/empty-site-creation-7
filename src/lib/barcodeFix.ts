@@ -39,6 +39,15 @@ export interface SimilarResult {
   candidates: CodeSummary[];
 }
 
+export interface Position {
+  product_group: string;
+  brand: string;
+  model: string;
+  name?: string;
+  units?: number;
+  codes?: string[];
+}
+
 export interface SupplierLookup {
   found: boolean;
   code: string;
@@ -47,9 +56,22 @@ export interface SupplierLookup {
     name: string;
     tech_name: string;
     order_number: string | null;
+    supplier_barcode: string | null;
+    warehouse: string | null;
     factory_barcode: string;
+    product_group: string;
+    brand: string;
+    model: string;
+    codes: string[];
+    units: number;
   };
   factory?: CodeSummary | null;
+}
+
+export interface CodeInfo {
+  code: string;
+  positions: (Position & { name: string; units: number; codes: string[] })[];
+  checksum: "ok" | "bad" | "na";
 }
 
 export interface FixRow {
@@ -62,6 +84,8 @@ export interface FixRow {
   fixed_at: string;
   reverted_at: string | null;
   reverted_by_name: string | null;
+  from_pos?: Position[] | null;
+  to_pos?: Position[] | null;
 }
 
 const headers = (): Record<string, string> => ({
@@ -90,8 +114,33 @@ async function post<T>(body: Record<string, unknown>): Promise<T> {
 export const findSimilar = (code: string) =>
   get<SimilarResult>(`action=similar&code=${encodeURIComponent(code.trim())}`);
 
-export const lookupSupplier = (code: string) =>
-  get<SupplierLookup>(`action=by_supplier&code=${encodeURIComponent(code.trim())}`);
+export const lookupSupplier = (code: string, by: "supplier" | "order" | "any" = "supplier") =>
+  get<SupplierLookup>(`action=by_supplier&by=${by}&code=${encodeURIComponent(code.trim())}`);
+
+export const searchPositions = (q: string) =>
+  get<{ rows: (Position & { name: string; units: number; codes: string[] })[] }>(
+    `action=positions&q=${encodeURIComponent(q.trim())}`
+  );
+
+export const loadCodeInfo = (code: string) =>
+  get<CodeInfo>(`action=code_info&code=${encodeURIComponent(code.trim())}`);
+
+const posOnly = (p: Position) => ({
+  product_group: p.product_group,
+  brand: p.brand,
+  model: p.model,
+});
+
+export const assignCode = (code: string, position: Position, moveFrom: Position[] = []) =>
+  post<{ ok: boolean; already?: boolean; updated: number; moved_from?: number }>({
+    action: "assign",
+    code,
+    position: posOnly(position),
+    move_from: moveFrom.map(posOnly),
+  });
+
+export const samePosition = (a: Position, b: Position) =>
+  a.product_group === b.product_group && a.brand === b.brand && a.model === b.model;
 
 export const replaceCode = (old_code: string, new_code: string, source = "similar") =>
   post<{ ok: boolean; fix_id: number; updated: number }>({

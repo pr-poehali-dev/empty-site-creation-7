@@ -1,20 +1,18 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
-import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
-import CameraScanButton from "@/components/receiving/CameraScanButton";
 import {
   CHECKSUM_BAD_TEXT,
   checksumState,
   findSimilar,
-  lookupSupplier,
+  loadCodeInfo,
   replaceCode,
+  type CodeInfo,
   type CodeSummary,
   type SimilarResult,
-  type SupplierLookup,
 } from "@/lib/barcodeFix";
+import AssignCodePanel from "@/components/receiving/AssignCodePanel";
 
 interface Props {
   /** Код, который отсканировали и не нашли. Он считается верным — с настоящей наклейки. */
@@ -102,9 +100,9 @@ const SimilarCodesDialog = ({
   const [loadError, setLoadError] = useState("");
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [saving, setSaving] = useState(false);
-  const [supplierValue, setSupplierValue] = useState("");
-  const [supplier, setSupplier] = useState<SupplierLookup | null>(null);
-  const [supplierBusy, setSupplierBusy] = useState(false);
+  const [info, setInfo] = useState<CodeInfo | null>(null);
+  const [transfer, setTransfer] = useState(false);
+  const [assigning, setAssigning] = useState(false);
 
   const scannedBad = checksumState(code) === "bad";
 
@@ -112,30 +110,20 @@ const SimilarCodesDialog = ({
     let alive = true;
     setLoading(true);
     setLoadError("");
+    setInfo(null);
+    setTransfer(false);
     findSimilar(code)
-      .then((r) => alive && setData(r))
+      .then((r) => {
+        if (!alive) return;
+        setData(r);
+        if (r.exists) loadCodeInfo(code).then((i) => alive && setInfo(i)).catch(() => undefined);
+      })
       .catch((e) => alive && setLoadError((e as Error).message))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
   }, [code]);
-
-  const bySupplier = async (raw: string) => {
-    const c = raw.trim();
-    if (!c) return;
-    setSupplierValue(c);
-    setSupplierBusy(true);
-    try {
-      setSupplier(await lookupSupplier(c));
-    } catch (e) {
-      toast({ title: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSupplierBusy(false);
-    }
-  };
-
-  useBarcodeScanner({ enabled: !confirm && !saving, onScan: bySupplier });
 
   const doReplace = async () => {
     if (!confirm) return;
@@ -156,15 +144,14 @@ const SimilarCodesDialog = ({
       : data.candidates
     : [];
 
-  const supplierFactory = supplier?.found ? supplier.factory : null;
-  const supplierSame = supplierFactory?.code === code;
-
   return (
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
       <div className="w-full sm:max-w-md bg-card border-t sm:border border-white/[0.1] sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 z-10 bg-card border-b border-white/[0.08] px-4 py-3 flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] text-muted-foreground">Заводской код не найден</div>
+            <div className="text-[11px] text-muted-foreground">
+              {data?.exists ? "Заводской код" : "Заводской код не найден"}
+            </div>
             <div className="font-mono text-base font-semibold break-all">{code}</div>
           </div>
           <Button
@@ -226,14 +213,14 @@ const SimilarCodesDialog = ({
           </div>
         ) : (
           <div className="px-4 py-3 space-y-4">
-            {scannedBad && (
+            {scannedBad && !assigning && (
               <p className="text-xs text-rose-300 flex items-start gap-1.5">
                 <Icon name="CircleAlert" size={14} className="shrink-0 mt-0.5" />
                 {CHECKSUM_BAD_TEXT}
               </p>
             )}
 
-            <div className="space-y-2">
+            <div className={`space-y-2 ${assigning ? "hidden" : ""}`}>
               <p className="text-sm font-medium">Похожие коды в базе</p>
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -251,13 +238,12 @@ const SimilarCodesDialog = ({
               )}
               {data?.too_short && (
                 <p className="text-sm text-muted-foreground">
-                  Код слишком короткий — похожих будет слишком много. Определите товар по
-                  этикетке поставщика ниже.
+                  Код слишком короткий — похожих будет слишком много. Укажите товар ниже.
                 </p>
               )}
               {data && !data.too_short && candidates.length === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Похожих кодов нет. Определите товар по этикетке поставщика ниже.
+                  Похожих кодов нет.
                 </p>
               )}
               {candidates.map((c) => (
@@ -288,86 +274,55 @@ const SimilarCodesDialog = ({
               ))}
             </div>
 
-            <div className="rounded-xl border border-sky-500/30 bg-sky-500/[0.06] p-3 space-y-2">
-              <p className="text-sm font-medium flex items-center gap-1.5">
-                <Icon name="Tag" size={15} className="text-sky-300" />
-                Точно — по этикетке поставщика
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Пикните сканером или камерой штрихкод на этикетке поставщика — определим
-                товар и его записанный заводской код.
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  value={supplierValue}
-                  onChange={(e) => {
-                    setSupplierValue(e.target.value);
-                    setSupplier(null);
-                  }}
-                  onKeyDown={(e) => e.key === "Enter" && bySupplier(supplierValue)}
-                  placeholder="Штрихкод поставщика"
-                  className="h-11"
-                />
-                <CameraScanButton
-                  fieldKey={`fix_supplier_${place}`}
-                  onCode={bySupplier}
-                  onOpen={onCameraOpen}
-                />
-                <Button
-                  className="h-11 px-4"
-                  disabled={!supplierValue.trim() || supplierBusy}
-                  onClick={() => bySupplier(supplierValue)}
-                >
-                  <Icon
-                    name={supplierBusy ? "Loader2" : "Search"}
-                    size={18}
-                    className={supplierBusy ? "animate-spin" : ""}
-                  />
-                </Button>
-              </div>
-
-              {supplier && !supplier.found && (
-                <p className="text-sm text-amber-200">
-                  Этикетка поставщика не найдена в загрузках
+            {data && !data.exists && (
+              <div className="rounded-xl border border-sky-500/30 bg-sky-500/[0.06] p-3 space-y-2">
+                <p className="text-sm font-medium">Присвоить код товару</p>
+                <p className={`text-xs text-muted-foreground ${assigning ? "hidden" : ""}`}>
+                  Если это не опечатка, а новый код — укажите, чей он. Код добавится к товару,
+                  даже если у него уже есть другие коды.
                 </p>
-              )}
+                <AssignCodePanel
+                  code={code}
+                  place={place}
+                  scannerEnabled={!saving}
+                  onCameraOpen={onCameraOpen}
+                  onConfirmChange={setAssigning}
+                  onDone={(n) => onReplaced(code, n)}
+                />
+              </div>
+            )}
 
-              {supplier?.found && supplier.item && (
-                <div className="rounded-lg bg-black/20 p-2.5 space-y-1.5">
-                  <div className="text-sm break-words">
-                    {supplier.item.name || supplier.item.tech_name}
+            {data?.exists && info && (
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 space-y-2">
+                <p className="text-sm font-medium">Код сейчас записан у товара</p>
+                {!assigning && info.positions.map((p, i) => (
+                  <div key={i} className="rounded-lg bg-black/20 px-2.5 py-1.5">
+                    <div className="text-sm break-words">{p.name || "без наименования"}</div>
+                    <div className="text-xs text-muted-foreground">{unitsText(p.units)}</div>
                   </div>
-                  {supplier.item.order_number && (
-                    <div className="text-xs text-muted-foreground">
-                      Заказ-наряд: {supplier.item.order_number}
-                    </div>
-                  )}
-                  {!supplierFactory && (
-                    <p className="text-xs text-amber-200">
-                      У этой модели заводской код ещё не записан — исправлять нечего.
-                      Запишите его в окне проверки.
-                    </p>
-                  )}
-                  {supplierFactory && supplierSame && (
-                    <p className="text-xs text-emerald-300">
-                      У этой модели записан именно этот код — он верный.
-                    </p>
-                  )}
-                  {supplierFactory && !supplierSame && (
-                    <>
-                      <div className="text-xs text-muted-foreground">Записан код:</div>
-                      <Digits target={code} code={supplierFactory.code} />
-                      <Button
-                        className="w-full h-10 mt-1"
-                        onClick={() => setConfirm({ old: supplierFactory, source: "supplier" })}
-                      >
-                        Заменить на отсканированный
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+                ))}
+                {!transfer ? (
+                  <Button
+                    variant="outline"
+                    className="w-full h-10 border-white/[0.1]"
+                    onClick={() => setTransfer(true)}
+                  >
+                    <Icon name="ArrowRightLeft" size={15} className="mr-1.5" />
+                    Это другой товар — перенести код
+                  </Button>
+                ) : (
+                  <AssignCodePanel
+                    code={code}
+                    place={`${place}_move`}
+                    moveFrom={info.positions}
+                    scannerEnabled={!saving}
+                    onCameraOpen={onCameraOpen}
+                    onConfirmChange={setAssigning}
+                    onDone={(n) => onReplaced(code, n)}
+                  />
+                )}
+              </div>
+            )}
 
             <Button variant="ghost" className="w-full h-10" onClick={onClose}>
               Закрыть — ничего не менять

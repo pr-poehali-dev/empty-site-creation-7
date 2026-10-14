@@ -29,6 +29,18 @@ PERMS = [
     {'key': 'name_beauty', 'group': 'Видимость', 'title': 'Показывать красивые наименования'},
     {'key': 'name_tech', 'group': 'Видимость', 'title': 'Показывать технические наименования'},
     {'key': 'catalog_switch', 'group': 'Заявки', 'title': 'Переключатель каталога в заявках'},
+    {'key': 'docs_access', 'group': 'Документы', 'title': 'Раздел «Документы» в складах'},
+    {'key': 'docs_batches_see', 'group': 'Документы: Партии', 'title': 'Видит партии'},
+    {'key': 'docs_batches_build', 'group': 'Документы: Партии', 'title': 'Собирает партии'},
+    {'key': 'docs_batches_change', 'group': 'Документы: Партии', 'title': 'Добавляет и забирает товар из собранных партий'},
+    {'key': 'docs_batches_disband', 'group': 'Документы: Партии', 'title': 'Разбирает партии'},
+    {'key': 'docs_batches_print', 'group': 'Документы: Партии', 'title': 'Печатает наклейки партий'},
+    {'key': 'docs_move', 'group': 'Документы: остальные', 'title': 'Перемещение'},
+    {'key': 'docs_writeoff', 'group': 'Документы: остальные', 'title': 'Списание'},
+    {'key': 'docs_sale', 'group': 'Документы: остальные', 'title': 'Продажа'},
+    {'key': 'docs_income', 'group': 'Документы: остальные', 'title': 'Поступление'},
+    {'key': 'cp_see', 'group': 'Контрагенты', 'title': 'Видит контрагентов'},
+    {'key': 'cp_edit', 'group': 'Контрагенты', 'title': 'Добавляет и правит контрагентов'},
 ]
 
 CATALOG_FIELDS = [

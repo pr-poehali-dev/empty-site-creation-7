@@ -18,6 +18,17 @@ type Tab = "bad" | "odd" | "log";
 
 const FIXING_KEY = "barcode_control_fixing";
 
+const SOURCE_TEXT: Record<string, string> = {
+  supplier: "по этикетке",
+  owner: "вручную",
+  similar: "по похожему",
+  assign: "присвоен товару",
+  transfer: "перенесён на другой товар",
+};
+
+const posText = (p: { product_group?: string; brand?: string; model?: string }) =>
+  [p.product_group, p.brand, p.model].filter(Boolean).join(" ") || "без наименования";
+
 const when = (v: string) =>
   new Date(v).toLocaleString("ru-RU", {
     day: "2-digit",
@@ -249,17 +260,30 @@ const BarcodeControl = () => {
               >
                 <div className="text-xs text-muted-foreground">
                   {when(r.fixed_at)} · {r.fixed_by_name || "—"} ·{" "}
-                  {r.source === "supplier"
-                    ? "по этикетке"
-                    : r.source === "owner"
-                      ? "вручную"
-                      : "по похожему"}
+                  {SOURCE_TEXT[r.source] || "по похожему"}
                 </div>
-                <div className="font-mono text-sm break-all">
-                  <span className="text-rose-300 line-through">{r.old_code}</span>
-                  {" → "}
-                  <span className="text-emerald-300">{r.new_code}</span>
-                </div>
+                {r.source === "assign" || r.source === "transfer" ? (
+                  <div className="space-y-0.5">
+                    <div className="font-mono text-sm break-all text-emerald-300">{r.new_code}</div>
+                    {r.source === "transfer" &&
+                      (r.from_pos || []).map((p, i) => (
+                        <div key={i} className="text-xs text-rose-300 line-through break-words">
+                          {posText(p)}
+                        </div>
+                      ))}
+                    {(r.to_pos || []).map((p, i) => (
+                      <div key={i} className="text-xs break-words">
+                        → {posText(p)}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="font-mono text-sm break-all">
+                    <span className="text-rose-300 line-through">{r.old_code}</span>
+                    {" → "}
+                    <span className="text-emerald-300">{r.new_code}</span>
+                  </div>
+                )}
                 <div className="text-xs text-muted-foreground">{r.units} шт.</div>
                 {r.reverted_at ? (
                   <div className="text-xs text-amber-200">

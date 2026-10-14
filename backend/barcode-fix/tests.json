@@ -5,7 +5,9 @@
       "method": "GET",
       "path": "/",
       "expectedStatus": 200,
-      "expectedBody": {"status": "ok"},
+      "expectedBody": {
+        "status": "ok"
+      },
       "bodyMatcher": "partial"
     },
     {
@@ -13,26 +15,70 @@
       "method": "GET",
       "path": "/?action=similar&code=4006381333931",
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Замена без токена нельзя",
       "method": "POST",
       "path": "/",
-      "body": {"action": "replace", "old_code": "1", "new_code": "2"},
+      "body": {
+        "action": "replace",
+        "old_code": "1",
+        "new_code": "2"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Откат с чужим токеном нельзя",
       "method": "POST",
       "path": "/",
-      "headers": {"X-Authorization": "Bearer ffffffffffffffffffffffffffffffff"},
-      "body": {"action": "revert", "id": 1},
+      "headers": {
+        "X-Authorization": "Bearer ffffffffffffffffffffffffffffffff"
+      },
+      "body": {
+        "action": "revert",
+        "id": 1
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Присвоение без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "assign",
+        "code": "4006381333931",
+        "position": {
+          "product_group": "x",
+          "brand": "y",
+          "model": "z"
+        }
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Поиск товара без токена нельзя",
+      "method": "GET",
+      "path": "/?action=positions&q=Samsung",
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     }
   ]
