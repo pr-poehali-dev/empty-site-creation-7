@@ -5,6 +5,8 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from held import held_error
+
 CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -224,6 +226,10 @@ def update_item(cur, body, editable):
         return None, 'Нет права на правку этого поля'
     if not item_id:
         return None, 'Не указана строка'
+    if field in ('warehouse', 'check_result'):
+        held = held_error(cur, item_id)
+        if held:
+            return None, held
     cur.execute(
         f"UPDATE receiving_items SET {field}={_sql_value(field, body.get('value'))} WHERE id={item_id}"
     )

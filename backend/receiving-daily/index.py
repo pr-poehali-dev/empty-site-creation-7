@@ -8,6 +8,7 @@ from psycopg2.extras import RealDictCursor
 from worklog import last_results, log_event, work_seconds
 import wipe
 import fixes
+from held import held_error
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -486,6 +487,9 @@ def act_check(cur, actor, body):
     item = cur.fetchone()
     if not item:
         return None, 'Единица не найдена'
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
 
     has_package = body.get('has_package')
     sets = [
@@ -575,6 +579,9 @@ def act_undo(cur, actor, body):
     rid = int(body.get('receiving_id') or 0)
     if not item_id or not rid:
         return None, 'Не указана единица или приёмка'
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
 
     cur.execute(f"SELECT warehouse FROM receiving_items WHERE id={item_id} LIMIT 1")
     prev = cur.fetchone()
@@ -615,6 +622,10 @@ def act_item_remove(cur, actor, body):
         return None, 'Приёмка не найдена'
     if row['closed']:
         return None, 'Приёмка закрыта, изменить её нельзя'
+
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
 
     # Склад читаем до очистки: после неё будет уже пусто, а в путь писать нужно,
     # откуда товар ушёл.

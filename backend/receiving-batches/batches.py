@@ -103,6 +103,10 @@ def warehouse_gate(cur, batch, wh, on_other, allowed):
         return None, None
     if batch['mixed'] or batch['warehouse'] == wh:
         return None, None
+    can_mix = batch['status'] == 'draft'
+    if on_other == 'mix' and not can_mix:
+        return None, {'error': f"У партии уже номер со складом «{batch['warehouse']}» — "
+                               f"смешать нельзя, можно только переместить товар"}
     if on_other == 'mix':
         cur.execute(f"UPDATE receiving_batches SET mixed=true WHERE id={int(batch['id'])}")
         batch['mixed'] = True
@@ -116,6 +120,7 @@ def warehouse_gate(cur, batch, wh, on_other, allowed):
         'from_wh': wh,
         'batch_wh': batch['warehouse'],
         'can_move': wh in allowed and batch['warehouse'] in allowed,
+        'can_mix': can_mix,
     }
 
 
@@ -226,6 +231,7 @@ def scan_factory(cur, actor, batch, code, params, allowed):
         elif batch['warehouse'] and not batch['mixed'] and params.get('on_other') not in ('mix', 'move'):
             return {'need': 'other_wh', 'from_wh': None, 'batch_wh': batch['warehouse'],
                     'can_move': batch['warehouse'] in allowed, 'stock': stock,
+                    'can_mix': batch['status'] == 'draft',
                     'allowed': allowed, 'position': pos_out}
         else:
             return {'need': 'pick_warehouse', 'stock': stock, 'position': pos_out, 'allowed': allowed}
@@ -324,7 +330,9 @@ def view(cur, batch):
         cp = dict(r) if r else None
     out = {k: batch[k] for k in (
         'id', 'number', 'status', 'warehouse', 'mixed', 'comment', 'created_by_name',
-        'created_by_user', 'created_at', 'updated_at',
+        'created_by_user', 'created_at', 'updated_at', 'public_key', 'finished_at',
+        'finished_by_name', 'closed_at', 'closed_by_name',
     )}
+    out['code'] = f"P{int(batch['id']):06d}"
     out['counterparty'] = cp
     return {'batch': out, 'items': items}

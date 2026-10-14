@@ -4,6 +4,8 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from held import held_error, held_map
+
 CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -263,6 +265,9 @@ def act_find(cur, allowed, params):
         return {'found': False, 'code': code, 'reason': 'not_checked'}, None
     if item['warehouse'] not in allowed:
         return {'found': False, 'code': code, 'reason': 'no_access'}, None
+    held = held_error(cur, item['id'])
+    if held:
+        return {'found': False, 'code': code, 'reason': 'held', 'message': held, 'item': item}, None
     return {'found': True, 'item': item}, None
 
 
@@ -287,8 +292,14 @@ def act_move(cur, actor, allowed, body):
     if not found:
         return None, 'Единицы не найдены'
 
+    held = held_map(cur, list(found.keys()))
+    held_rows = {}
+    for item_id, where in held.items():
+        held_rows[where] = held_rows.get(where, 0) + 1
     moved, skipped = [], 0
     for item_id, src in found.items():
+        if item_id in held:
+            continue
         if src not in allowed:
             skipped += 1
             continue
@@ -297,7 +308,11 @@ def act_move(cur, actor, allowed, body):
             continue
         moved.append((item_id, src))
 
+    held_list = [{'where': w, 'qty': n} for w, n in held_rows.items()]
     if not moved:
+        if held_list:
+            return None, 'Не перенесено: ' + '; '.join(f"{h['qty']} шт. {h['where']}" for h in held_list) + \
+                ' — такой товар двигается только документом партии'
         return None, 'Нечего перемещать: товар уже на этом складе'
 
     mid = int(actor['manager_id']) if actor['manager_id'] else 'NULL'
@@ -319,6 +334,7 @@ def act_move(cur, actor, allowed, body):
         'ok': True,
         'moved': len(moved),
         'skipped': skipped,
+        'held': held_list,
         'move_ids': move_ids,
         'warehouse_to': target,
     }, None
@@ -339,8 +355,11 @@ def act_undo_move(cur, actor, allowed, body):
     if not rows:
         return None, 'Это перемещение уже не отменить'
 
+    held = held_map(cur, [r['item_id'] for r in rows])
     undone = []
     for r in rows:
+        if int(r['item_id']) in held:
+            continue
         src = r['warehouse_from']
         if src and src not in allowed:
             continue

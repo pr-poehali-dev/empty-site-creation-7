@@ -44,6 +44,7 @@ export interface MoveResult {
   ok: boolean;
   moved: number;
   skipped: number;
+  held?: { where: string; qty: number }[];
   move_ids: number[];
   warehouse_to: string;
 }
@@ -122,7 +123,7 @@ export const loadUnits = (
   );
 
 export const findByCode = (code: string) =>
-  get<{ found: boolean; item?: StockUnit; code?: string; reason?: string }>(
+  get<{ found: boolean; item?: StockUnit; code?: string; reason?: string; message?: string }>(
     `action=find&code=${encodeURIComponent(code)}`
   );
 

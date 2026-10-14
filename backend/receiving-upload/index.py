@@ -224,6 +224,13 @@ def list_uploads(limit=30):
 def drop_upload(upload_id):
     with _conn() as c, c.cursor() as cur:
         cur.execute(
+            f"SELECT COUNT(*) FROM receiving_batch_items bi JOIN receiving_items i ON i.id=bi.item_id "
+            f"WHERE bi.active AND i.upload_id={int(upload_id)}"
+        )
+        held = int(cur.fetchone()[0])
+        if held:
+            return {'error': f'{held} шт. из этой загрузки стоят в партиях — сначала заберите их из партий'}
+        cur.execute(
             f"WITH d AS (DELETE FROM receiving_items WHERE upload_id={int(upload_id)} RETURNING 1) "
             f"SELECT COUNT(*) FROM d"
         )
@@ -297,6 +304,7 @@ def handler(event: dict, context) -> dict:
     if action == 'drop_upload':
         if not body.get('upload_id'):
             return _resp(400, {'error': 'Не указана загрузка'})
-        return _resp(200, drop_upload(body['upload_id']))
+        res = drop_upload(body['upload_id'])
+        return _resp(400 if res.get('error') else 200, res)
 
     return _resp(400, {'error': 'Неизвестное действие'})

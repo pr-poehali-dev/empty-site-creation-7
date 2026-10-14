@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
-import { loadBatchMeta, loadBatches, newBatch, type BatchRow } from "@/lib/batches";
+import { STATUS_TITLE, loadBatchMeta, loadBatches, newBatch, type BatchRow } from "@/lib/batches";
 
 const when = (s: string) =>
   new Date(s).toLocaleString("ru-RU", {
@@ -91,13 +91,18 @@ const ReceivingBatches = () => {
     >
       <div className="flex items-center gap-2">
         <span className="font-medium flex-1 min-w-0 truncate">
-          {draft ? `Черновик · ${r.created_by_name || "сотрудник"}` : `Партия №${r.number || r.id}`}
+          {draft ? `Черновик · ${r.created_by_name || "сотрудник"}` : `Партия ${r.number || r.id}`}
         </span>
+        {!draft && r.status !== "done" && (
+          <span className="text-[11px] rounded-md px-1.5 py-0.5 bg-white/[0.08] text-muted-foreground shrink-0">
+            {STATUS_TITLE[r.status] || r.status}
+          </span>
+        )}
         <span className="text-sm shrink-0">{r.qty} шт.</span>
       </div>
       <div className="text-xs text-muted-foreground truncate">
         {whText(r)}
-        {r.counterparty ? ` · ${r.counterparty}` : ""} · {draft ? "начат" : "собрана"}{" "}
+        {r.counterparty ? ` · ${r.counterparty}` : ""} · {draft ? "начат" : "изменена"}{" "}
         {when(draft ? r.created_at : r.updated_at)}
       </div>
     </button>

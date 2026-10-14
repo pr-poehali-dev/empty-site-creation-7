@@ -6,6 +6,7 @@
 Мастер, исправляя товар после протирки, итог протирки не снимает.
 """
 from worklog import local_sql, log_event
+from held import held_error
 
 WAREHOUSES = {'sale': 'СГП', 'wipe': 'Протирка', 'repair': 'Под ремонт', 'scrap': 'Утиль'}
 
@@ -68,6 +69,9 @@ def act_fix_check(cur, cols, actor, owner_filter, body, pick_weight):
     if not item:
         return None, 'Единица не найдена'
     item = dict(item)
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
     if not item.get('check_result'):
         return None, 'Товар ещё не проверен — исправлять нечего'
     if not can_fix_check(actor, item):
@@ -123,6 +127,9 @@ def act_fix_wipe(cur, cols, actor, owner_filter, body):
     if not item:
         return None, 'Единица не найдена'
     item = dict(item)
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
     if not item.get('wipe_result'):
         return None, 'Протирка этот товар ещё не обрабатывала'
     if not can_fix_wipe(actor, item):

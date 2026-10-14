@@ -3,6 +3,7 @@ import json
 from psycopg2.extras import RealDictCursor
 
 import batches as B
+import lifecycle as L
 from common import allowed_warehouses, can, conn, esc, perms_of, who
 
 CORS = {
@@ -96,7 +97,7 @@ def act_delete(cur, actor, batch):
 
 
 def handler(event: dict, context) -> dict:
-    """Партии складов приёмки: список черновиков и партий, один черновик на сотрудника, добавление товара по наклейке поставщика/заказ-наряду (точно) или по заводскому коду (подставляется свободная единица), выбор склада, смешанная партия, перемещение на склад партии, бронь и подмена единиц, удаление из черновика, контрагент и комментарий, удаление черновика, журнал действий."""
+    """Партии складов приёмки: список черновиков и партий, один черновик на сотрудника, добавление товара по наклейке поставщика/заказ-наряду (точно) или по заводскому коду (подставляется свободная единица), выбор склада, смешанная партия, перемещение на склад партии, бронь и подмена единиц, удаление из черновика, контрагент и комментарий, удаление черновика, завершение с номером ГГММДД/N/Склад, «Забрать» из собранной партии (в черновик или на склад), разборка партии, журнал, поиск партии по коду, QR или номеру."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -124,14 +125,23 @@ def handler(event: dict, context) -> dict:
         can_see = can(actor, perms, 'docs_batches_see') or can(actor, perms, 'docs_batches_build')
         can_build = can(actor, perms, 'docs_batches_build')
 
+        can_change = can(actor, perms, 'docs_batches_change')
+        can_disband = can(actor, perms, 'docs_batches_disband')
+        can_print = can(actor, perms, 'docs_batches_print')
+
         if action == 'meta':
             return _resp(200, {'can_see': can_see, 'can_build': can_build,
+                               'can_change': can_change, 'can_disband': can_disband,
+                               'can_print': can_print,
                                'user_id': actor['user_id'], 'is_owner': actor['is_owner']})
         if not can_see:
             return _resp(403, {'error': 'Партии вам не открыты'})
 
         if action == 'list':
             return _resp(200, act_list(cur))
+
+        if action == 'find':
+            return _resp(200, L.act_find(cur, params))
 
         if action == 'new':
             if not can_build:
@@ -146,27 +156,53 @@ def handler(event: dict, context) -> dict:
             return _resp(404, {'error': 'Партия не найдена'})
         batch = dict(batch)
 
+        mine = actor['is_owner'] or batch['created_by_user'] == actor['user_id']
+        st = batch['status']
+        edit_draft = st == 'draft' and can_build and mine
+        edit_done = st == 'done' and (mine or can_change)
+        rights = {
+            'can_edit': edit_draft or edit_done,
+            'can_finish': edit_draft,
+            'can_disband': st == 'done' and can_disband,
+            'can_print': st != 'draft' and can_print,
+        }
+
         if action == 'get':
             data = B.view(cur, batch)
-            data['can_edit'] = batch['status'] == 'draft' and can_build and (
-                actor['is_owner'] or batch['created_by_user'] == actor['user_id'])
+            data.update(rights)
+            data['summary'] = L.summary(cur, batch)
             return _resp(200, data)
-
-        editable = batch['status'] == 'draft' and can_build and (
-            actor['is_owner'] or batch['created_by_user'] == actor['user_id'])
-        if not editable:
-            return _resp(403, {'error': 'Этот черновик правит только его автор'})
+        if action == 'log':
+            return _resp(200, L.act_log(cur, batch))
 
         allowed = allowed_warehouses(actor, perms)
-        handlers = {
-            'scan': lambda: B.act_scan(cur, actor, batch, body, allowed),
-            'remove_scan': lambda: B.act_remove_scan(cur, actor, batch, body),
-            'remove_item': lambda: B.act_remove_item(cur, actor, batch, body),
-            'set_meta': lambda: act_meta(cur, actor, batch, body),
-            'delete': lambda: act_delete(cur, actor, batch),
-        }
+        if edit_draft:
+            handlers = {
+                'scan': lambda: B.act_scan(cur, actor, batch, body, allowed),
+                'remove_scan': lambda: B.act_remove_scan(cur, actor, batch, body),
+                'remove_item': lambda: B.act_remove_item(cur, actor, batch, body),
+                'set_meta': lambda: act_meta(cur, actor, batch, body),
+                'delete': lambda: act_delete(cur, actor, batch),
+                'finish': lambda: L.act_finish(cur, actor, batch),
+            }
+        elif edit_done or rights['can_disband']:
+            handlers = {}
+            if edit_done:
+                handlers.update({
+                    'scan': lambda: B.act_scan(cur, actor, batch, body, allowed),
+                    'take_find': lambda: L.act_take_find(cur, batch, body),
+                    'take': lambda: L.act_take(cur, actor, batch, body, allowed),
+                    'set_meta': lambda: act_meta(cur, actor, batch, body),
+                })
+            if rights['can_disband']:
+                handlers['disband'] = lambda: L.act_disband(cur, actor, batch)
+        else:
+            return _resp(403, {'error': 'Эту партию вам менять нельзя'})
+
+        if action == 'scan' and L.batch_ref(body.get('code')):
+            return _resp(200, {'batch_ref': True, 'error': 'Это наклейка партии, а не товар'})
         if action not in handlers:
-            return _resp(400, {'error': 'Неизвестное действие'})
+            return _resp(400, {'error': 'Это действие вам недоступно'})
         res = handlers[action]()
         if res.get('ok'):
             c.commit()

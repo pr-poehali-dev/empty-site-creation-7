@@ -1,0 +1,1 @@
+{"tests": [{"name": "Неизвестный ключ", "method": "GET", "path": "/?key=unknownkey12345", "expectedStatus": 404}]}

@@ -8,6 +8,7 @@
 'scrap' — утиль), внешний вид, следы, кто и когда, в какой приёмке.
 """
 from worklog import local_sql, log_event
+from held import held_error
 
 WIPE_KIND = 'kind_plain'
 RESULTS = {'sale': 'СГП', 'scrap': 'Утиль'}
@@ -94,6 +95,9 @@ def act_wipe_fix(cur, cols, actor, owner_filter, body):
         return None, 'Единица не найдена'
     if status_of(item) != 'sale':
         return None, 'Этот товар так не исправить'
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
     cur.execute(
         f"UPDATE receiving_items SET check_result='wipe', warehouse='Протирка', "
         f"master_fixed_from='sale', master_fixed_by_name='{_esc(actor['name'])}', "
@@ -138,6 +142,9 @@ def act_wipe_done(cur, cols, actor, owner_filter, body):
         return None, 'Единица не найдена'
     if status_of(item) != 'ready':
         return None, 'Этот товар сейчас не для протирки'
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
     mid = int(actor['manager_id']) if actor.get('manager_id') else 'NULL'
     lk = f"'{look}'" if result == 'sale' else 'NULL'
     tr = f"'{traces}'" if result == 'sale' else 'NULL'
@@ -165,6 +172,9 @@ def act_wipe_undo(cur, actor, owner_filter, body):
     row = cur.fetchone()
     if not row:
         return None, 'Этот итог уже не отменить'
+    held = held_error(cur, item_id)
+    if held:
+        return None, held
     cur.execute(
         f"UPDATE receiving_items SET wipe_result=NULL, wipe_look=NULL, wipe_traces=NULL, "
         f"wipe_by=NULL, wipe_by_name=NULL, wipe_at=NULL, wipe_local=NULL, wipe_receiving_id=NULL, "

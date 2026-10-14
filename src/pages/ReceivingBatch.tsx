@@ -12,7 +12,20 @@ import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
 import BatchGroups from "./receiving-batches/BatchGroups";
 import ScanQuestion, { type Question } from "./receiving-batches/ScanQuestion";
 import CounterpartyPicker from "./receiving-batches/CounterpartyPicker";
+import { ConfirmDisband, FinishDialog, LogDialog } from "./receiving-batches/BatchDialogs";
+import TakeDialog from "./receiving-batches/TakeDialog";
+import BatchLabelDialog from "./receiving-batches/BatchLabelDialog";
+import BatchShare from "./receiving-batches/BatchShare";
+import { loadWarehouses } from "./receiving-stock/stockApi";
 import {
+  STATUS_TITLE,
+  disbandBatch,
+  finishBatch,
+  parseBatchCode,
+  publicLink,
+  resolveBatchCode,
+  takeFind,
+  takeItems,
   deleteBatch,
   loadBatch,
   removeItem,
@@ -27,7 +40,18 @@ import {
 
 type Mode = "add" | "remove";
 
-/** Черновик партии: пикаем товар, он встаёт сверху и вспыхивает. */
+const dt = (s: string | null) =>
+  s
+    ? new Date(s).toLocaleString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
+
+/** Черновик и собранная партия: пикаем товар, он встаёт сверху и вспыхивает. */
 const ReceivingBatch = () => {
   const navigate = useNavigate();
   const { id: idParam } = useParams();
@@ -47,6 +71,12 @@ const ReceivingBatch = () => {
   const [comment, setComment] = useState("");
   const [cpOpen, setCpOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [disbandOpen, setDisbandOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
+  const [take, setTake] = useState<{ rows: BatchItem[]; exact: boolean } | null>(null);
+  const [whs, setWhs] = useState<string[]>([]);
   const similar = useSimilarCodes(`batch_${id}`);
   const topRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +100,12 @@ const ReceivingBatch = () => {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    loadWarehouses()
+      .then((r) => setWhs(r.warehouses.map((w) => w.name)))
+      .catch(() => setWhs([]));
+  }, []);
 
   const showFlash = (itemId: number) => {
     setFlash((f) => ({ id: itemId, key: f.key + 1 }));
@@ -106,6 +142,21 @@ const ReceivingBatch = () => {
     setBusy(true);
     setProblem(null);
     try {
+      if (parseBatchCode(code)) {
+        setValue("");
+        const other = await resolveBatchCode(code);
+        if (other && other !== id) navigate(`/admin/receiving-batches/${other}`);
+        else if (other === id) toast({ title: "Это наклейка этой же партии" });
+        else setProblem({ text: "Партия с такой наклейкой не найдена" });
+        return;
+      }
+      if (mode === "remove" && !isDraftNow) {
+        const f = await takeFind(id, code);
+        setValue("");
+        if (f.ok && f.rows) setTake({ rows: f.rows, exact: Boolean(f.exact) });
+        else setProblem({ text: f.error || "Не нашли" });
+        return;
+      }
       const res =
         mode === "add" ? await scanToBatch(id, code, opts) : await removeScan(id, code);
       setValue("");
@@ -130,8 +181,11 @@ const ReceivingBatch = () => {
   };
 
   const canEdit = Boolean(data?.can_edit);
+  const isDraftNow = data?.batch.status === "draft";
+  const dialogOpen =
+    !!question || !!similar.code || cpOpen || confirmDelete || finishOpen || disbandOpen || logOpen || labelOpen || !!take;
   useBarcodeScanner({
-    enabled: canEdit && !question && !similar.code && !cpOpen && !confirmDelete && !busy,
+    enabled: canEdit && !dialogOpen && !busy,
     onScan: (c) => send(c),
   });
 
@@ -157,6 +211,59 @@ const ReceivingBatch = () => {
 
   const back = () => navigate("/admin/receiving-batches");
 
+  const run = async <T extends { ok?: boolean; error?: string }>(
+    fn: () => Promise<T>,
+    done: (r: T) => void | Promise<void>
+  ) => {
+    setBusy(true);
+    try {
+      const r = await fn();
+      if (r.error) throw new Error(r.error);
+      await done(r);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doFinish = () =>
+    run(
+      () => finishBatch(id),
+      async (r) => {
+        setFinishOpen(false);
+        sessionStorage.setItem(modeKey, "add");
+        setModeState("add");
+        toast({ title: `Партия ${r.number} собрана` });
+        await reload();
+      }
+    );
+
+  const doDisband = () =>
+    run(
+      () => disbandBatch(id),
+      async (r) => {
+        setDisbandOpen(false);
+        toast({ title: `Партия разобрана, освобождено: ${r.freed || 0} шт.` });
+        await reload();
+      }
+    );
+
+  const doTake = (ids: number[], dest: "draft" | "move", to?: string) =>
+    run(
+      () => takeItems(id, ids, dest, to),
+      async (r) => {
+        setTake(null);
+        if (dest === "move") toast({ title: `Забрано ${r.taken} шт. и перемещено на «${to}»` });
+        else
+          toast({
+            title: `Забрано ${r.taken} шт. ${r.draft_created ? "в новый черновик" : "в ваш черновик"}`,
+            description: r.draft_mixed ? "Черновик стал смешанным" : undefined,
+          });
+        await reload();
+      }
+    );
+
   if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -175,7 +282,19 @@ const ReceivingBatch = () => {
 
   const b = data.batch;
   const isDraft = b.status === "draft";
+  const isDone = b.status === "done";
   const exact = data.items.filter((i) => i.kind === "exact").length;
+  const labelData = b.public_key
+    ? {
+        number: b.number || "",
+        code: b.code,
+        link: publicLink(b.public_key),
+        date: new Date(b.finished_at || b.created_at).toLocaleDateString("ru-RU"),
+        warehouse: b.mixed ? "Смешанная" : b.warehouse || "",
+        qty: data.items.length,
+        counterparty: b.counterparty?.name || null,
+      }
+    : null;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -186,9 +305,10 @@ const ReceivingBatch = () => {
           </Button>
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-semibold truncate">
-              {isDraft ? `Черновик · ${b.created_by_name}` : `Партия №${b.number || b.id}`}
+              {isDraft ? `Черновик · ${b.created_by_name}` : `Партия ${b.number || b.id}`}
             </h1>
             <p className="text-xs text-muted-foreground truncate">
+              {!isDraft && `${STATUS_TITLE[b.status] || b.status} · `}
               {b.mixed ? "Смешанная" : b.warehouse || "склад задаст первый товар"} ·{" "}
               {data.items.length} шт.
               {data.items.length > 0 ? ` (подтв. ${exact})` : ""}
@@ -211,7 +331,7 @@ const ReceivingBatch = () => {
                       : "text-muted-foreground"
                   }`}
                 >
-                  {m === "add" ? "Добавлять" : "Убирать"}
+                  {m === "add" ? "Добавить" : isDraft ? "Убирать" : "Забрать"}
                 </button>
               ))}
             </div>
@@ -223,7 +343,9 @@ const ReceivingBatch = () => {
                 placeholder={
                   mode === "add"
                     ? "Наклейка, заказ-наряд или заводской код"
-                    : "Что убрать: наклейка или код"
+                    : isDraft
+                      ? "Что убрать: наклейка или код"
+                      : "Что забрать: наклейка или код"
                 }
                 className={`h-11 ${mode === "remove" ? "border-rose-500/50" : ""}`}
               />
@@ -270,6 +392,53 @@ const ReceivingBatch = () => {
             Чужой черновик — только просмотр
           </p>
         )}
+        {!canEdit && isDone && (
+          <p className="text-xs text-muted-foreground">Только просмотр</p>
+        )}
+
+        {canEdit && isDraft && data.can_finish && data.items.length > 0 && (
+          <Button className="w-full h-12" disabled={busy} onClick={() => setFinishOpen(true)}>
+            <Icon name="CircleCheckBig" size={18} className="mr-2" fallback="CircleCheck" />
+            Завершить партию
+          </Button>
+        )}
+
+        {!isDraft && (
+          <div className="rounded-xl border border-white/[0.08] bg-card p-3 space-y-3">
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <span className="text-muted-foreground">Номер</span>
+              <span className="font-semibold break-all">{b.number}</span>
+              <span className="text-muted-foreground">Склад</span>
+              <span>{b.mixed ? "Смешанная" : b.warehouse}</span>
+              <span className="text-muted-foreground">Собрал</span>
+              <span>
+                {b.created_by_name}
+                {b.finished_at ? `, ${dt(b.finished_at)}` : ""}
+              </span>
+              {b.closed_at && (
+                <>
+                  <span className="text-muted-foreground">Разобрал</span>
+                  <span>
+                    {b.closed_by_name}, {dt(b.closed_at)}
+                  </span>
+                </>
+              )}
+            </div>
+            {labelData && <BatchShare link={labelData.link} number={labelData.number} />}
+            <div className="grid grid-cols-2 gap-2">
+              {data.can_print && labelData && (
+                <Button variant="outline" className="h-11 border-white/[0.1]" onClick={() => setLabelOpen(true)}>
+                  <Icon name="Printer" size={16} className="mr-1.5" />
+                  Наклейка
+                </Button>
+              )}
+              <Button variant="outline" className="h-11 border-white/[0.1]" onClick={() => setLogOpen(true)}>
+                <Icon name="History" size={16} className="mr-1.5" />
+                Журнал
+              </Button>
+            </div>
+          </div>
+        )}
 
         <BatchGroups items={data.items} flashId={flash.id} flashKey={flash.key} />
 
@@ -299,6 +468,24 @@ const ReceivingBatch = () => {
             />
           </div>
         </div>
+
+        {isDraft && (
+          <Button variant="ghost" className="w-full h-10" onClick={() => setLogOpen(true)}>
+            <Icon name="History" size={15} className="mr-1.5" />
+            Журнал
+          </Button>
+        )}
+
+        {data.can_disband && (
+          <Button
+            variant="ghost"
+            className="w-full h-10 text-rose-300"
+            onClick={() => setDisbandOpen(true)}
+          >
+            <Icon name="PackageX" size={15} className="mr-1.5" fallback="Trash2" />
+            Разобрать партию
+          </Button>
+        )}
 
         {canEdit && isDraft && (
           <Button
@@ -331,6 +518,43 @@ const ReceivingBatch = () => {
             similar.close();
             send(c);
           }}
+        />
+      )}
+
+      {finishOpen && (
+        <FinishDialog
+          s={data.summary}
+          counterparty={b.counterparty?.name || null}
+          busy={busy}
+          onConfirm={doFinish}
+          onClose={() => setFinishOpen(false)}
+        />
+      )}
+
+      {disbandOpen && (
+        <ConfirmDisband
+          number={b.number || ""}
+          qty={data.items.length}
+          busy={busy}
+          onConfirm={doDisband}
+          onClose={() => setDisbandOpen(false)}
+        />
+      )}
+
+      {logOpen && <LogDialog batchId={id} onClose={() => setLogOpen(false)} />}
+
+      {labelOpen && labelData && (
+        <BatchLabelDialog data={labelData} onClose={() => setLabelOpen(false)} />
+      )}
+
+      {take && (
+        <TakeDialog
+          rows={take.rows}
+          exact={take.exact}
+          warehouses={whs}
+          busy={busy}
+          onTake={doTake}
+          onClose={() => setTake(null)}
         />
       )}
 

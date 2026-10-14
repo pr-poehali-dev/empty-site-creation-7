@@ -123,6 +123,7 @@ const ScanQuestion = ({ q, busy, onAnswer, onRemove, onClose }: Props) => {
                   «{s.name}» — свободно {s.free}
                 </div>
               )}
+              {res.can_mix !== false && (
               <Button
                 variant="outline"
                 className="w-full h-11 border-amber-500/40 text-amber-200"
@@ -139,6 +140,7 @@ const ScanQuestion = ({ q, busy, onAnswer, onRemove, onClose }: Props) => {
                 <Icon name="Shuffle" size={15} className="mr-1.5" />
                 Сделать смешанной{res.from_wh ? "" : ` — взять с «${s.name}»`}
               </Button>
+              )}
               {res.can_move && allowed.includes(s.name) && (
                 <Button
                   variant="outline"

@@ -10,6 +10,7 @@ import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
 import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import { useReceivingPerms } from "@/hooks/useReceivingPerms";
 import MovePanel from "./receiving-stock/MovePanel";
+import { parseBatchCode, resolveBatchCode } from "@/lib/batches";
 import ShowMore from "./receiving-stock/ShowMore";
 import StockDirRow from "./receiving-stock/StockDirRow";
 import {
@@ -109,6 +110,27 @@ const ReceivingStock = () => {
   useEffect(() => {
     if (stage === "ready") refreshTotals();
   }, [stage, refreshTotals]);
+
+  const openBatch = useCallback(
+    (id: number) => navigate(`/admin/receiving-batches/${id}`),
+    [navigate]
+  );
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!parseBatchCode(q) && !/^\d{6}\/\d+\/.+/.test(q)) return;
+    let alive = true;
+    resolveBatchCode(q)
+      .then((id) => {
+        if (!alive) return;
+        if (id) openBatch(id);
+        else toast({ title: "Партия не найдена", variant: "destructive" });
+      })
+      .catch((e) => toast({ title: (e as Error).message, variant: "destructive" }));
+    return () => {
+      alive = false;
+    };
+  }, [query, openBatch]);
 
   useEffect(() => {
     if (!active) return;
@@ -261,6 +283,7 @@ const ReceivingStock = () => {
             onClear={() => setSelected(new Set())}
             onUnknown={similar.open}
             paused={Boolean(similar.code)}
+            onBatch={openBatch}
           />
         )}
 
@@ -274,7 +297,7 @@ const ReceivingStock = () => {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Модель, бренд, группа или штрихкод"
+              placeholder="Модель, бренд, штрихкод или номер партии"
               className="pl-9 h-11"
             />
             {busy && (

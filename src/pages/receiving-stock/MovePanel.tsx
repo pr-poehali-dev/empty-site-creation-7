@@ -4,6 +4,7 @@ import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { findByCode, moveItems, undoMove } from "./stockApi";
+import { resolveBatchCode } from "@/lib/batches";
 
 interface Props {
   warehouses: { key: string; name: string }[];
@@ -16,6 +17,8 @@ interface Props {
   onUnknown: (code: string) => void;
   /** Окно «Похожие коды» открыто — сканер переноса молчит. */
   paused?: boolean;
+  /** Пикнули наклейку партии — открыть её карточку. */
+  onBatch?: (id: number) => void;
 }
 
 const REASONS: Record<string, string> = {
@@ -33,6 +36,7 @@ const MovePanel = ({
   onClear,
   onUnknown,
   paused,
+  onBatch,
 }: Props) => {
   const [busy, setBusy] = useState(false);
   const [lastMove, setLastMove] = useState<{ ids: number[]; text: string } | null>(null);
@@ -41,9 +45,18 @@ const MovePanel = ({
     if (!target || busy) return;
     setBusy(true);
     try {
+      const batchId = await resolveBatchCode(code);
+      if (batchId) {
+        onBatch?.(batchId);
+        return;
+      }
       const f = await findByCode(code);
       if (!f.found && !f.reason) {
         onUnknown(code);
+        return;
+      }
+      if (f.reason === "held") {
+        toast({ title: f.message || "Товар в партии", variant: "destructive" });
         return;
       }
       if (!f.found || !f.item) {
@@ -78,9 +91,13 @@ const MovePanel = ({
     try {
       const r = await moveItems([...selected], target);
       setLastMove({ ids: r.move_ids, text: `${r.moved} шт. → ${target}` });
+      const held = (r.held || []).map((h) => `${h.qty} шт. ${h.where}`).join("; ");
       toast({
         title: `Перенесли: ${r.moved}`,
-        description: r.skipped ? `Пропустили: ${r.skipped}` : undefined,
+        description:
+          [r.skipped ? `Пропустили: ${r.skipped}` : "", held ? `Не перенесено — ${held}, двигается только документом партии` : ""]
+            .filter(Boolean)
+            .join(". ") || undefined,
       });
       onClear();
       onDone();

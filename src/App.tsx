@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
+import BatchPublic from "./pages/BatchPublic";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import Users from "./pages/Users";
@@ -90,6 +91,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/b/:key" element={<BatchPublic />} />
           <Route path="/tma" element={<TmaHome />} />
           <Route path="/tma/cabinet" element={<TmaCabinet />} />
           <Route path="/tma/lot/new" element={<TmaLotCreate />} />
