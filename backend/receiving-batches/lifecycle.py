@@ -2,6 +2,8 @@
 import re
 import secrets
 
+import psycopg2.errors
+
 from batches import ITEM_COLS, get_batch, log, move_unit, put, touch, unit
 from common import code_match, esc
 
@@ -50,25 +52,37 @@ def act_finish(cur, actor, batch):
         return {'error': 'В черновике нет товара'}
     mixed = s['mixed']
     wh = 'Смешанная' if mixed else (s['warehouses'][0] if s['warehouses'] else batch['warehouse'])
-    # Номер за день общий для всех складов: блокировка на время выдачи номера,
-    # чтобы два одновременных «Завершить» не взяли один и тот же N.
-    cur.execute("SELECT pg_advisory_xact_lock(hashtext('receiving_batch_seq'))")
+    # Номер за день общий для всех складов. От дублей защищает уникальный индекс
+    # (day, seq): если два «Завершить» пришли разом, второй берёт следующий N.
     cur.execute("SELECT (now() AT TIME ZONE 'Europe/Moscow')::date AS d")
     day = cur.fetchone()['d']
-    cur.execute(f"SELECT COALESCE(MAX(seq),0)+1 AS n FROM receiving_batches WHERE day='{day}'")
-    seq = int(cur.fetchone()['n'])
-    number = f"{day.strftime('%y%m%d')}/{seq}/{wh}"
     key = secrets.token_urlsafe(16)
     whs = 'NULL' if mixed else f"'{esc(wh)}'"
-    cur.execute(
-        f"UPDATE receiving_batches SET status='done', number='{esc(number)}', day='{day}', "
-        f"seq={seq}, mixed={'true' if mixed else 'false'}, warehouse=COALESCE({whs}, warehouse), "
-        f"public_key=COALESCE(public_key, '{key}'), finished_at=now(), "
-        f"finished_by_name='{esc(actor['name'])}', updated_at=now() "
-        f"WHERE id={int(batch['id'])} AND status='draft' RETURNING id"
-    )
-    if not cur.fetchone():
-        return {'error': 'Не получилось завершить — обновите страницу'}
+    number = None
+    for _ in range(5):
+        cur.execute(f"SELECT COALESCE(MAX(seq),0)+1 AS n FROM receiving_batches WHERE day='{day}'")
+        seq = int(cur.fetchone()['n'])
+        candidate = f"{day.strftime('%y%m%d')}/{seq}/{wh}"
+        cur.execute("SAVEPOINT finish_try")
+        try:
+            cur.execute(
+                f"UPDATE receiving_batches SET status='done', number='{esc(candidate)}', day='{day}', "
+                f"seq={seq}, mixed={'true' if mixed else 'false'}, warehouse=COALESCE({whs}, warehouse), "
+                f"public_key=COALESCE(public_key, '{key}'), finished_at=now(), "
+                f"finished_by_name='{esc(actor['name'])}', updated_at=now() "
+                f"WHERE id={int(batch['id'])} AND status='draft' RETURNING id"
+            )
+        except psycopg2.errors.UniqueViolation:
+            cur.execute("ROLLBACK TO SAVEPOINT finish_try")
+            continue
+        updated = cur.fetchone()
+        cur.execute("RELEASE SAVEPOINT finish_try")
+        if not updated:
+            return {'error': 'Не получилось завершить — обновите страницу'}
+        number = candidate
+        break
+    if not number:
+        return {'error': 'Номер занят — нажмите «Завершить» ещё раз'}
     log(cur, batch['id'], actor, 'finish', None,
         {'number': number, 'total': s['total'], 'auto': s['auto']})
     return {'ok': True, 'number': number}
