@@ -1,0 +1,137 @@
+export const BATCHES_URL = "https://functions.poehali.dev/2bb77762-8351-43e7-a1bb-f0da8f8a9b5e";
+
+export interface BatchRow {
+  id: number;
+  number: string | null;
+  status: string;
+  warehouse: string | null;
+  mixed: boolean;
+  created_by_name: string;
+  created_by_user: number;
+  created_at: string;
+  updated_at: string;
+  counterparty: string | null;
+  qty: number;
+}
+
+export interface BatchItem {
+  id: number;
+  name: string;
+  tech_name: string;
+  supplier_barcode: string | null;
+  order_number: string | null;
+  warehouse: string | null;
+  product_group: string;
+  brand: string;
+  model: string;
+  kind: "exact" | "auto";
+  added_at: string;
+  added_by_name?: string | null;
+}
+
+export interface BatchView {
+  batch: {
+    id: number;
+    number: string | null;
+    status: string;
+    warehouse: string | null;
+    mixed: boolean;
+    comment: string | null;
+    created_by_name: string;
+    created_by_user: number;
+    created_at: string;
+    updated_at: string;
+    counterparty: { id: number; name: string; inn: string | null } | null;
+  };
+  items: BatchItem[];
+  can_edit: boolean;
+}
+
+export interface PosRef {
+  product_group: string;
+  brand: string;
+  model: string;
+  name: string;
+}
+
+export interface StockRef {
+  name: string;
+  free: number;
+}
+
+export interface ScanResult {
+  ok?: boolean;
+  flash?: number;
+  message?: string | null;
+  error?: string;
+  investigate?: boolean;
+  need?: "other_wh" | "pick_warehouse" | "pick_position" | "unknown_code" | "pick_remove";
+  from_wh?: string | null;
+  batch_wh?: string;
+  can_move?: boolean;
+  stock?: StockRef[];
+  allowed?: string[];
+  position?: PosRef;
+  positions?: (PosRef & { free: number })[];
+  code?: string;
+  rows?: BatchItem[];
+  removed?: number;
+}
+
+export interface ScanOptions {
+  on_other?: "mix" | "move";
+  warehouse?: string;
+  position?: Omit<PosRef, "name">;
+}
+
+const headers = (): Record<string, string> => ({
+  "Content-Type": "application/json",
+  "X-Authorization": `Bearer ${localStorage.getItem("auth_token") || ""}`,
+});
+
+async function get<T>(query: string): Promise<T> {
+  const r = await fetch(`${BATCHES_URL}?${query}`, { headers: headers() });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || "Ошибка запроса");
+  return d as T;
+}
+
+async function post<T>(body: Record<string, unknown>): Promise<T> {
+  const r = await fetch(BATCHES_URL, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || "Ошибка запроса");
+  return d as T;
+}
+
+export const loadBatchMeta = () =>
+  get<{ can_see: boolean; can_build: boolean; user_id: number; is_owner: boolean }>(
+    "action=meta"
+  );
+
+export const loadBatches = () =>
+  get<{ drafts: BatchRow[]; batches: BatchRow[] }>("action=list");
+
+export const newBatch = () => post<{ id: number; created: boolean }>({ action: "new" });
+
+export const loadBatch = (id: number) => get<BatchView>(`action=get&id=${id}`);
+
+export const scanToBatch = (id: number, code: string, opts: ScanOptions = {}) =>
+  post<ScanResult>({ action: "scan", id, code, ...opts });
+
+export const removeScan = (id: number, code: string) =>
+  post<ScanResult>({ action: "remove_scan", id, code });
+
+export const removeItem = (id: number, item_id: number) =>
+  post<ScanResult>({ action: "remove_item", id, item_id });
+
+export const setBatchMeta = (
+  id: number,
+  meta: { comment?: string; counterparty_id?: number | null }
+) => post<{ ok?: boolean; error?: string }>({ action: "set_meta", id, ...meta });
+
+export const deleteBatch = (id: number) =>
+  post<{ ok?: boolean; error?: string; freed?: number }>({ action: "delete", id });

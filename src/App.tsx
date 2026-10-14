@@ -39,6 +39,8 @@ import ReceivingDaily from "./pages/ReceivingDaily";
 import ReceivingStock from "./pages/ReceivingStock";
 import ReceivingDocuments from "./pages/ReceivingDocuments";
 import ReceivingCounterparties from "./pages/ReceivingCounterparties";
+import ReceivingBatches from "./pages/ReceivingBatches";
+import ReceivingBatch from "./pages/ReceivingBatch";
 import ReceivingArchive from "./pages/ReceivingArchive";
 import ReceivingList from "./pages/ReceivingList";
 import AuctionsInfo from "./pages/AuctionsInfo";
@@ -133,6 +135,8 @@ const App = () => (
           <Route path="/admin/receiving-stock" element={<NotForWholesaler><ReceivingStock /></NotForWholesaler>} />
           <Route path="/admin/receiving-documents" element={<NotForWholesaler><ReceivingDocuments /></NotForWholesaler>} />
           <Route path="/admin/receiving-counterparties" element={<NotForWholesaler><ReceivingCounterparties /></NotForWholesaler>} />
+          <Route path="/admin/receiving-batches" element={<NotForWholesaler><ReceivingBatches /></NotForWholesaler>} />
+          <Route path="/admin/receiving-batches/:id" element={<NotForWholesaler><ReceivingBatch /></NotForWholesaler>} />
           <Route path="/admin/receiving-archive/:id" element={<NotForWholesaler><ReceivingArchive /></NotForWholesaler>} />
           <Route path="/admin/receiving-list" element={<NotForWholesaler><ReceivingList /></NotForWholesaler>} />
           <Route path="/admin/auctions" element={<NotForWholesaler><OwnerAuctions /></NotForWholesaler>} />

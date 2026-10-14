@@ -20,7 +20,7 @@ const DOCS: DocTile[] = [
     title: "Список (Партия)",
     hint: "Коробки и паллеты со своим номером и наклейкой",
     icon: "Boxes",
-    ready: false,
+    ready: true,
   },
   {
     key: "move",
@@ -84,9 +84,12 @@ const ReceivingDocuments = () => {
     );
   }
 
-  const mine = DOCS.filter((d) => can(d.perm));
+  const mine = DOCS.filter((d) =>
+    d.key === "batches" ? can(d.perm) || can("docs_batches_build") : can(d.perm)
+  );
 
   const open = (d: DocTile) => {
+    if (d.key === "batches") return navigate("/admin/receiving-batches");
     toast({ title: `«${d.title}» — скоро`, description: "Раздел в разработке" });
   };
 

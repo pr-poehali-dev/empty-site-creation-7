@@ -68,10 +68,15 @@ export default {
 					from: { height: "var(--radix-accordion-content-height)" },
 					to: { height: "0" },
 				},
+				"flash-orange": {
+					"0%": { backgroundColor: "rgba(249,115,22,0.55)", boxShadow: "0 0 0 2px rgba(249,115,22,0.9)" },
+					"100%": { backgroundColor: "transparent", boxShadow: "0 0 0 0 rgba(249,115,22,0)" },
+				},
 			},
 			animation: {
 				"accordion-down": "accordion-down 0.2s ease-out",
 				"accordion-up": "accordion-up 0.2s ease-out",
+				"flash-orange": "flash-orange 1.1s ease-out",
 			},
 		},
 	},
