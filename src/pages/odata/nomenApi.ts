@@ -227,7 +227,7 @@ const WEIGHT_SAMPLE = 10;
 
 const words = (s: string) =>
   new Set(
-    s
+    stripPromo(s)
       .toLowerCase()
       .replace(/ё/g, "е")
       .split(/[^a-zа-я0-9]+/i)
@@ -262,8 +262,24 @@ export const loadTnved = async (base: string, kinds: string[]): Promise<TnvedRes
 
 const norm = (w: string) => w.toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]/gi, "");
 
+const PROMO = new Set([
+  "sale", "акция", "скидка", "скидки", "распродажа", "уценка", "уценен", "уцененный", "уцененная",
+  "новинка", "new", "хит", "hit", "promo", "промо", "суперцена", "выгодно", "выгода", "спеццена",
+  "суперскидка", "ликвидация", "бестселлер", "лучшаяцена", "суперпредложение",
+]);
+
+const isPromo = (w: string) => /!\s*["»')\]]*$/.test(w) || PROMO.has(norm(w)) || /^-?\d+%$/.test(w.replace(/[^\d%-]/g, "") || "x");
+
+export const stripPromo = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w && !isPromo(w) && norm(w) !== "")
+    .join(" ");
+
 export const productKind = (name: string, brands: string[] = []) => {
-  const words = name.trim().split(/\s+/);
+  const words = stripPromo(name).split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
   const stop = new Set(brands.map(norm).filter(Boolean));
   const idx = words.findIndex((w, i) => i > 0 && (/[A-Za-z0-9]/.test(w) || stop.has(norm(w))));
   return (idx > 0 ? words.slice(0, idx) : words.slice(0, 1)).join(" ");

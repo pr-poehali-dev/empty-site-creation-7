@@ -209,12 +209,14 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, looku
       )}
 
       <div className="ml-9 text-xs text-muted-foreground">
+        {!item.kind ? "Тип товара не определён — вес и код ТНВЭД введите вручную" : <>
         Тип «{item.kind}»:{" "}
         {tnved
           ? tnved.similar
             ? `похожих в 1С ${tnved.similar}${tnved.basis && tnved.basis !== item.kind ? ` (искал по «${tnved.basis}»)` : ""}, с кодом ТНВЭД ${options.reduce((s, o) => s + o.count, 0)}`
             : "похожих в 1С нет — код ТНВЭД введите вручную"
           : "подбираю ТНВЭД…"}
+        </>}
       </div>
 
       {similar.length > 0 && (

@@ -254,7 +254,7 @@ const OdataNomenclature = () => {
       const g = await loadGroups(base);
       const brands = g.map((x) => x.name);
       const kindOf = new Map(list.map((x) => [x.idx, productKind(x.name, brands)]));
-      const t = await loadTnved(base, Array.from(new Set(kindOf.values())));
+      const t = await loadTnved(base, Array.from(new Set(kindOf.values())).filter(Boolean));
       setGroups(g);
       setTnved(t.kinds);
       setCountries(t.countries);
@@ -262,7 +262,7 @@ const OdataNomenclature = () => {
         prev.map((x) => {
           const kind = kindOf.get(x.idx) ?? x.kind;
           let y = { ...x, kind };
-          const k = t.kinds[kind];
+          const k = kind ? t.kinds[kind] : undefined;
           const best = k?.options?.[0];
           if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
           const manual = x.weight.trim() && !x.weightAuto;
