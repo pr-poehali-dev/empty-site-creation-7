@@ -4,6 +4,7 @@ import os
 import base64
 import re
 import time
+import uuid
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -1558,12 +1559,13 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     f_country = pick(COUNTRY_FIELD_NAMES, cols) if is_receipt else None
     f_gtd = pick(GTD_FIELD_NAMES, cols) if is_receipt else None
     f_rnpt = pick(RNPT_FIELD_NAMES, cols) if is_receipt else None
-    rnpt_target = f_rnpt or f_gtd
+    trace_table = 'СведенияПрослеживаемости' if is_receipt and 'СведенияПрослеживаемости' in fields else None
+    rnpt_target = f_rnpt or (None if trace_table else f_gtd)
     country_cache = prefetch_countries(cfg, [r.get('country') for r in rows]) if f_country else {}
     ref_numbers = []
     if f_gtd:
         ref_numbers += [r.get('gtd') for r in rows]
-    if rnpt_target and rnpt_target.endswith('_Key'):
+    if trace_table or (rnpt_target and rnpt_target.endswith('_Key')):
         ref_numbers += [r.get('rnpt') for r in rows]
     ref_numbers = [str(n or '').strip() for n in ref_numbers if str(n or '').strip()]
 
@@ -1581,6 +1583,9 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     vat = VAT_RATES.get(vat_key) or VAT_RATES['none']
     percent = vat['percent']
 
+    unit_key = find_unit_pcs(cfg) if 'ЕдиницаИзмерения_Key' in cols else None
+    trace = []
+    trace_expected = {}
     goods = []
     line = 0
     total_vat = 0.0
@@ -1607,6 +1612,34 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
             row[f_vat_sum] = vat_sum
         if f_total:
             row[f_total] = amount
+        if unit_key:
+            row['ЕдиницаИзмерения_Key'] = unit_key
+        if is_receipt and 'ОтражениеВУСН' in cols:
+            row['ОтражениеВУСН'] = 'Принимаются'
+
+        if is_receipt and trace_table:
+            rn = str(r.get('rnpt') or '').strip()
+            g4 = str(r.get('gtd') or '').strip()
+            if not rn and gtd_kind(g4) == 'rnpt':
+                rn = g4
+            if rn:
+                lost = {'line': line, 'article': r.get('article') or '', 'name': r.get('name') or '',
+                        'kind': 'РНПТ', 'number': rn}
+                ref = gtd_cache.get(rn)
+                if not ref:
+                    lost_numbers.append({**lost, 'reason': 'нет в справочнике номеров ГТД'})
+                else:
+                    row_id = str(uuid.uuid4())
+                    row['ИдентификаторСтроки'] = row_id
+                    row['ПрослеживаемыйТовар'] = True
+                    trace.append({
+                        'LineNumber': str(len(trace) + 1),
+                        'РНПТ_Key': ref,
+                        'Количество': qty,
+                        'КоличествоПрослеживаемости': qty,
+                        'ИдентификаторСтроки': row_id,
+                    })
+                    trace_expected[row_id] = lost
 
         if is_receipt:
             if f_country and r.get('country'):
@@ -1615,9 +1648,14 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
                     row[f_country] = ck
                 else:
                     missing_country.add(str(r['country']).strip())
-            for kind, num, target in (('ГТД', r.get('gtd'), f_gtd), ('РНПТ', r.get('rnpt'), rnpt_target)):
+            pairs = [('ГТД', r.get('gtd'), f_gtd)]
+            if not trace_table:
+                pairs.append(('РНПТ', r.get('rnpt'), rnpt_target))
+            for kind, num, target in pairs:
                 num = str(num or '').strip()
                 if not num:
+                    continue
+                if trace_table and gtd_kind(num) == 'rnpt':
                     continue
                 lost = {'line': line, 'article': r.get('article') or '', 'name': r.get('name') or '',
                         'kind': kind, 'number': num}
@@ -1646,6 +1684,8 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
         'СуммаДокумента': round(sum(g[f_amount] for g in goods), 2),
         table: goods,
     }
+    if trace:
+        doc[trace_table] = trace
     if org_key:
         doc['Организация_Key'] = org_key
 
@@ -1729,6 +1769,18 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
             v = w.get(target)
             if not v or v == EMPTY_GUID:
                 lost_numbers.append({**lost, 'reason': '1С не приняла номер'})
+    if is_receipt and trace_expected:
+        got_trace = d.get(trace_table)
+        if not isinstance(got_trace, list):
+            g = call_odata(cfg, f"{entity}(guid'{d.get('Ref_Key')}')?$format=json")
+            got_trace = (g.get('data') or {}).get(trace_table) if g['ok'] else None
+        if isinstance(got_trace, list):
+            ok_ids = {t.get('ИдентификаторСтроки') for t in got_trace
+                      if t.get('РНПТ_Key') and t.get('РНПТ_Key') != EMPTY_GUID}
+            for rid, lost in trace_expected.items():
+                if rid not in ok_ids:
+                    lost_numbers.append({**lost, 'reason': '1С не записала РНПТ в сведения прослеживаемости'})
+        used['traceability_rows'] = len(trace)
     if lost_numbers:
         used['lost_numbers'] = sorted(lost_numbers, key=lambda x: x['line'])
 
@@ -1749,6 +1801,17 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
         'amount': sent_amount,
         'used': used,
     }
+
+
+def find_unit_pcs(cfg):
+    """Ищет единицу измерения «шт» (код 796)."""
+    for flt in ("Code eq '796'", "Description eq 'шт'"):
+        r = call_odata(cfg, f"Catalog_КлассификаторЕдиницИзмерения?$format=json&$filter={flt}&$top=1&$select=Ref_Key")
+        if r['ok']:
+            items = r['data'].get('value') or []
+            if items:
+                return items[0].get('Ref_Key')
+    return None
 
 
 def create_doc(cfg, doc_kind, org_key, warehouse_key):
