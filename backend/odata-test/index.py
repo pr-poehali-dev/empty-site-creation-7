@@ -1003,8 +1003,24 @@ def gtd_payload(number, number_field, fields=None):
     return body
 
 
+def gtd_split(number):
+    """Как 1С хранит номер: для РНПТ в «номер» идут три части, полный номер — в код."""
+    n = str(number or '').strip()
+    if gtd_kind(n) == 'rnpt':
+        return '/'.join(n.split('/')[:3]), n
+    return n, n
+
+
 def gtd_payload_full(number, number_field, fields):
     """Полный набор реквизитов: номер, код, признаки папки/удаления и вид номера."""
+    if gtd_kind(number) == 'rnpt':
+        num, code = gtd_split(number)
+        body = {number_field or GTD_NUM_FIELD: num, 'Code': code}
+        for k, v in (('IsFolder', False), ('DeletionMark', False),
+                     (GTD_FLAG_RNPT, True), (GTD_FLAG_TD, False)):
+            if not fields or k in fields:
+                body[k] = v
+        return body
     body = {}
     if number_field:
         body[number_field] = number
@@ -1113,13 +1129,18 @@ def find_one_gtd(cfg, number):
     n = str(number or '').strip()
     if not n:
         return None, None
-    r = call_odata(
-        cfg,
-        f"Catalog_НомераГТД?$format=json&$filter={GTD_NUM_FIELD} eq '{n}'&$top=1",
-    )
+    if gtd_kind(n) == 'rnpt':
+        flt = f"Code eq '{n}'"
+    else:
+        flt = f"{GTD_NUM_FIELD} eq '{n}'"
+    r = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$filter={flt}&$top=5")
     if not r['ok']:
         return None, str(r['error'])[:200]
     items = r['data'].get('value', []) or []
+    if gtd_kind(n) == 'rnpt':
+        items = [i for i in items if i.get(GTD_FLAG_RNPT) and not i.get('DeletionMark')] or items
+    else:
+        items = [i for i in items if not i.get(GTD_FLAG_RNPT)] or items
     if not items:
         return None, None
     return items[0].get('Ref_Key'), None
@@ -1273,9 +1294,10 @@ def rnpt_debug(cfg, numbers):
 def gtd_fix_payload(number):
     """Реквизиты как в настоящей записи 1С."""
     kind = gtd_kind(number)
+    num, code = gtd_split(number)
     return {
-        'Code': number[:25],
-        GTD_NUM_FIELD: number,
+        'Code': code if kind == 'rnpt' else number[:25],
+        GTD_NUM_FIELD: num,
         'СтранаВвозаНеРФ': False,
         'ЭтоНомерТД': kind == 'td',
         'ЭтоРНПТ': kind == 'rnpt',
@@ -1295,7 +1317,7 @@ def gtd_update_one(cfg, number, ref):
         'ref': ref,
         'before': before.get('data') if before['ok'] else str(before.get('error'))[:200],
         'after': after.get('data') if after['ok'] else str(after.get('error'))[:200],
-        'ok': u['ok'] and got == number,
+        'ok': u['ok'] and got == gtd_split(number)[0],
         'error': None if u['ok'] else str(u.get('error'))[:300],
     }
 
