@@ -91,6 +91,7 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
     off: rows.filter((r) => !r.on).length,
   };
   const selected = rows.filter((r) => r.on);
+  const fieldLabel = PRICE_FIELDS.find((f) => f.value === field)?.label || "Цена";
   const noPrice = rows.filter((r) => r.value != null && (r.it.created || !r.old));
   const markAll = () =>
     setChecked(Object.fromEntries(rows.map((r) => [r.it.product_id, r.value != null])));
@@ -287,11 +288,11 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
                       <p>{fmt(it.invoice_price)}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-muted-foreground">Сейчас</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{fieldLabel} сейчас</p>
                       <p>{it.created ? "—" : fmt(old)}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-muted-foreground">Новая</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{fieldLabel} новая</p>
                       <Input
                         inputMode="decimal"
                         value={manual[it.product_id] ?? (value == null ? "" : String(value))}
