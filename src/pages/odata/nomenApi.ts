@@ -75,15 +75,31 @@ export interface BarcodeWriteResult {
   error?: string;
 }
 
-const odataPost = async (action: string, base: string, payload: object) => {
-  const r = await fetch(`${ODATA_URL}?action=${action}&base=${encodeURIComponent(base)}`, {
+export class NetTimeout extends Error {}
+
+const fetchWithTimeout = async (url: string, init: RequestInit, ms?: number) => {
+  if (!ms) return fetch(url, init);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new NetTimeout("Нет ответа — слабая связь");
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+};
+
+const odataPost = async (action: string, base: string, payload: object, timeoutMs?: number) => {
+  const r = await fetchWithTimeout(`${ODATA_URL}?action=${action}&base=${encodeURIComponent(base)}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}`,
     },
     body: JSON.stringify({ action, base, ...payload }),
-  });
+  }, timeoutMs);
   const text = await r.text();
   let d;
   try {
@@ -115,17 +131,40 @@ export const parseInvoice = async (b64: string, fileName: string): Promise<Parse
   return d;
 };
 
-export const matchPortion = (base: string, opts: MatchOptions, rows: InvoiceItem[]) =>
-  withRetry<MatchItem[]>(async () => {
+const MATCH_TIMEOUT = 40000;
+const MATCH_TRIES = 4;
+
+export const matchPortion = async (
+  base: string,
+  opts: MatchOptions,
+  rows: InvoiceItem[],
+  onRetry?: (attempt: number) => void,
+): Promise<MatchItem[]> => {
+  let last: unknown;
+  for (let a = 1; a <= MATCH_TRIES; a++) {
+    if (a > 1) {
+      onRetry?.(a - 1);
+      await new Promise((r) => setTimeout(r, 1500 * (a - 1)));
+    }
+    try {
+      return await matchOnce(base, opts, rows);
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last;
+};
+
+const matchOnce = async (base: string, opts: MatchOptions, rows: InvoiceItem[]) => {
     const res = await odataPost("nomen_match", base, {
       mode: opts.mode,
       by: opts.by,
       exact: opts.exact,
       check_barcodes: opts.checkBarcodes,
       rows: rows.map((x) => ({ article: x.article, barcode: x.barcode, name: x.name })),
-    });
-    return res.items;
-  });
+    }, MATCH_TIMEOUT);
+    return res.items as MatchItem[];
+};
 
 export const addBarcodesPortion = (base: string, rows: { key: string; barcode: string }[]) =>
   withRetry<BarcodeWriteResult[]>(async () => {

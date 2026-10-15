@@ -77,6 +77,9 @@ const OdataNomenclature = () => {
   const [matches, setMatches] = useState<(MatchItem | null)[]>([]);
   const [checking, setChecking] = useState(false);
   const [done, setDone] = useState(0);
+  const [retryNote, setRetryNote] = useState("");
+  const [resumeFrom, setResumeFrom] = useState<number | null>(null);
+  const resRef = useRef<(MatchItem | null)[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [writing, setWriting] = useState(false);
   const [writeProgress, setWriteProgress] = useState({ done: 0, total: 0 });
@@ -132,6 +135,7 @@ const OdataNomenclature = () => {
       const b64 = String(reader.result).split(",")[1];
       setParsing(true);
       setMatches([]);
+      setResumeFrom(null);
       setDone(0);
       setFilter("all");
       setWriteResults(null);
@@ -169,19 +173,36 @@ const OdataNomenclature = () => {
     setPricedKeys([]);
     setPriceDocByKey({});
     setDecisions({});
+    resRef.current = res;
+    await runFrom(0, opts);
+  };
+
+  const runFrom = async (start: number, o: MatchOptions) => {
+    const res = resRef.current;
+    stopRef.current = false;
+    setChecking(true);
+    setResumeFrom(null);
+    setRetryNote("");
     let complete = false;
+    let i = start;
     try {
-      for (let i = 0; i < items.length; i += portion) {
+      for (; i < items.length; i += portion) {
         if (stopRef.current) break;
-        const part = await matchPortion(base, opts, items.slice(i, i + portion));
+        const part = await matchPortion(base, o, items.slice(i, i + portion), (n) =>
+          setRetryNote(`Слабая связь, повторяю… (${n} из 3)`),
+        );
+        setRetryNote("");
         part.forEach((m, j) => (res[i + j] = m));
         setMatches([...res]);
         setDone(Math.min(i + portion, items.length));
       }
       complete = !stopRef.current;
+      if (stopRef.current && i < items.length) setResumeFrom(i);
     } catch (e) {
-      toast({ title: "Проверка остановлена", description: (e as Error).message, variant: "destructive" });
+      setResumeFrom(i);
+      toast({ title: "Проверка прервалась", description: `${(e as Error).message}. Нажмите «Продолжить».`, variant: "destructive" });
     } finally {
+      setRetryNote("");
       setChecking(false);
       if (complete) prepareNew(res);
     }
@@ -425,6 +446,7 @@ const OdataNomenclature = () => {
     setDecisions({});
     setInvoice(null);
     setMatches([]);
+    setResumeFrom(null);
     setDone(0);
     setWriteResults(null);
     setNewItems([]);
@@ -523,15 +545,24 @@ const OdataNomenclature = () => {
                   Остановить
                 </Button>
               ) : (
-                <Button onClick={runCheck} disabled={writing}>
+                <>
+                {resumeFrom !== null && (
+                  <Button onClick={() => runFrom(resumeFrom, usedOpts ?? opts)} disabled={writing}>
+                    <Icon name="Play" size={16} />
+                    Продолжить с {resumeFrom + 1}
+                  </Button>
+                )}
+                <Button variant={resumeFrom !== null ? "outline" : "default"} onClick={runCheck} disabled={writing}>
                   <Icon name="Search" size={16} />
                   {hasResults ? "Проверить заново" : "Проверить в 1С"}
                 </Button>
+                </>
               )}
               {(checking || done > 0) && (
                 <span className="text-sm text-muted-foreground flex items-center gap-2">
                   {checking && <Icon name="Loader2" size={14} className="animate-spin" />}
                   Проверено {done} из {items.length}
+                  {retryNote && <span className="text-amber-400">· {retryNote}</span>}
                 </span>
               )}
             </div>
