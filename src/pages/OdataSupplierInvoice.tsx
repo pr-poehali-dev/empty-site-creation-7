@@ -301,7 +301,38 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             `  ${p.number} → ${p.error ? "ошибка: " + p.error : "найдено " + p.found}`,
         )
         .join("\n");
+      type RecView = {
+        number: string;
+        number_len: number;
+        code: string;
+        code_len: number;
+        rnpt?: boolean;
+        td?: boolean;
+        deleted?: boolean;
+      };
+      type Try = { how: string; found?: number; error?: string; rows?: RecView[] };
+      type RnptProbe = { number: string; len: number; tries: Try[] };
+      const rnpt = ((d.rnpt_probes || []) as RnptProbe[])
+        .map(
+          (p) =>
+            `● ${p.number}${p.len ? ` (${p.len} симв.)` : ""}\n` +
+            p.tries
+              .map(
+                (t) =>
+                  `  ${t.how}: ${t.error ? "ошибка: " + t.error : "найдено " + t.found}` +
+                  (t.rows || [])
+                    .map(
+                      (r) =>
+                        `\n    номер "${r.number}" (${r.number_len})\n    код "${r.code}" (${r.code_len})` +
+                        ` · РНПТ=${r.rnpt} · ТД=${r.td}${r.deleted ? " · удалена" : ""}`,
+                    )
+                    .join(""),
+              )
+              .join("\n"),
+        )
+        .join("\n\n");
       setGtdProgress(
+        (rnpt ? `ПОИСК РНПТ:\n${rnpt}\n\n` : "") +
         `Всего записей в справочнике: ${d.count}\n` +
           `Прочитано: ${d.scanned}, остановка: ${d.stop}\n` +
           `Поле сверки: ${d.field}\n` +

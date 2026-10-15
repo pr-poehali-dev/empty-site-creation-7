@@ -1215,6 +1215,7 @@ def gtd_debug(cfg, numbers):
             'error': None if q['ok'] else str(q.get('error'))[:200],
         })
     out['probes'] = probes
+    out['rnpt_probes'] = rnpt_debug(cfg, numbers or [])
 
     chk = check_gtd(cfg, numbers or [])
     out['pages'] = chk.get('pages', [])
@@ -1222,6 +1223,50 @@ def gtd_debug(cfg, numbers):
     out['stop'] = chk.get('stop', '')
     out['existing'] = chk.get('existing', 0)
     out['checked'] = chk.get('checked', 0)
+    return out
+
+
+def _gtd_rec_view(row):
+    num = str(row.get(GTD_NUM_FIELD) or '')
+    code = str(row.get('Code') or '')
+    return {
+        'number': num, 'number_len': len(num),
+        'code': code, 'code_len': len(code),
+        'rnpt': row.get(GTD_FLAG_RNPT), 'td': row.get(GTD_FLAG_TD),
+        'deleted': row.get('DeletionMark'), 'ref': row.get('Ref_Key'),
+    }
+
+
+def rnpt_debug(cfg, numbers):
+    """Ищет РНПТ разными способами, чтобы понять, как 1С их хранит."""
+    rnpts = [str(x or '').strip() for x in numbers]
+    rnpts = [n for n in rnpts if gtd_kind(n) == 'rnpt'][:2]
+    out = []
+    for n in rnpts:
+        base = '/'.join(n.split('/')[:3])
+        tries = [
+            ('полный номер', f"{GTD_NUM_FIELD} eq '{n}'"),
+            ('код (25 симв.)', f"Code eq '{n[:25]}'"),
+            ('код полностью', f"Code eq '{n}'"),
+            ('номер содержит ГТД-часть', f"substringof('{base}', {GTD_NUM_FIELD})"),
+            ('код содержит ГТД-часть', f"substringof('{base}', Code)"),
+        ]
+        res = []
+        for label, flt in tries:
+            q = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$filter={flt}&$top=5")
+            if q['ok']:
+                rows = q['data'].get('value', []) or []
+                res.append({'how': label, 'found': len(rows),
+                            'rows': [_gtd_rec_view(r) for r in rows]})
+            else:
+                res.append({'how': label, 'error': str(q.get('error'))[:150]})
+        out.append({'number': n, 'len': len(n), 'tries': res})
+    last = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$filter={GTD_FLAG_RNPT} eq true&$top=5")
+    out.append({'number': 'записи с отметкой ЭтоРНПТ', 'len': 0, 'tries': [
+        {'how': 'первые 5', 'found': len(last['data'].get('value', []) or []),
+         'rows': [_gtd_rec_view(r) for r in (last['data'].get('value', []) or [])]}
+        if last['ok'] else {'how': 'первые 5', 'error': str(last.get('error'))[:150]}
+    ]})
     return out
 
 
