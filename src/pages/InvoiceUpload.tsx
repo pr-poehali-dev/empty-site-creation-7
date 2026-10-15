@@ -249,12 +249,7 @@ const InvoiceUpload = () => {
     Object.keys(mapping).forEach((k) => {
       if (k === field) delete mapping[k];
     });
-    if (colIndex !== "") {
-      Object.keys(mapping).forEach((k) => {
-        if (mapping[k] === Number(colIndex)) delete mapping[k];
-      });
-      mapping[field] = Number(colIndex);
-    }
+    if (colIndex !== "") mapping[field] = Number(colIndex);
     parseFile(fileData.b64, fileData.name, mapping);
   };
 

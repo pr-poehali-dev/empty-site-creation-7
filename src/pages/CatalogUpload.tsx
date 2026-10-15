@@ -209,7 +209,7 @@ const CatalogUpload = () => {
     if (d.price_mapping && Object.keys(d.price_mapping).length) {
       setPriceMap(d.price_mapping);
     } else {
-      const cols = (d.columns || []).map((c) => c.field).filter(Boolean) as string[];
+      const cols = Object.keys(d.mapping || {});
       const guess: Record<string, string> = {};
       if (cols.includes("price_retail")) guess.price_base = "price_retail";
       else if (cols.includes("price")) guess.price_base = "price";
@@ -261,13 +261,11 @@ const CatalogUpload = () => {
     parseFile(b64, f.name);
   };
 
-  const setColumnField = (colIndex: number, field: string) => {
+  const setFieldColumn = (field: string, colIndex: string) => {
     if (!result || !fileData) return;
     const mp = { ...result.mapping };
-    Object.keys(mp).forEach((k) => {
-      if (mp[k] === colIndex) delete mp[k];
-    });
-    if (field) mp[field] = colIndex;
+    delete mp[field];
+    if (colIndex !== "") mp[field] = Number(colIndex);
     parseFile(fileData.b64, fileData.name, mp);
   };
 
@@ -464,20 +462,23 @@ const CatalogUpload = () => {
         {result && (
           <>
             <div className="rounded-2xl border border-white/[0.08] bg-card p-4 space-y-3">
-              <div className="text-sm font-medium text-muted-foreground">Колонки файла</div>
-              <div className="space-y-2 max-h-72 overflow-y-auto">
-                {result.columns.map((c) => (
-                  <div key={c.index} className="flex items-center gap-2">
-                    <div className="flex-1 text-sm truncate">{c.title}</div>
+              <div className="text-sm font-medium text-muted-foreground">Реквизиты и колонки файла</div>
+              <div className="text-xs text-muted-foreground">
+                Одну колонку можно выбрать для нескольких реквизитов
+              </div>
+              <div className="space-y-2">
+                {FIELDS.map((f) => (
+                  <div key={f.key} className="flex items-center gap-2">
+                    <div className="flex-1 text-sm truncate">{f.title}</div>
                     <select
-                      value={c.field || ""}
-                      onChange={(e) => setColumnField(c.index, e.target.value)}
-                      className="h-9 rounded-xl bg-secondary border border-white/[0.08] px-2 text-sm w-48"
+                      value={result.mapping[f.key] ?? ""}
+                      onChange={(e) => setFieldColumn(f.key, e.target.value)}
+                      className="h-9 rounded-xl bg-secondary border border-white/[0.08] px-2 text-sm w-56 min-w-0"
                     >
                       <option value="">не используется</option>
-                      {FIELDS.map((f) => (
-                        <option key={f.key} value={f.key}>
-                          {f.title}
+                      {result.columns.map((c) => (
+                        <option key={c.index} value={c.index}>
+                          {c.title}
                         </option>
                       ))}
                     </select>
@@ -503,7 +504,7 @@ const CatalogUpload = () => {
                   >
                     <option value="">пусто</option>
                     {PRICE_SOURCES.filter((s) =>
-                      result.columns.some((c) => c.field === s),
+                      result.mapping[s] !== undefined,
                     ).map((s) => (
                       <option key={s} value={s}>
                         {FIELDS.find((f) => f.key === s)?.title}
