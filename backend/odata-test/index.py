@@ -1377,6 +1377,7 @@ def create_gtd_batch(cfg, numbers, budget=18.0):
                      'Реквизиты справочника: ' + (', '.join(sch['fields'][:40]) or 'не прочитаны'),
         }
     existing = prefetch_gtd(cfg, uniq, f_number)
+    started = time.time()
     created = 0
     skipped = 0
     errors = []

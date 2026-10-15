@@ -384,11 +384,12 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     let queue = [...gtdMissing];
     const total = queue.length;
     let done = 0;
+    let idle = 0;
     try {
       while (queue.length) {
         setGtdProgress(`Создано ${done} из ${total}`);
-        const portion = queue.slice(0, 120);
-        const rest = queue.slice(120);
+        const portion = queue.slice(0, 20);
+        const rest = queue.slice(20);
         const r = await odataApi.createGtd(base, portion);
         done += r.result.created || 0;
         const next: string[] = [...(r.result.remaining || []), ...rest];
@@ -398,8 +399,10 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           setGtdError(r.result.error || "1С отказала");
           break;
         }
-        if ((r.result.remaining || []).length && !r.result.created) {
-          setGtdError("1С не создаёт номера — остановился, чтобы не плодить записи");
+        const progressed = (r.result.created || 0) + (r.result.already || 0);
+        idle = progressed ? 0 : idle + 1;
+        if (idle >= 3) {
+          setGtdError("1С долго не отвечает — остановился. Нажмите кнопку ещё раз, созданные номера повторно не создадутся");
           break;
         }
       }
@@ -681,7 +684,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                         ) : (
                           <Icon name="Plus" size={15} />
                         )}
-                        Создать номера ГТД
+                        Создать номера ГТД и РНПТ
                       </Button>
                       <Button
                         onClick={doTryOneGtd}
