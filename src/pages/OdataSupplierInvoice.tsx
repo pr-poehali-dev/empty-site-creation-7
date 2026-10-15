@@ -56,6 +56,21 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [gtdScanned, setGtdScanned] = useState(0);
   const [gtdBusy, setGtdBusy] = useState(false);
   const [gtdProgress, setGtdProgress] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(gtdProgress);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = gtdProgress;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   const [gtdError, setGtdError] = useState("");
   const [gtdUnknown, setGtdUnknown] = useState<string[]>([]);
   const [gtdFixes, setGtdFixes] = useState<Record<number, GtdFix>>({});
@@ -825,8 +840,19 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                   </div>
                 )}
                 {gtdProgress && (
-                  <div className="text-xs mt-2 opacity-80 whitespace-pre-wrap break-all">
-                    {gtdProgress}
+                  <div className="mt-2">
+                    <Button
+                      onClick={copyReport}
+                      size="sm"
+                      variant="outline"
+                      className="rounded-lg gap-2 mb-2"
+                    >
+                      <Icon name={copied ? "Check" : "Copy"} size={15} />
+                      {copied ? "Скопировано" : "Скопировать отчёт"}
+                    </Button>
+                    <div className="text-xs opacity-80 whitespace-pre-wrap break-all">
+                      {gtdProgress}
+                    </div>
                   </div>
                 )}
               </div>
