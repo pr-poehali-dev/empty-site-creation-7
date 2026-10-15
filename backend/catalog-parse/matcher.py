@@ -15,6 +15,13 @@ def norm_article(a):
     return a.upper().translate(str.maketrans('АВЕКМНОРСТУХ №', 'ABEKMHOPCTYX  ')).replace(' ', '')
 
 
+def _same(a, b):
+    try:
+        return abs(float(a) - float(b)) < 0.0005
+    except (TypeError, ValueError):
+        return str(a).strip() == str(b).strip()
+
+
 def match_items(cur, items):
     """Ищет товары по нормализованному артикулу. Возвращает карту row -> product."""
     arts = {}
@@ -86,7 +93,7 @@ def build_report(cur, items):
             cur_val = p.get(col)
             if cur_val in (None, ''):
                 empty_cnt += 1
-            elif str(cur_val) != str(val):
+            elif not _same(cur_val, val):
                 differ_cnt += 1
         if empty_cnt or differ_cnt:
             fill.append({

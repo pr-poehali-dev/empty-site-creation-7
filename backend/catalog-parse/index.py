@@ -7,7 +7,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
-from matcher import build_report, norm_article
+from matcher import build_report, norm_article, match_items
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -206,7 +206,12 @@ def preview(draft_id, excluded, article_case):
     items = apply_filters(d['rows_data'] or [], excluded, article_case)
     with _conn() as c, c.cursor() as cur:
         report, _ = build_report(cur, items)
+        kept = {it['row'] for it in items}
+        dropped = [dict(it, article=convert_article(it.get('article'), article_case or 'as_is'))
+                   for it in (d['rows_data'] or []) if it['row'] not in kept]
+        drop_map, _ = match_items(cur, dropped)
     report['excluded_count'] = len(d['rows_data'] or []) - len(items)
+    report['excluded_existing'] = len(drop_map)
     return report, None
 
 
@@ -219,7 +224,19 @@ def _price_values(item, price_mapping):
     return vals
 
 
+def _sql_val(v):
+    if v is None or v == '':
+        return 'NULL'
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return str(v)
+    return "'" + _esc(v) + "'"
+
+
+COMMIT_CHUNK = 100
+
+
 def commit(draft_id, opts):
+    """Записывает одну порцию товаров. Возвращает прогресс."""
     d = get_draft(draft_id)
     if not d:
         return None, 'Черновик истёк'
@@ -233,12 +250,16 @@ def commit(draft_id, opts):
     fill_mode = opts.get('fill_mode') or 'empty_only'
     fill_fields = set(opts.get('fill_fields') or [])
     add_barcodes = opts.get('add_barcodes', True)
+    offset = max(int(opts.get('offset') or 0), 0)
+    limit = min(max(int(opts.get('limit') or COMMIT_CHUNK), 1), 300)
 
-    items = apply_filters(d['rows_data'] or [], excluded, article_case)
+    all_items = apply_filters(d['rows_data'] or [], excluded, article_case)
+    total = len(all_items)
+    items = all_items[offset:offset + limit]
 
     created = updated = bc_added = 0
     with _conn() as c, c.cursor() as cur:
-        report, row_map = build_report(cur, items)
+        row_map, _ = match_items(cur, items)
         if product_group:
             cur.execute(
                 "SELECT product_group, max(product_group_id) FROM products "
@@ -258,80 +279,101 @@ def commit(draft_id, opts):
                         "VALUES (NULL, 'Без категории', 9999) RETURNING id")
             default_cat = cur.fetchone()[0]
 
-        seen_bc = set()
-        for it in items:
-            prices = _price_values(it, price_mapping)
+        updates = []
+        new_items = []
+        item_pid = {}
+        for idx, it in enumerate(items):
             existing = row_map.get(it['row'])
-
-            if existing:
-                if fill_mode == 'skip':
-                    product_id = existing['id']
+            if not existing:
+                new_items.append((idx, it))
+                continue
+            item_pid[idx] = existing['id']
+            if fill_mode == 'skip':
+                continue
+            prices = _price_values(it, price_mapping)
+            sets = []
+            overwrite = fill_mode == 'overwrite'
+            for src, col in [('tnved', 'tnved_code'), ('weight_gross', 'weight_gross'),
+                             ('weight_net', 'weight_net')]:
+                if src not in fill_fields:
+                    continue
+                val = it.get(src)
+                if val in (None, ''):
+                    continue
+                if overwrite:
+                    sets.append(col + " = " + _sql_val(val))
                 else:
-                    sets = []
-                    overwrite = fill_mode == 'overwrite'
-                    pairs = [('tnved', 'tnved_code'), ('weight_gross', 'weight_gross'),
-                             ('weight_net', 'weight_net')]
-                    for src, col in pairs:
-                        if src not in fill_fields:
-                            continue
-                        val = it.get(src)
-                        if val in (None, ''):
-                            continue
-                        if overwrite:
-                            sets.append(col + " = '" + _esc(val) + "'")
-                        else:
-                            sets.append(col + " = COALESCE(" + col + ", '" + _esc(val) + "')")
-                    if overwrite:
-                        for col, val in prices.items():
-                            if val is not None:
-                                sets.append(col + " = " + str(val))
-                        if vat_rate:
-                            sets.append("vat_rate = '" + _esc(vat_rate) + "'")
-                    else:
-                        if vat_rate:
-                            sets.append("vat_rate = COALESCE(vat_rate, '" + _esc(vat_rate) + "')")
-                    if sets:
-                        cur.execute("UPDATE products SET " + ', '.join(sets)
-                                    + ", updated_at = NOW() WHERE id = " + str(existing['id']))
-                        updated += 1
-                    product_id = existing['id']
-            else:
-                cur.execute(
-                    "INSERT INTO products (category_id, name, article, brand, product_group, product_group_id, "
-                    "price_base, price_retail, price_wholesale, price_purchase, "
-                    "vat_rate, weight_gross, weight_net, tnved_code, is_new) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) RETURNING id",
-                    (default_cat, it['name'], it.get('article') or None,
-                     it.get('brand') or None, product_group, product_group_id,
-                     prices['price_base'], prices['price_retail'],
-                     prices['price_wholesale'], prices['price_purchase'],
-                     vat_rate, it.get('weight_gross'), it.get('weight_net'),
-                     it.get('tnved') or None)
-                )
-                product_id = cur.fetchone()[0]
-                created += 1
-                if it.get('brand'):
-                    cur.execute("INSERT INTO brands (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
-                                (it['brand'],))
+                    sets.append(col + " = COALESCE(" + col + ", " + _sql_val(val) + ")")
+            if overwrite:
+                for col, val in prices.items():
+                    if val is not None:
+                        sets.append(col + " = " + str(val))
+                if vat_rate:
+                    sets.append("vat_rate = " + _sql_val(vat_rate))
+            elif vat_rate:
+                sets.append("vat_rate = COALESCE(vat_rate, " + _sql_val(vat_rate) + ")")
+            if sets:
+                updates.append("UPDATE products SET " + ', '.join(sets)
+                               + ", updated_at = NOW() WHERE id = " + str(int(existing['id'])))
+        if updates:
+            cur.execute(';\n'.join(updates))
+            updated = len(updates)
 
-            bc = it.get('barcode')
-            if add_barcodes and bc and bc not in seen_bc:
-                seen_bc.add(bc)
+        if new_items:
+            rows_sql = []
+            for _, it in new_items:
+                prices = _price_values(it, price_mapping)
+                rows_sql.append('(' + ', '.join([
+                    str(int(default_cat)), _sql_val(it['name']), _sql_val(it.get('article')),
+                    _sql_val(it.get('brand')), _sql_val(product_group), _sql_val(product_group_id),
+                    _sql_val(prices['price_base']), _sql_val(prices['price_retail']),
+                    _sql_val(prices['price_wholesale']), _sql_val(prices['price_purchase']),
+                    _sql_val(vat_rate), _sql_val(it.get('weight_gross')), _sql_val(it.get('weight_net')),
+                    _sql_val(it.get('tnved')), 'TRUE',
+                ]) + ')')
+            cur.execute(
+                "INSERT INTO products (category_id, name, article, brand, product_group, product_group_id, "
+                "price_base, price_retail, price_wholesale, price_purchase, "
+                "vat_rate, weight_gross, weight_net, tnved_code, is_new) VALUES "
+                + ',\n'.join(rows_sql) + " RETURNING id"
+            )
+            ids = [r[0] for r in cur.fetchall()]
+            for (idx, _), pid in zip(new_items, ids):
+                item_pid[idx] = pid
+            created = len(ids)
+
+            brands = sorted({it['brand'] for _, it in new_items if it.get('brand')})
+            if brands:
+                cur.execute("INSERT INTO brands (name) VALUES "
+                            + ', '.join('(' + _sql_val(b) + ')' for b in brands)
+                            + " ON CONFLICT (name) DO NOTHING")
+
+        if add_barcodes:
+            seen = set()
+            pairs = []
+            for idx, it in enumerate(items):
+                bc = str(it.get('barcode') or '').strip()
+                if bc and bc not in seen and idx in item_pid:
+                    seen.add(bc)
+                    pairs.append('(' + str(int(item_pid[idx])) + ', ' + _sql_val(bc) + ')')
+            if pairs:
                 cur.execute(
                     "INSERT INTO product_barcodes (product_id, barcode) "
-                    "SELECT %s, %s WHERE NOT EXISTS "
-                    "(SELECT 1 FROM product_barcodes WHERE barcode = %s)",
-                    (product_id, bc, bc)
+                    "SELECT v.pid, v.bc FROM (VALUES " + ', '.join(pairs) + ") AS v(pid, bc) "
+                    "WHERE NOT EXISTS (SELECT 1 FROM product_barcodes b WHERE b.barcode = v.bc)"
                 )
-                bc_added += cur.rowcount
+                bc_added = cur.rowcount
 
-    sig = opts.get('header_signature') or d.get('header_signature')
-    if sig:
-        save_layout(d['supplier_id'], sig, d['mapping'], price_mapping, excluded, article_case)
-
-    drop_draft(draft_id)
+    done = min(offset + limit, total)
+    finished = done >= total
+    if finished:
+        sig = opts.get('header_signature') or d.get('header_signature')
+        if sig:
+            save_layout(d['supplier_id'], sig, d['mapping'], price_mapping, excluded, article_case)
+        drop_draft(draft_id)
     return {'created': created, 'updated': updated, 'barcodes_added': bc_added,
-            'excluded': len(d['rows_data'] or []) - len(items)}, None
+            'done': done, 'total': total, 'finished': finished,
+            'excluded': len(d['rows_data'] or []) - total}, None
 
 
 def handler(event, context):

@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import PickList from "@/components/search-dicts/PickList";
 import NewFolderButton from "@/components/invoices/NewFolderButton";
+import UploadBanner, { UploadProgress } from "@/components/catalog/UploadBanner";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -93,6 +94,7 @@ interface Report {
   new_count: number;
   exist_count: number;
   excluded_count: number;
+  excluded_existing?: number;
   fill: FillStat[];
   barcodes: {
     total: number;
@@ -135,6 +137,17 @@ const CatalogUpload = () => {
   const [report, setReport] = useState<Report | null>(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+
+  useEffect(() => {
+    if (!saving) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [saving]);
 
   const loadSuppliers = useCallback(async () => {
     try {
@@ -297,37 +310,56 @@ const CatalogUpload = () => {
   const runCommit = async () => {
     if (!result) return;
     setSaving(true);
+    const prev = progress && progress.status === "error" && progress.draftId === result.draft_id ? progress : null;
+    let st: UploadProgress = prev
+      ? { ...prev, status: "running", error: "" }
+      : { draftId: result.draft_id, status: "running", done: 0, total: report?.total || 0,
+          created: 0, updated: 0, barcodes: 0, error: "" };
+    setProgress(st);
     try {
-      const r = await fetch(CATALOG_URL, {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({
-          action: "commit",
-          draft_id: result.draft_id,
-          excluded_categories: Array.from(excluded),
-          article_case: articleCase,
-          price_mapping: priceMap,
-          vat_rate: vatRate || null,
-          product_group: productGroup || null,
-          fill_mode: fillMode,
-          fill_fields: Array.from(fillFields),
-          add_barcodes: addBarcodes,
-          header_signature: result.header_signature,
-        }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        toast({ title: d.error || "Ошибка записи", variant: "destructive" });
-        return;
+      while (true) {
+        const r = await fetch(CATALOG_URL, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            action: "commit",
+            draft_id: result.draft_id,
+            offset: st.done,
+            limit: 100,
+            excluded_categories: Array.from(excluded),
+            article_case: articleCase,
+            price_mapping: priceMap,
+            vat_rate: vatRate || null,
+            product_group: productGroup || null,
+            fill_mode: fillMode,
+            fill_fields: Array.from(fillFields),
+            add_barcodes: addBarcodes,
+            header_signature: result.header_signature,
+          }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Сервер не ответил, попробуйте продолжить");
+        const res = d.result;
+        st = {
+          ...st,
+          done: res.done,
+          total: res.total,
+          created: st.created + res.created,
+          updated: st.updated + res.updated,
+          barcodes: st.barcodes + res.barcodes_added,
+        };
+        if (res.finished) {
+          st = { ...st, status: "done" };
+          setProgress(st);
+          setResult(null);
+          setReport(null);
+          setFileData(null);
+          break;
+        }
+        setProgress(st);
       }
-      const res = d.result;
-      toast({
-        title: "Каталог загружен",
-        description: `Создано ${res.created}, обновлено ${res.updated}, штрихкодов ${res.barcodes_added}`,
-      });
-      setResult(null);
-      setReport(null);
-      setFileData(null);
+    } catch (err) {
+      setProgress({ ...st, status: "error", error: (err as Error).message || "Ошибка записи" });
     } finally {
       setSaving(false);
     }
@@ -342,6 +374,14 @@ const CatalogUpload = () => {
 
   return (
     <div className="min-h-screen bg-background p-4 pb-24">
+      {progress && (
+        <UploadBanner
+          p={progress}
+          onRetry={runCommit}
+          canRetry={!!result && result.draft_id === progress.draftId}
+          onClose={() => setProgress(null)}
+        />
+      )}
       <div className="max-w-3xl mx-auto space-y-4">
         <div className="flex items-center gap-3">
           <Button
@@ -648,6 +688,12 @@ const CatalogUpload = () => {
               </div>
             </div>
 
+            {(report.excluded_existing ?? 0) > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Из отсеянных уже есть в каталоге: {report.excluded_existing}
+              </div>
+            )}
+
             <div className="text-xs text-muted-foreground">
               Штрихкодов в файле {report.barcodes.total}, уже заняты{" "}
               {report.barcodes.already_taken}, добавится {report.barcodes.to_add}
@@ -707,7 +753,11 @@ const CatalogUpload = () => {
             )}
 
             <Button onClick={runCommit} disabled={saving} className="rounded-xl w-full">
-              {saving ? "Записываю..." : "Загрузить в каталог"}
+              {saving
+                ? `Загружаю… ${progress?.done ?? 0} из ${progress?.total ?? report.total}`
+                : progress?.status === "error"
+                  ? "Продолжить загрузку"
+                  : "Загрузить в каталог"}
             </Button>
           </div>
         )}
