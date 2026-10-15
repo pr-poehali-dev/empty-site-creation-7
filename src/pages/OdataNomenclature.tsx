@@ -230,17 +230,18 @@ const OdataNomenclature = () => {
   const loadRefs = async (list: NewItem[], keepChoice: boolean) => {
     setRefsLoading(true);
     try {
-      const [g, t] = await Promise.all([
-        loadGroups(base),
-        loadTnved(base, Array.from(new Set(list.map((x) => x.kind)))),
-      ]);
+      const g = await loadGroups(base);
+      const brands = g.map((x) => x.name);
+      const kindOf = new Map(list.map((x) => [x.idx, productKind(x.name, brands)]));
+      const t = await loadTnved(base, Array.from(new Set(kindOf.values())));
       setGroups(g);
       setTnved(t.kinds);
       setCountries(t.countries);
       setNewItems((prev) =>
         prev.map((x) => {
-          let y = x;
-          const k = t.kinds[x.kind];
+          const kind = kindOf.get(x.idx) ?? x.kind;
+          let y = { ...x, kind };
+          const k = t.kinds[kind];
           const best = k?.options?.[0];
           if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
           const manual = x.weight.trim() && !x.weightAuto;

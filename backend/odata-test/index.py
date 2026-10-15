@@ -671,10 +671,30 @@ def tnved_by_type(cfg, kind):
     return {'total': total, 'counts': counts, 'weights': weights, 'countries': countries}, None
 
 
+SIMILAR_MIN = 3
+
+
+def tnved_with_fallback(cfg, kind):
+    words = kind.split()
+    best = None
+    while words:
+        basis = ' '.join(words)
+        s, err = tnved_by_type(cfg, basis)
+        if err:
+            return (best, None) if best else (None, err)
+        s['basis'] = basis
+        if not best or s['total'] > best['total']:
+            best = s
+        if s['total'] >= SIMILAR_MIN or len(words) <= 1:
+            break
+        words = words[:-1]
+    return best, None
+
+
 def nomen_tnved(cfg, kinds):
     """Подбор по похожим товарам: ТНВЭД, вес, а для холодильников/морозильников/стиральных — страна происхождения."""
     kinds = sorted({str(k or '').strip() for k in kinds if str(k or '').strip()})[:40]
-    stats, errors = _run_parallel(lambda k: tnved_by_type(cfg, k), [(k,) for k in kinds])
+    stats, errors = _run_parallel(lambda k: tnved_with_fallback(cfg, k), [(k,) for k in kinds])
     keys = sorted({g for s in stats.values() if s for g in s['counts']})
     codes, _ = _run_parallel(lambda k: tnved_code(cfg, k), [(k,) for k in keys])
     need_wide = sorted({country_family(k)[1] for k in kinds if country_family(k)
@@ -689,7 +709,7 @@ def nomen_tnved(cfg, kinds):
             continue
         opts = [{'key': g, 'code': codes.get((g,)) or '', 'count': n} for g, n in s['counts'].items()]
         opts.sort(key=lambda o: -o['count'])
-        out[k] = {'similar': s['total'], 'options': opts, 'weights': s['weights']}
+        out[k] = {'similar': s['total'], 'basis': s.get('basis') or k, 'options': opts, 'weights': s['weights']}
         fam = country_family(k)
         if fam:
             w = wide.get((fam[1],)) if s['total'] < COUNTRY_MIN_SIMILAR else None

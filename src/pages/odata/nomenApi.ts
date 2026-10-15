@@ -165,6 +165,7 @@ export interface CountryKind {
 
 export interface TnvedKind {
   similar: number;
+  basis?: string;
   options: TnvedOption[];
   weights?: SimilarWeight[];
   country?: CountryKind;
@@ -220,9 +221,12 @@ export const loadTnved = async (base: string, kinds: string[]): Promise<TnvedRes
   return { kinds: r.kinds || {}, countries: r.countries || [] };
 };
 
-export const productKind = (name: string) => {
+const norm = (w: string) => w.toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]/gi, "");
+
+export const productKind = (name: string, brands: string[] = []) => {
   const words = name.trim().split(/\s+/);
-  const idx = words.findIndex((w) => /[A-Za-z]/.test(w));
+  const stop = new Set(brands.map(norm).filter(Boolean));
+  const idx = words.findIndex((w, i) => i > 0 && (/[A-Za-z0-9]/.test(w) || stop.has(norm(w))));
   return (idx > 0 ? words.slice(0, idx) : words.slice(0, 1)).join(" ");
 };
 
