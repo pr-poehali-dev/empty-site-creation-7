@@ -643,18 +643,57 @@ def country_options(counts):
     return opts
 
 
+PROMO_WORDS = {
+    'sale', 'акция', 'скидка', 'скидки', 'распродажа', 'уценка', 'уценен', 'уцененный', 'уцененная',
+    'новинка', 'new', 'хит', 'hit', 'promo', 'промо', 'суперцена', 'выгодно', 'выгода', 'спеццена',
+    'суперскидка', 'ликвидация', 'бестселлер', 'лучшаяцена', 'суперпредложение',
+}
+
+
+def _norm_word(w):
+    return re.sub(r'[^a-zа-я0-9]', '', w.lower().replace('ё', 'е'))
+
+
+def _is_promo(w):
+    if re.search(r'!\s*["»\')\]]*$', w) or _norm_word(w) in PROMO_WORDS:
+        return True
+    d = re.sub(r'[^\d%-]', '', w)
+    return bool(d) and bool(re.fullmatch(r'-?\d+%', d))
+
+
+def clean_name(name):
+    out = []
+    for w in (name or '').split():
+        if _is_promo(w) or not _norm_word(w):
+            continue
+        out.append(re.sub(r'^[^\wа-яА-ЯёЁ]+', '', w))
+    return ' '.join(out).lower().replace('ё', 'е')
+
+
+ADJ_END = ('ый', 'ий', 'ой', 'ая', 'яя', 'ое', 'ее', 'ые', 'ие')
+
+
+def _lone_adjective(basis):
+    w = basis.split()
+    return len(w) == 1 and w[0].lower().endswith(ADJ_END)
+
+
 def tnved_by_type(cfg, kind):
     r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1000"
                         "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара,СтранаПроисхождения_Key"
                         f"&$filter=IsFolder eq false and DeletionMark eq false"
-                        f" and startswith(Description,'{_q(kind)} ') eq true")
+                        f" and substringof('{_q(kind)}',Description) eq true")
     if not r['ok']:
         return None, r['error']
+    want = clean_name(kind)
     counts = {}
     countries = {}
     total = 0
     weights = []
     for x in r['data'].get('value', []):
+        c_name = clean_name(x.get('Description') or '')
+        if not (c_name == want or c_name.startswith(want + ' ')):
+            continue
         total += 1
         k = x.get('КодТНВЭД_Key')
         if k and k != EMPTY_GUID:
@@ -675,10 +714,13 @@ SIMILAR_MIN = 3
 
 
 def tnved_with_fallback(cfg, kind):
-    words = kind.split()
+    words = [re.sub(r'^[^\wа-яА-ЯёЁ]+|[^\wа-яА-ЯёЁ-]+$', '', w) for w in kind.split()]
+    words = [w for w in words if w]
     best = None
     while words:
         basis = ' '.join(words)
+        if best and _lone_adjective(basis):
+            break
         s, err = tnved_by_type(cfg, basis)
         if err:
             return (best, None) if best else (None, err)

@@ -275,6 +275,7 @@ export const stripPromo = (name: string) =>
     .trim()
     .split(/\s+/)
     .filter((w) => w && !isPromo(w) && norm(w) !== "")
+    .map((w) => w.replace(/^[^a-zа-яё0-9]+/i, ""))
     .join(" ");
 
 export const productKind = (name: string, brands: string[] = []) => {
