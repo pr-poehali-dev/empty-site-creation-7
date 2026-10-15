@@ -1459,11 +1459,12 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     f_country = pick(COUNTRY_FIELD_NAMES, cols) if is_receipt else None
     f_gtd = pick(GTD_FIELD_NAMES, cols) if is_receipt else None
     f_rnpt = pick(RNPT_FIELD_NAMES, cols) if is_receipt else None
+    rnpt_target = f_rnpt or f_gtd
     country_cache = prefetch_countries(cfg, [r.get('country') for r in rows]) if f_country else {}
     ref_numbers = []
     if f_gtd:
         ref_numbers += [r.get('gtd') for r in rows]
-    if f_rnpt and f_rnpt.endswith('_Key'):
+    if rnpt_target and rnpt_target.endswith('_Key'):
         ref_numbers += [r.get('rnpt') for r in rows]
     ref_numbers = [str(n or '').strip() for n in ref_numbers if str(n or '').strip()]
 
@@ -1473,9 +1474,9 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
     if lost:
         gtd_cache.update(lookup_gtd(cfg, lost))
     notes = []
-    missing_gtd = set()
     missing_country = set()
-    missing_rnpt = set()
+    lost_numbers = []
+    expected_numbers = {}
 
     vat_key = str(payload.get('vat_rate') or 'none')
     vat = VAT_RATES.get(vat_key) or VAT_RATES['none']
@@ -1515,22 +1516,24 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
                     row[f_country] = ck
                 else:
                     missing_country.add(str(r['country']).strip())
-            if f_gtd and r.get('gtd'):
-                gk = gtd_cache.get(str(r['gtd']).strip())
-                if gk:
-                    row[f_gtd] = gk
+            for kind, num, target in (('ГТД', r.get('gtd'), f_gtd), ('РНПТ', r.get('rnpt'), rnpt_target)):
+                num = str(num or '').strip()
+                if not num:
+                    continue
+                lost = {'line': line, 'article': r.get('article') or '', 'name': r.get('name') or '',
+                        'kind': kind, 'number': num}
+                if not target:
+                    lost_numbers.append({**lost, 'reason': 'в документе 1С нет колонки для номера'})
+                    continue
+                if target.endswith('_Key'):
+                    ref = gtd_cache.get(num)
+                    if not ref:
+                        lost_numbers.append({**lost, 'reason': 'нет в справочнике номеров ГТД'})
+                        continue
+                    row[target] = ref
                 else:
-                    missing_gtd.add(str(r['gtd']).strip())
-            if f_rnpt and r.get('rnpt'):
-                rn = str(r['rnpt']).strip()
-                if f_rnpt.endswith('_Key'):
-                    rk = gtd_cache.get(rn)
-                    if rk:
-                        row[f_rnpt] = rk
-                    else:
-                        missing_rnpt.add(rn)
-                else:
-                    row[f_rnpt] = rn
+                    row[target] = num
+                expected_numbers[line] = (target, lost)
 
         goods.append(row)
 
@@ -1555,21 +1558,11 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
             'vat_rate': vat['name'], 'vat_amount': round(total_vat, 2)}
 
     if is_receipt:
-        if missing_gtd:
-            sample = ', '.join(sorted(missing_gtd)[:5])
-            notes.append(
-                f'Нет в справочнике номеров ГТД: {len(missing_gtd)} шт ({sample}...). '
-                'Строки записаны без них'
-            )
-        if missing_rnpt:
-            sample = ', '.join(sorted(missing_rnpt)[:5])
-            notes.append(
-                f'Нет в справочнике номеров РНПТ: {len(missing_rnpt)} шт ({sample}...). '
-                'Строки записаны без них'
-            )
         if missing_country:
             notes.append('Не найдены страны: ' + ', '.join(sorted(missing_country)[:10]))
-        missing = [n for n, f in (('страна', f_country), ('ГТД', f_gtd), ('РНПТ', f_rnpt)) if not f]
+        missing = [n for n, f in (('страна', f_country), ('ГТД / РНПТ', f_gtd or f_rnpt)) if not f]
+        if not f_rnpt and f_gtd:
+            used['rnpt_field'] = f_gtd
         if missing:
             notes.append('Нет колонок в документе: ' + ', '.join(missing))
         if wh_key and 'Склад_Key' not in fields:
@@ -1627,6 +1620,18 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
             'number': d.get('Number'),
             'sent_line': goods[0],
         }
+
+    if is_receipt and isinstance(written, list):
+        by_line = {str(w.get('LineNumber')): w for w in written if isinstance(w, dict)}
+        for ln, (target, lost) in expected_numbers.items():
+            w = by_line.get(str(ln))
+            if w is None or target not in w:
+                continue
+            v = w.get(target)
+            if not v or v == EMPTY_GUID:
+                lost_numbers.append({**lost, 'reason': '1С не приняла номер'})
+    if lost_numbers:
+        used['lost_numbers'] = sorted(lost_numbers, key=lambda x: x['line'])
 
     sent_amount = doc['СуммаДокумента']
     got_amount = d.get('СуммаДокумента')

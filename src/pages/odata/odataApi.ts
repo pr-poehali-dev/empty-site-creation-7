@@ -13,6 +13,15 @@ export interface FoundProduct {
   deleted: boolean;
 }
 
+export interface LostNumber {
+  line: number;
+  article: string;
+  name: string;
+  kind: string;
+  number: string;
+  reason: string;
+}
+
 export interface CreatedObject {
   ok: boolean;
   entity?: string;
@@ -37,6 +46,8 @@ export interface CreatedObject {
     vat_in_sum_warning?: string;
     amount_warning?: string;
     notes?: string[];
+    rnpt_field?: string;
+    lost_numbers?: LostNumber[];
   };
   sent_line?: Record<string, unknown>;
 }
