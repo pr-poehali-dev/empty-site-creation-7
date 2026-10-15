@@ -1207,6 +1207,37 @@ def check_gtd(cfg, numbers):
     }
 
 
+def doc_compare(cfg, numbers):
+    """Сравнивает поступления 1С: строки с номерами ГТД/РНПТ и записи номеров, на которые они ссылаются."""
+    out = []
+    for num in [str(x or '').strip() for x in (numbers or [])][:2]:
+        if not num:
+            continue
+        r = call_odata(cfg, f"Document_ПоступлениеТоваровУслуг?$format=json&$filter=Number eq '{num}'&$top=1")
+        if not r['ok']:
+            out.append({'number': num, 'error': str(r.get('error'))[:300]})
+            continue
+        docs = r['data'].get('value') or []
+        if not docs:
+            out.append({'number': num, 'error': 'документ не найден'})
+            continue
+        d = docs[0]
+        head = {k: v for k, v in d.items() if not isinstance(v, list)}
+        rows = d.get('Товары') or []
+        picked = []
+        for row in rows:
+            ref = row.get('НомерГТД_Key')
+            if ref and ref != EMPTY_GUID:
+                rec = call_odata(cfg, f"Catalog_НомераГТД(guid'{ref}')?$format=json")
+                picked.append({'row': row, 'gtd': rec['data'] if rec['ok'] else str(rec.get('error'))[:200]})
+            if len(picked) >= 3:
+                break
+        tables = {k: (len(v), v[:3]) for k, v in d.items() if isinstance(v, list) and k != 'Товары'}
+        out.append({'number': num, 'head': head, 'rows_total': len(rows),
+                    'rows': picked, 'first_row': rows[0] if rows else None, 'tables': tables})
+    return out
+
+
 def gtd_debug(cfg, numbers):
     """Диагностика поиска: размер справочника, образцы записей, точечные запросы."""
     out = {}
@@ -1901,6 +1932,9 @@ def handler(event: dict, context) -> dict:
 
     if action == 'gtd_foreign':
         return resp(200, {'result': gtd_foreign(cfg, body.get('numbers') or [])})
+
+    if action == 'doc_compare':
+        return resp(200, {'result': doc_compare(cfg, body.get('numbers') or [])})
 
     if action == 'gtd_debug':
         return resp(200, {'result': gtd_debug(cfg, body.get('numbers') or [])})

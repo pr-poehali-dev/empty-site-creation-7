@@ -283,6 +283,22 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doDocCompare = async () => {
+    const input = window.prompt("Номера двух поступлений через запятую", "0000-000117, 0000-000119");
+    if (!input) return;
+    setGtdBusy(true);
+    setGtdError("");
+    try {
+      const nums = input.split(",").map((x) => x.trim()).filter(Boolean);
+      const r = await odataApi.docCompare(base, nums);
+      setGtdProgress("СРАВНЕНИЕ ДОКУМЕНТОВ:\n" + JSON.stringify(r.result, null, 1));
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doGtdDebug = async () => {
     setGtdBusy(true);
     setGtdError("");
@@ -756,6 +772,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                       >
                         <Icon name="Bug" size={15} />
                         Диагностика поиска
+                      </Button>
+                      <Button
+                        onClick={doDocCompare}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2 border-emerald-500/50 text-emerald-200"
+                      >
+                        <Icon name="GitCompare" size={15} />
+                        Сравнить документы
                       </Button>
                       <Button
                         onClick={doGtdForeign}

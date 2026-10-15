@@ -128,6 +128,8 @@ export const odataApi = {
     call("gtd_fix_all", "POST", { numbers }, undefined, base),
   gtdForeign: (base: string, numbers: string[]) =>
     call("gtd_foreign", "POST", { numbers }, undefined, base),
+  docCompare: (base: string, numbers: string[]) =>
+    call("doc_compare", "POST", { numbers }, undefined, base),
   gtdDebug: (base: string, numbers: string[]) =>
     call("gtd_debug", "POST", { numbers }, undefined, base),
   createGtd: (base: string, numbers: string[]) =>
