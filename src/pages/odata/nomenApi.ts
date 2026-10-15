@@ -316,7 +316,6 @@ export const newItemProblems = (x: NewItem): string[] => {
   const p: string[] = [];
   if (!x.name.trim()) p.push("наименование");
   if (!x.groupKey) p.push("группа");
-  if (!(toNumber(x.price) > 0)) p.push("цена");
   if (!(toNumber(x.weight) > 0)) p.push("вес");
   if (!/^\d{10}$/.test(x.tnved.trim())) p.push("ТНВЭД");
   return p;

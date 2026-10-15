@@ -328,10 +328,11 @@ const OdataNomenclature = () => {
   };
 
   const unpricedList = (results: Record<number, CreateResult>, decs: Record<number, Decision>, done: string[]) =>
-    createdCards(results, decs).filter((c) => !done.includes(c.key));
+    createdCards(results, decs).filter((c) => c.price > 0 && !done.includes(c.key));
 
   const unpriced = unpricedList(createResults, decisions, pricedKeys).length;
   const createdCount = createdCards(createResults, decisions).length;
+  const noPriceCount = createdCards(createResults, decisions).filter((c) => !(c.price > 0)).length;
   const noteCount = newItems.filter((x) => {
     const r = createResults[x.idx];
     const d = decisions[x.idx];
@@ -339,7 +340,9 @@ const OdataNomenclature = () => {
     return m ? m.country === "error" || m.barcode === "taken" || m.barcode === "error" : r?.state === "error";
   }).length;
   const newSummary = createdCount
-    ? `Создано ${createdCount} из ${newItems.length}${noteCount ? `, замечания у ${noteCount}` : ""}`
+    ? `Создано ${createdCount} из ${newItems.length}${noteCount ? `, замечания у ${noteCount}` : ""}${
+        noPriceCount ? `, без цены: ${noPriceCount}` : ""
+      }`
     : `Новых ${newItems.length}: готовы ${readyNew.length}${
         pendingNew.length - readyNew.length ? `, не хватает реквизитов ${pendingNew.length - readyNew.length}` : ""
       }`;

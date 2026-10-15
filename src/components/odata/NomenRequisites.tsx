@@ -90,7 +90,9 @@ const NomenRequisites = ({ item, originalName, kind, groups, countries, made, fa
     parts.push(
       priceDoc
         ? { text: "цена ✓", tone: "ok", title: `документ установки цен ${priceDoc}` }
-        : { text: "цена — ждёт документа", tone: "auto" },
+        : !(toNumber(item.price) > 0)
+          ? { text: "цена не установлена", tone: "warn", title: "заполните базовую цену в 1С" }
+          : { text: "цена — ждёт документа", tone: "auto" },
     );
     return <Line parts={parts} />;
   }
@@ -107,13 +109,13 @@ const NomenRequisites = ({ item, originalName, kind, groups, countries, made, fa
   if (nameFixed) parts.push({ text: "наим. исправлено", title: `в счёте: ${originalName}` });
   parts.push(has("группа") ? { text: group?.path || "группа" } : { text: "группа?", tone: "bad" });
   parts.push(
-    has("цена")
+    toNumber(item.price) > 0
       ? {
           text: item.priceSrc === "site" ? `${money(item.price)} (сайт)` : money(item.price),
           tone: item.priceSrc === "site" ? "auto" : undefined,
           title: item.priceSrc === "site" ? `с сайта ${item.siteUrl || ""}` : "введено вручную",
         }
-      : { text: "цена?", tone: "bad" },
+      : { text: "без цены", tone: "auto" },
   );
   parts.push(
     has("вес")
