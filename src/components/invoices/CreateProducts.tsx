@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
 import PickList from "@/components/search-dicts/PickList";
+import NewFolderButton from "./NewFolderButton";
 import { authHeaders, SEARCH_DICTS_URL } from "@/components/search-dicts/api";
 
 interface Parsed {
@@ -97,7 +98,14 @@ const CreateProducts = ({ draftId, onBack, onDone }: Props) => {
 
   const selected = items.filter((it) => edits[it.key]?.on);
   const noFolder = selected.some((it) => !resolve(it).folder);
-  const folderOptions = folders.map((f) => ({ value: f.name, label: f.name, count: f.products }));
+  const folderNames = folders.map((f) => f.name);
+  const typed = [folder, ...Object.values(edits).map((e) => e.folder)].filter(
+    (n): n is string => !!n && !folderNames.includes(n),
+  );
+  const folderOptions = [
+    ...folders.map((f) => ({ value: f.name, label: f.name, count: f.products })),
+    ...[...new Set(typed)].map((n) => ({ value: n, label: `${n} (новая)` })),
+  ];
 
   const visible = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -158,8 +166,11 @@ const CreateProducts = ({ draftId, onBack, onDone }: Props) => {
           <div className="rounded-xl border border-white/[0.08] p-3 space-y-3">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Папка для всех товаров</p>
-              <div className="w-full sm:w-72">
-                <PickList value={folder} onChange={setFolder} placeholder="Выберите папку" options={folderOptions} />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="w-full sm:w-72">
+                  <PickList value={folder} onChange={setFolder} placeholder="Выберите папку" options={folderOptions} />
+                </div>
+                <NewFolderButton existing={folderNames} onApply={setFolder} />
               </div>
             </div>
             <div>
@@ -247,6 +258,7 @@ const CreateProducts = ({ draftId, onBack, onDone }: Props) => {
                     <span className="font-mono">{p.model || "—"}</span>
                     {p.feature && (<><span className="text-muted-foreground">Признак</span><span>{p.feature}</span></>)}
                     <span className="text-muted-foreground self-center">Папка</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
                     <div className="w-full sm:w-60">
                       <PickList
                         size="sm"
@@ -256,6 +268,8 @@ const CreateProducts = ({ draftId, onBack, onDone }: Props) => {
                         extra={[{ value: "", label: folder ? `Как у всех: ${folder}` : "Как у всех" }]}
                         options={folderOptions}
                       />
+                    </div>
+                    <NewFolderButton size="sm" existing={folderNames} onApply={(n) => patch(it.key, { folder: n })} />
                     </div>
                   </div>
 
