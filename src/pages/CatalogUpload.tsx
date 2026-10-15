@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import Icon from "@/components/ui/icon";
+import PickList from "@/components/search-dicts/PickList";
+import NewFolderButton from "@/components/invoices/NewFolderButton";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -125,6 +127,7 @@ const CatalogUpload = () => {
   const [priceMap, setPriceMap] = useState<Record<string, string>>({});
   const [vatRate, setVatRate] = useState("");
   const [productGroup, setProductGroup] = useState("");
+  const [folders, setFolders] = useState<{ name: string; products: number }[]>([]);
   const [fillMode, setFillMode] = useState("empty_only");
   const [fillFields, setFillFields] = useState<Set<string>>(new Set());
   const [addBarcodes, setAddBarcodes] = useState(true);
@@ -149,6 +152,10 @@ const CatalogUpload = () => {
       return;
     }
     loadSuppliers();
+    fetch(`${CATALOG_URL}?action=folders`, { headers: authHeaders })
+      .then((r) => r.json())
+      .then((d) => setFolders(d.folders || []))
+      .catch(() => setFolders([]));
   }, []);
 
   if (user.role !== "owner") return null;
@@ -579,14 +586,27 @@ const CatalogUpload = () => {
                     <option value="Без НДС">Без НДС</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">Группа</label>
-                  <Input
-                    value={productGroup}
-                    onChange={(e) => setProductGroup(e.target.value)}
-                    className="h-10 rounded-xl bg-secondary border-white/[0.08]"
-                  />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Папка</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="w-full sm:w-72">
+                    <PickList
+                      value={productGroup}
+                      onChange={setProductGroup}
+                      placeholder="Не указывать"
+                      extra={[{ value: "", label: "Не указывать" }]}
+                      options={[
+                        ...folders.map((f) => ({ value: f.name, label: f.name, count: f.products })),
+                        ...(productGroup && !folders.some((f) => f.name === productGroup)
+                          ? [{ value: productGroup, label: `${productGroup} (новая)` }]
+                          : []),
+                      ]}
+                    />
+                  </div>
+                  <NewFolderButton existing={folders.map((f) => f.name)} onApply={setProductGroup} />
                 </div>
+                <p className="text-[11px] text-muted-foreground">Только для новых товаров</p>
               </div>
               <label className="flex items-center gap-2 cursor-pointer pt-1">
                 <input

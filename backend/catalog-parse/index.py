@@ -32,6 +32,20 @@ def _conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
 
+def list_folders():
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """SELECT product_group, max(product_group_id), count(*) FROM products
+               WHERE product_group IS NOT NULL AND product_group <> ''
+               GROUP BY product_group ORDER BY lower(product_group)"""
+        )
+        return [{'name': r[0], 'id': r[1], 'products': r[2]} for r in cur.fetchall()]
+
+
+def _norm_folder(s):
+    return ' '.join(str(s or '').split()).lower()
+
+
 def _esc(s):
     return str(s).replace("'", "''")
 
@@ -214,7 +228,8 @@ def commit(draft_id, opts):
     article_case = opts.get('article_case') or d.get('article_case') or 'as_is'
     price_mapping = opts.get('price_mapping') or d.get('price_mapping') or {}
     vat_rate = opts.get('vat_rate') or d.get('vat_rate')
-    product_group = opts.get('product_group') or d.get('product_group')
+    product_group = ' '.join(str(opts.get('product_group') or d.get('product_group') or '').split()) or None
+    product_group_id = None
     fill_mode = opts.get('fill_mode') or 'empty_only'
     fill_fields = set(opts.get('fill_fields') or [])
     add_barcodes = opts.get('add_barcodes', True)
@@ -224,6 +239,15 @@ def commit(draft_id, opts):
     created = updated = bc_added = 0
     with _conn() as c, c.cursor() as cur:
         report, row_map = build_report(cur, items)
+        if product_group:
+            cur.execute(
+                "SELECT product_group, max(product_group_id) FROM products "
+                "WHERE product_group IS NOT NULL AND product_group <> '' GROUP BY product_group"
+            )
+            for name, gid in cur.fetchall():
+                if _norm_folder(name) == _norm_folder(product_group):
+                    product_group, product_group_id = name, gid
+                    break
 
         cur.execute("SELECT id FROM categories WHERE name = 'Без категории' AND parent_id IS NULL LIMIT 1")
         row = cur.fetchone()
@@ -273,12 +297,12 @@ def commit(draft_id, opts):
                     product_id = existing['id']
             else:
                 cur.execute(
-                    "INSERT INTO products (category_id, name, article, brand, product_group, "
+                    "INSERT INTO products (category_id, name, article, brand, product_group, product_group_id, "
                     "price_base, price_retail, price_wholesale, price_purchase, "
                     "vat_rate, weight_gross, weight_net, tnved_code, is_new) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) RETURNING id",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) RETURNING id",
                     (default_cat, it['name'], it.get('article') or None,
-                     it.get('brand') or None, product_group,
+                     it.get('brand') or None, product_group, product_group_id,
                      prices['price_base'], prices['price_retail'],
                      prices['price_wholesale'], prices['price_purchase'],
                      vat_rate, it.get('weight_gross'), it.get('weight_net'),
@@ -331,6 +355,8 @@ def handler(event, context):
     if method == 'GET':
         if action == 'suppliers':
             return _resp(200, {'suppliers': list_suppliers()})
+        if action == 'folders':
+            return _resp(200, {'folders': list_folders()})
         if action == 'drafts':
             return _resp(200, {'drafts': list_drafts()})
         if action == 'draft':
