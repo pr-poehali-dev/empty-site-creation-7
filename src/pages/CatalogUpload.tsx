@@ -469,11 +469,13 @@ const CatalogUpload = () => {
               <div className="space-y-2">
                 {FIELDS.map((f) => (
                   <div key={f.key} className="flex items-center gap-2">
-                    <div className="flex-1 text-sm truncate">{f.title}</div>
+                    <div className="w-24 sm:w-40 shrink-0 text-xs sm:text-sm leading-tight line-clamp-2 break-words">
+                      {f.title}
+                    </div>
                     <select
                       value={result.mapping[f.key] ?? ""}
                       onChange={(e) => setFieldColumn(f.key, e.target.value)}
-                      className="h-9 rounded-xl bg-secondary border border-white/[0.08] px-2 text-sm w-56 min-w-0"
+                      className="h-9 flex-1 min-w-0 rounded-xl bg-secondary border border-white/[0.08] px-2 text-sm"
                     >
                       <option value="">не используется</option>
                       {result.columns.map((c) => (
