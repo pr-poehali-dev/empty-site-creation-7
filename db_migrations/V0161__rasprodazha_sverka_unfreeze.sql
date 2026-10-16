@@ -1,0 +1,1 @@
+UPDATE converted_files SET size_bytes = 11039 WHERE s3_key = 'converted/rasprodazha-16-mln-sverka-s-ut-68.xlsx';
