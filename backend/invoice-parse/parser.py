@@ -15,8 +15,11 @@ SYN = {
 }
 
 EXTRA_SYN = {
-    'weight': ['вес (нетто)', 'вес нетто', 'вес нетто, кг', 'вес (нетто), кг', 'нетто', 'нетто, кг',
-               'вес', 'вес, кг', 'вес из сертификата, кг', 'вес из сертификата'],
+    'weight': ['вес из сертификата', 'вес из сертификата, кг', 'вес из сертификата (кг)', 'вес по сертификату',
+               'вес', 'вес, кг', 'вес (кг)', 'вес кг',
+               'вес (нетто)', 'вес нетто', 'вес нетто, кг', 'вес (нетто), кг', 'вес нетто (кг)', 'нетто', 'нетто, кг'],
+    'weight_gross': ['вес (брутто)', 'вес брутто', 'вес брутто, кг', 'вес (брутто), кг', 'вес брутто (кг)',
+                     'брутто', 'брутто, кг'],
     'tnved': ['тн вэд', 'тнвэд', 'код тн вэд', 'код тнвэд', 'тн вэд еаэс', 'код тн вэд еаэс'],
 }
 
@@ -26,20 +29,25 @@ SKIP_HEAD = ['сумма ндс', 'ставка ндс', 'ндс', '% ндс']
 
 
 def detect_extra(row):
-    """Колонки веса (только нетто) и ТН ВЭД. Брутто не берём."""
+    """Колонки веса (сертификат / вес / нетто), брутто — запасной вес, и ТН ВЭД."""
     found = {}
     for idx, c in enumerate(row):
         t = nkey(c)
         if not t:
             continue
         for field, variants in EXTRA_SYN.items():
-            if field in found:
-                continue
-            if field == 'weight' and 'брутто' in t:
-                continue
-            if t in variants:
+            if field not in found and t in variants:
                 found[field] = idx
     return found
+
+
+def pick_weight(main, gross):
+    """Нетто/основной вес, если он больше нуля, иначе брутто."""
+    for v in (main, gross):
+        n = to_num(v)
+        if n and n > 0:
+            return n
+    return None
 
 
 def clean_tnved(v):
@@ -235,7 +243,7 @@ def parse_rows(rows, hdr_idx, mp, limit=5000):
             'price_source': src,
             'price_mismatch': mismatch,
             'country': country,
-            'weight': (lambda w: w if w and w > 0 else None)(to_num(cell('weight'))) if 'weight' in mp else None,
+            'weight': pick_weight(cell('weight'), cell('weight_gross')),
             'tnved': clean_tnved(cell('tnved')) if 'tnved' in mp else '',
         })
     return out
