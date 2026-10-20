@@ -127,20 +127,22 @@ const NomenRequisites = ({ item, originalName, kind, groups, countries, made, fa
   parts.push(
     has("вес")
       ? {
-          text: item.weightSrc === "site" ? `${item.weight} кг (сайт)` : `${item.weight} кг`,
-          tone: item.weightAuto || item.weightSrc === "site" ? "auto" : undefined,
-          title: item.weightSrc === "site" ? `с сайта ${item.siteUrl || ""}` : item.weightAuto ? `среднее по ${similar.length} похожим (${fmtWeight(avg)} кг)` : "введено вручную",
+          text: item.weightSrc === "site" ? `${item.weight} кг (сайт)` : item.weightSrc === "file" ? `${item.weight} кг (файл)` : `${item.weight} кг`,
+          tone: item.weightAuto || item.weightSrc ? "auto" : undefined,
+          title: item.weightSrc === "file" ? "вес нетто из файла" : item.weightSrc === "site" ? `с сайта ${item.siteUrl || ""}` : item.weightAuto ? `среднее по ${similar.length} похожим (${fmtWeight(avg)} кг)` : "введено вручную",
         }
       : { text: "вес?", tone: "bad" },
   );
   parts.push(
-    has("ТНВЭД")
-      ? {
-          text: `ТНВЭД ${item.tnved}`,
-          tone: tOpt ? "auto" : undefined,
-          title: tOpt ? `у ${tOpt.count} похожих карточек` : "введено вручную",
-        }
-      : { text: "ТНВЭД?", tone: "bad" },
+    !has("ТНВЭД")
+      ? { text: "ТНВЭД?", tone: "bad" }
+      : !has("ТНВЭД нет в 1С")
+        ? { text: `ТНВЭД ${item.tnved} нет в 1С`, tone: "bad", title: "создайте код в блоке «Коды ТН ВЭД, которых нет в 1С»" }
+        : {
+            text: item.tnvedSrc === "file" ? `ТНВЭД ${item.tnved} (файл)` : `ТНВЭД ${item.tnved}`,
+            tone: tOpt || item.tnvedSrc ? "auto" : undefined,
+            title: item.tnvedSrc === "file" ? "код из файла" : tOpt ? `у ${tOpt.count} похожих карточек` : "введено вручную",
+          },
   );
   const country = countryPart(item, kind, countries);
   if (country) parts.push(country);

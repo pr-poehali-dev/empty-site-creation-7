@@ -14,9 +14,37 @@ SYN = {
                 'страна происхождения товара'],
 }
 
+EXTRA_SYN = {
+    'weight': ['вес (нетто)', 'вес нетто', 'вес нетто, кг', 'вес (нетто), кг', 'нетто', 'нетто, кг',
+               'вес', 'вес, кг', 'вес из сертификата, кг', 'вес из сертификата'],
+    'tnved': ['тн вэд', 'тнвэд', 'код тн вэд', 'код тнвэд', 'тн вэд еаэс', 'код тн вэд еаэс'],
+}
+
 EMPTY_MARKS = {'-', '--', '—', '---'}
 
 SKIP_HEAD = ['сумма ндс', 'ставка ндс', 'ндс', '% ндс']
+
+
+def detect_extra(row):
+    """Колонки веса (только нетто) и ТН ВЭД. Брутто не берём."""
+    found = {}
+    for idx, c in enumerate(row):
+        t = nkey(c)
+        if not t:
+            continue
+        for field, variants in EXTRA_SYN.items():
+            if field in found:
+                continue
+            if field == 'weight' and 'брутто' in t:
+                continue
+            if t in variants:
+                found[field] = idx
+    return found
+
+
+def clean_tnved(v):
+    s = re.sub(r'\D', '', clean_code(v))
+    return s if len(s) == 10 else ''
 
 FIELD_TITLES = {
     'num': '№', 'article': 'Артикул', 'barcode': 'Штрихкод', 'name': 'Наименование',
@@ -207,6 +235,8 @@ def parse_rows(rows, hdr_idx, mp, limit=5000):
             'price_source': src,
             'price_mismatch': mismatch,
             'country': country,
+            'weight': (lambda w: w if w and w > 0 else None)(to_num(cell('weight'))) if 'weight' in mp else None,
+            'tnved': clean_tnved(cell('tnved')) if 'tnved' in mp else '',
         })
     return out
 
@@ -253,6 +283,10 @@ def parse_invoice(data, filename, forced_mapping=None):
         if 'country' not in forced_mapping and detected_country is not None \
                 and detected_country not in mapping.values():
             mapping['country'] = detected_country
+
+    for f, i in detect_extra(rows[hdr_idx]).items():
+        if f not in mapping and i not in mapping.values():
+            mapping[f] = i
 
     header_row = [norm(c) for c in rows[hdr_idx]]
     items = parse_rows(rows, hdr_idx, mapping)

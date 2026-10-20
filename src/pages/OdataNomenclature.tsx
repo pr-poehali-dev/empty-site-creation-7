@@ -37,7 +37,9 @@ import {
   fmtWeight,
   similarWeights,
   countryByName,
+  checkTnvedCodes,
 } from "./odata/nomenApi";
+import NomenTnvedMissing from "@/components/odata/NomenTnvedMissing";
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
 import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
@@ -90,6 +92,9 @@ const OdataNomenclature = () => {
   const [tnved, setTnved] = useState<Record<string, TnvedKind>>({});
   const [countries, setCountries] = useState<Country1C[]>([]);
   const [refsLoading, setRefsLoading] = useState(false);
+  const [tnvedFound, setTnvedFound] = useState<Record<string, string>>({});
+  const [tnvedMissing, setTnvedMissing] = useState<string[]>([]);
+  const [tnvedChecking, setTnvedChecking] = useState(false);
   const [createResults, setCreateResults] = useState<Record<number, CreateResult>>({});
   const [priceDocs, setPriceDocs] = useState<PriceDocResult[]>([]);
   const [pricedKeys, setPricedKeys] = useState<string[]>([]);
@@ -265,9 +270,15 @@ const OdataNomenclature = () => {
           let y = { ...x, kind };
           const k = kind ? t.kinds[kind] : undefined;
           const best = k?.options?.[0];
-          if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
+          const fileT = x.fileTnved && !(keepChoice && x.tnved && x.tnvedSrc !== "file");
+          if (fileT) {
+            const opt = k?.options?.find((o) => o.code === x.fileTnved);
+            y = { ...y, tnved: x.fileTnved!, tnvedKey: opt?.key || y.tnvedKey, tnvedSrc: "file" };
+          } else if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
           const manual = x.weight.trim() && !x.weightAuto;
-          if (!manual) {
+          if (x.fileWeight && (!manual || x.weightSrc === "file")) {
+            y = { ...y, weight: x.fileWeight, weightAuto: false, weightSrc: "file" };
+          } else if (!manual) {
             const avg = avgWeight(similarWeights(x.name, k?.weights));
             y = avg > 0 ? { ...y, weight: fmtWeight(avg), weightAuto: true } : { ...y, weight: "", weightAuto: false };
           }
@@ -303,12 +314,68 @@ const OdataNomenclature = () => {
         countryKey: "",
         countryTouched: false,
         fileCountry: it.country || "",
+        fileWeight: it.weight && it.weight > 0 ? fmtWeight(it.weight) : undefined,
+        fileTnved: /^\d{10}$/.test(it.tnved || "") ? it.tnved : undefined,
         tnved: "",
         tnvedKey: "",
       }));
     setNewItems(list);
     setTnved({});
     if (list.length) loadRefs(list, false);
+  };
+
+  const tnvedCodesKey = useMemo(
+    () => Array.from(new Set(newItems.map((x) => x.tnved.trim()).filter((c) => /^\d{10}$/.test(c)))).sort().join(","),
+    [newItems],
+  );
+
+  useEffect(() => {
+    const codes = tnvedCodesKey ? tnvedCodesKey.split(",") : [];
+    const unknown = codes.filter((c) => !tnvedFound[c] && !tnvedMissing.includes(c));
+    if (!unknown.length) return;
+    let alive = true;
+    setTnvedChecking(true);
+    checkTnvedCodes(base, unknown)
+      .then((r) => {
+        if (!alive) return;
+        setTnvedFound((p) => ({ ...p, ...r.found }));
+        setTnvedMissing((p) => Array.from(new Set([...p.filter((c) => !r.found[c]), ...r.missing])));
+      })
+      .catch(() => {})
+      .finally(() => alive && setTnvedChecking(false));
+    return () => {
+      alive = false;
+    };
+  }, [tnvedCodesKey, base]);
+
+  useEffect(() => {
+    setNewItems((prev) => {
+      let changed = false;
+      const next = prev.map((x) => {
+        const c = x.tnved.trim();
+        const miss = /^\d{10}$/.test(c) && tnvedMissing.includes(c);
+        const key = tnvedFound[c];
+        const patch: Partial<NewItem> = {};
+        if (!!x.tnvedMissing !== miss) patch.tnvedMissing = miss;
+        if (key && x.tnvedKey !== key) patch.tnvedKey = key;
+        if (!Object.keys(patch).length) return x;
+        changed = true;
+        return { ...x, ...patch };
+      });
+      return changed ? next : prev;
+    });
+  }, [tnvedFound, tnvedMissing, tnvedCodesKey]);
+
+  const missingTnvedList = useMemo(() => {
+    const pending = newItems.filter((x) => !createResults[x.idx] || createResults[x.idx].state === "error");
+    return tnvedMissing
+      .map((code) => ({ code, count: pending.filter((x) => x.tnved.trim() === code).length }))
+      .filter((m) => m.count > 0);
+  }, [tnvedMissing, newItems, createResults]);
+
+  const onTnvedCreated = (map: Record<string, string>) => {
+    setTnvedFound((p) => ({ ...p, ...map }));
+    setTnvedMissing((p) => p.filter((c) => !map[c]));
   };
 
   const patchNew = (idx: number, patch: Partial<NewItem>) =>
@@ -603,6 +670,15 @@ const OdataNomenclature = () => {
               ? "Новых позиций нет — все товары счёта уже есть в 1С."
               : "Проверка была остановлена. Запустите её до конца, чтобы заполнить новые позиции."}
           </div>
+        )}
+
+        {checked && pendingNew.length > 0 && (
+          <NomenTnvedMissing
+            base={base}
+            missing={missingTnvedList}
+            checking={tnvedChecking}
+            onCreated={onTnvedCreated}
+          />
         )}
 
         {checked && pendingNew.length > 0 && (

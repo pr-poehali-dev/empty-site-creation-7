@@ -24,6 +24,8 @@ export interface InvoiceItem {
   price: number | null;
   total: number | null;
   country?: string;
+  weight?: number | null;
+  tnved?: string;
 }
 
 export interface ParsedInvoice {
@@ -288,6 +290,19 @@ export const createGroup = async (base: string, name: string, parent: string): P
   return r.group;
 };
 
+export const checkTnvedCodes = async (base: string, codes: string[]) =>
+  (await withRetry(() => odataPost("tnved_check", base, { codes }))) as {
+    found: Record<string, string>;
+    missing: string[];
+  };
+
+export const createTnvedCodes = async (base: string, codes: string[]) =>
+  (await odataPost("tnved_create", base, { codes }, 60000)) as {
+    created: Record<string, string>;
+    already: Record<string, string>;
+    remaining: string[];
+  };
+
 export const loadTnved = async (base: string, kinds: string[]): Promise<TnvedResult> => {
   const r = await withRetry(() => odataPost("nomen_tnved", base, { kinds }));
   return { kinds: r.kinds || {}, countries: r.countries || [] };
@@ -331,7 +346,11 @@ export interface NewItem {
   weight: string;
   weightAuto: boolean;
   priceSrc?: "site" | "manual";
-  weightSrc?: "site";
+  weightSrc?: "site" | "file";
+  fileWeight?: string;
+  tnvedSrc?: "file";
+  fileTnved?: string;
+  tnvedMissing?: boolean;
   countrySrc?: "site" | "file";
   fileCountry?: string;
   siteUrl?: string;
@@ -354,6 +373,7 @@ export const newItemProblems = (x: NewItem): string[] => {
   if (!x.groupKey) p.push("группа");
   if (!(toNumber(x.weight) > 0)) p.push("вес");
   if (!/^\d{10}$/.test(x.tnved.trim())) p.push("ТНВЭД");
+  else if (x.tnvedMissing) p.push("ТНВЭД нет в 1С");
   return p;
 };
 

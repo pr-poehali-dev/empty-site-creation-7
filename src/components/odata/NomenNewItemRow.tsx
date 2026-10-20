@@ -158,7 +158,9 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
             }
           />
           <span className="block text-[11px] leading-tight text-muted-foreground">
-            {item.weightSrc === "site" && item.weight.trim()
+            {item.weightSrc === "file" && item.weight.trim()
+              ? "из файла"
+              : item.weightSrc === "site" && item.weight.trim()
               ? "с сайта"
               : !tnved
               ? "подбираю вес…"
@@ -168,6 +170,15 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
                   ? "введено вручную"
                   : "похожих с весом нет"}
           </span>
+          {item.fileWeight && item.weight !== item.fileWeight && (
+            <button
+              type="button"
+              className="block text-[11px] leading-tight text-primary underline underline-offset-2"
+              onClick={() => onChange({ weight: item.fileWeight!, weightAuto: false, weightSrc: "file" })}
+            >
+              вернуть из файла ({item.fileWeight} кг)
+            </button>
+          )}
         </Field>
         <Field label="Код ТНВЭД" bad={bad("ТНВЭД")}>
           {options.length > 0 ? (
@@ -175,8 +186,8 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
               value={known ? item.tnved : "__custom"}
               onValueChange={(v) =>
                 v === "__custom"
-                  ? onChange({ tnved: "", tnvedKey: "" })
-                  : onChange({ tnved: v, tnvedKey: options.find((o) => o.code === v)?.key || "" })
+                  ? onChange({ tnved: "", tnvedKey: "", tnvedSrc: undefined })
+                  : onChange({ tnved: v, tnvedKey: options.find((o) => o.code === v)?.key || "", tnvedSrc: undefined })
               }
             >
               <SelectTrigger>
@@ -199,8 +210,30 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
               inputMode="numeric"
               maxLength={10}
               placeholder="10 цифр"
-              onChange={(e) => onChange({ tnved: e.target.value.replace(/\D/g, ""), tnvedKey: "" })}
+              onChange={(e) => onChange({ tnved: e.target.value.replace(/\D/g, ""), tnvedKey: "", tnvedSrc: undefined })}
             />
+          )}
+          {item.tnved.trim() && (item.tnvedSrc === "file" || item.tnvedMissing) && (
+            <span className={`block text-[11px] leading-tight ${item.tnvedMissing ? "text-amber-400" : "text-muted-foreground"}`}>
+              {item.tnvedSrc === "file" ? "из файла" : ""}
+              {item.tnvedSrc === "file" && item.tnvedMissing ? " · " : ""}
+              {item.tnvedMissing ? "кода нет в 1С — создайте в блоке выше" : ""}
+            </span>
+          )}
+          {item.fileTnved && item.tnved !== item.fileTnved && (
+            <button
+              type="button"
+              className="block text-[11px] leading-tight text-primary underline underline-offset-2"
+              onClick={() =>
+                onChange({
+                  tnved: item.fileTnved!,
+                  tnvedKey: options.find((o) => o.code === item.fileTnved)?.key || "",
+                  tnvedSrc: "file",
+                })
+              }
+            >
+              вернуть из файла ({item.fileTnved})
+            </button>
           )}
         </Field>
         {tnved?.country && (
@@ -241,14 +274,14 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
           const avgW = avgWeight(similarWeights(item.name, r.weights));
           const manual = item.weight.trim() && !item.weightAuto;
           const patch: Partial<NewItem> = { found: r };
-          if (best) Object.assign(patch, { tnved: best.code, tnvedKey: best.key });
-          if (!manual) Object.assign(patch, avgW > 0 ? { weight: fmtWeight(avgW), weightAuto: true, weightSrc: undefined } : {});
+          if (best && item.tnvedSrc !== "file") Object.assign(patch, { tnved: best.code, tnvedKey: best.key });
+          if (!manual && item.weightSrc !== "file") Object.assign(patch, avgW > 0 ? { weight: fmtWeight(avgW), weightAuto: true, weightSrc: undefined } : {});
           if (auto?.country && !item.countryTouched) patch.countryKey = r.country?.options?.[0]?.key || "";
           onChange(patch);
         }}
         onPick={(f) => {
           const patch: Partial<NewItem> = {};
-          if (f.tnved) Object.assign(patch, { tnved: f.tnved, tnvedKey: f.tnved_key });
+          if (f.tnved) Object.assign(patch, { tnved: f.tnved, tnvedKey: f.tnved_key, tnvedSrc: undefined });
           if (f.w) Object.assign(patch, { weight: fmtWeight(f.w), weightAuto: false, weightSrc: undefined });
           onChange(patch);
         }}

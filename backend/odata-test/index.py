@@ -875,6 +875,50 @@ def tnved_key_by_code(cfg, code):
     return (v[0]['Ref_Key'] if v else None), None
 
 
+def tnved_all(cfg):
+    """Все живые коды справочника ТН ВЭД: {код: ссылка}."""
+    r = call_odata(cfg, "Catalog_КлассификаторТНВЭД?$format=json&$select=Ref_Key,Code"
+                        "&$filter=DeletionMark eq false")
+    if not r['ok']:
+        return None, r['error']
+    return {str(x.get('Code') or '').strip(): x['Ref_Key'] for x in r['data'].get('value', [])}, None
+
+
+def tnved_check(cfg, codes):
+    """Какие коды из списка уже есть в справочнике 1С, а каких нет."""
+    codes = sorted({str(c).strip() for c in codes if re.fullmatch(r'\d{10}', str(c).strip())})
+    have, err = tnved_all(cfg)
+    if err:
+        return {'ok': False, 'error': err}
+    return {'ok': True, 'found': {c: have[c] for c in codes if c in have},
+            'missing': [c for c in codes if c not in have]}
+
+
+def tnved_create(cfg, codes):
+    """Создаёт коды ТН ВЭД: наименование = код, единица «шт». Существующие не дублирует."""
+    codes = sorted({str(c).strip() for c in codes if re.fullmatch(r'\d{10}', str(c).strip())})[:20]
+    have, err = tnved_all(cfg)
+    if err:
+        return {'ok': False, 'error': err}
+    unit = find_unit_pcs(cfg)
+    created, already, errors = {}, {}, []
+    for c in codes:
+        if c in have:
+            already[c] = have[c]
+            continue
+        payload = {'Code': c, 'Description': c, 'ПрослеживаемыйТовар': False, 'СырьевойТовар': False}
+        if unit:
+            payload['ЕдиницаИзмерения_Key'] = unit
+        r = call_odata(cfg, 'Catalog_КлассификаторТНВЭД?$format=json', method='POST', payload=payload)
+        if r['ok']:
+            created[c] = r['data'].get('Ref_Key')
+        else:
+            errors.append(f'{c}: {r["error"]}')
+    return {'ok': not errors, 'created': created, 'already': already,
+            'remaining': [c for c in codes if c not in created and c not in already],
+            'error': '; '.join(errors) if errors else None}
+
+
 def _num(v):
     try:
         return float(str(v).replace(',', '.').replace(' ', ''))
@@ -2095,6 +2139,12 @@ def handler(event: dict, context) -> dict:
 
     if action == 'nomen_tnved':
         return resp(200, {'result': nomen_tnved(cfg, body.get('kinds') or [])})
+
+    if action == 'tnved_check':
+        return resp(200, {'result': tnved_check(cfg, body.get('codes') or [])})
+
+    if action == 'tnved_create':
+        return resp(200, {'result': tnved_create(cfg, body.get('codes') or [])})
 
     if action == 'nomen_search':
         return resp(200, {'result': nomen_search(cfg, body.get('query') or '')})
