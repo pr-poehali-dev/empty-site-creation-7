@@ -63,16 +63,17 @@ const NomenSearchBox = ({ base, value, found, onValue, onFound, onPick }: Props)
             {found.similar > items.length ? ` (показываю первые ${items.length})` : ""}
           </button>
           {open && items.length > 0 && (
-            <div className="mt-1.5 rounded-lg border border-white/[0.08] divide-y divide-white/[0.06]">
+            <div className="mt-1.5 rounded-lg border border-white/[0.08] overflow-x-auto">
+              <div className="min-w-full w-max divide-y divide-white/[0.06]">
               {items.slice(0, shown).map((f) => (
                 <button
                   type="button"
                   key={f.code + f.name}
                   onClick={() => onPick(f)}
-                  className="w-full text-left flex items-center gap-2 px-2 py-1.5 hover:bg-white/[0.04]"
+                  className="w-full text-left flex items-center gap-3 px-2 py-1.5 hover:bg-white/[0.04]"
                   title="Подставить код ТНВЭД и вес"
                 >
-                  <span className="flex-1 min-w-0 truncate text-muted-foreground">{f.name}</span>
+                  <span className="flex-1 whitespace-nowrap text-muted-foreground">{f.name}</span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">{f.tnved || "—"}</span>
                   <span className="shrink-0 tabular-nums w-16 text-right">{f.w ? `${fmtWeight(f.w)} кг` : "—"}</span>
                 </button>
@@ -86,6 +87,7 @@ const NomenSearchBox = ({ base, value, found, onValue, onFound, onPick }: Props)
                   Показать ещё ({items.length - shown})
                 </button>
               )}
+              </div>
             </div>
           )}
         </div>
