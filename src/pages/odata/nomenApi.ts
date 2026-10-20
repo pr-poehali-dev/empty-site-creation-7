@@ -255,6 +255,31 @@ export const fmtWeight = (n: number) => String(n).replace(".", ",");
 export const loadGroups = async (base: string): Promise<Group1C[]> =>
   (await withRetry(() => odataPost("nomen_groups", base, {}))).groups;
 
+export interface FoundNomen {
+  name: string;
+  code: string;
+  w: number;
+  tnved: string;
+  tnved_key: string;
+}
+
+export interface SearchResult extends TnvedKind {
+  query: string;
+  items: FoundNomen[];
+}
+
+export const searchNomen = async (base: string, query: string): Promise<SearchResult> => {
+  const r = await odataPost("nomen_search", base, { query });
+  if (!r.ok) throw new Error(r.error || "Не удалось найти");
+  return r;
+};
+
+export const createGroup = async (base: string, name: string, parent: string): Promise<{ key: string; name: string }> => {
+  const r = await odataPost("nomen_group_create", base, { name, parent });
+  if (!r.ok) throw new Error(r.error || "Не удалось создать группу");
+  return r.group;
+};
+
 export const loadTnved = async (base: string, kinds: string[]): Promise<TnvedResult> => {
   const r = await withRetry(() => odataPost("nomen_tnved", base, { kinds }));
   return { kinds: r.kinds || {}, countries: r.countries || [] };
@@ -305,6 +330,8 @@ export interface NewItem {
   countryTouched: boolean;
   tnved: string;
   tnvedKey: string;
+  search?: string;
+  found?: SearchResult;
 }
 
 export const toNumber = (s: string) => {

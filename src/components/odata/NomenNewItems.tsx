@@ -30,6 +30,7 @@ const loadSite = (): SiteSettings => {
   }
 };
 import NomenNewItemRow from "./NomenNewItemRow";
+import NomenGroupCreate from "./NomenGroupCreate";
 
 interface Props {
   items: NewItem[];
@@ -41,9 +42,10 @@ interface Props {
   onAll: (patch: Partial<NewItem>) => void;
   onReload: () => void;
   base: string;
+  onGroupAdded: (g: Group1C) => void;
 }
 
-const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base }: Props) => {
+const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded }: Props) => {
   const [allGroup, setAllGroup] = useState("");
   const [site, setSiteState] = useState<SiteSettings>(loadSite);
   const cache = useRef(new Map<string, Promise<SiteProduct>>());
@@ -91,18 +93,28 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1">
             <span className="text-xs text-muted-foreground">Группа для всех позиций</span>
-            <Select value={allGroup} onValueChange={setAllGroup}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выбрать группу" />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={g.key} value={g.key}>
-                    {g.path}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-1.5">
+              <Select value={allGroup} onValueChange={setAllGroup}>
+                <SelectTrigger className="min-w-0">
+                  <SelectValue placeholder="Выбрать группу" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((g) => (
+                    <SelectItem key={g.key} value={g.key}>
+                      {g.path}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <NomenGroupCreate
+                base={base}
+                groups={groups}
+                onCreated={(g) => {
+                  onGroupAdded(g);
+                  setAllGroup(g.key);
+                }}
+              />
+            </div>
           </div>
           <Button variant="outline" disabled={!allGroup} onClick={() => onAll({ groupKey: allGroup })}>
             Проставить всем
@@ -161,6 +173,8 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             onChange={(p) => onChange(x.idx, p)}
             site={site}
             lookup={lookup}
+            base={base}
+            onGroupAdded={onGroupAdded}
           />
         ))}
       </div>

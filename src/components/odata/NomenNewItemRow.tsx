@@ -10,6 +10,9 @@ import Icon from "@/components/ui/icon";
 import { useMemo, useState } from "react";
 import NomenCountryField from "./NomenCountryField";
 import NomenSiteField from "./NomenSiteField";
+import NomenGroupCreate from "./NomenGroupCreate";
+import NomenSearchBox from "./NomenSearchBox";
+import AutoTextarea from "./AutoTextarea";
 import {
   Country1C,
   Group1C,
@@ -33,6 +36,8 @@ interface Props {
   onChange: (patch: Partial<NewItem>) => void;
   site: SiteSettings;
   lookup: (article: string) => Promise<SiteProduct>;
+  base: string;
+  onGroupAdded: (g: Group1C) => void;
 }
 
 const Field = ({ label, children, bad }: { label: string; children: React.ReactNode; bad?: boolean }) => (
@@ -42,7 +47,12 @@ const Field = ({ label, children, bad }: { label: string; children: React.ReactN
   </label>
 );
 
-const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, lookup }: Props) => {
+const T = "text-sm md:text-sm";
+
+const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site, lookup, base, onGroupAdded }: Props) => {
+  const tnved: TnvedKind | undefined = item.found
+    ? { ...item.found, country: auto?.country ? item.found.country : undefined }
+    : auto;
   const problems = newItemProblems(item);
   const bad = (k: string) => problems.includes(k);
   const options = tnved?.options || [];
@@ -56,47 +66,58 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, looku
 
   return (
     <div className="p-3 space-y-3">
-      <div className="flex items-start gap-2">
-        <span className="text-xs text-muted-foreground w-7 shrink-0 pt-2">{item.idx + 1}</span>
-        <div className="flex-1 min-w-0">
-          <Field label="Наименование" bad={bad("наименование")}>
-            <Input value={item.name} onChange={(e) => onChange({ name: e.target.value })} />
-          </Field>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`flex-1 min-w-0 truncate ${bad("наименование") ? "text-rose-400" : "text-muted-foreground"}`}>
+            {item.idx + 1} · Наименование
+          </span>
+          <span
+            className={`shrink-0 whitespace-nowrap flex items-center gap-1 ${
+              problems.length ? "text-amber-400" : "text-emerald-400"
+            }`}
+          >
+            <Icon name={problems.length ? "CircleAlert" : "CircleCheck"} size={12} />
+            {problems.length ? `не хватает: ${problems.length}` : "готово"}
+          </span>
         </div>
-        <span
-          className={`text-xs rounded-md px-2 py-1 shrink-0 mt-6 flex items-center gap-1 ${
-            problems.length ? "text-amber-400 bg-amber-500/10" : "text-emerald-400 bg-emerald-500/10"
-          }`}
-        >
-          <Icon name={problems.length ? "CircleAlert" : "CircleCheck"} size={13} />
-          {problems.length ? `не хватает: ${problems.length}` : "готово"}
-        </span>
+        <AutoTextarea value={item.name} onChange={(v) => onChange({ name: v })} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 ml-9">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <Field label="Артикул (необязательно)">
-          <Input value={item.article} onChange={(e) => onChange({ article: e.target.value })} />
+          <Input className={T} value={item.article} onChange={(e) => onChange({ article: e.target.value })} />
         </Field>
         <Field label="Штрихкод (необязательно)">
           <Input
+            className={T}
             value={item.barcode}
             inputMode="numeric"
             onChange={(e) => onChange({ barcode: e.target.value.replace(/\D/g, "") })}
           />
         </Field>
         <Field label="Группа" bad={bad("группа")}>
-          <Select value={item.groupKey} onValueChange={(v) => onChange({ groupKey: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Выбрать" />
-            </SelectTrigger>
-            <SelectContent>
-              {groups.map((g) => (
-                <SelectItem key={g.key} value={g.key}>
-                  {g.path}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-1.5">
+            <Select value={item.groupKey} onValueChange={(v) => onChange({ groupKey: v })}>
+              <SelectTrigger className="min-w-0">
+                <SelectValue placeholder="Выбрать" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.key} value={g.key}>
+                    {g.path}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <NomenGroupCreate
+              base={base}
+              groups={groups}
+              onCreated={(g) => {
+                onGroupAdded(g);
+                onChange({ groupKey: g.key });
+              }}
+            />
+          </div>
         </Field>
         <Field label="Базовая цена, ₽" bad={bad("цена")}>
           <NomenSiteField
@@ -173,7 +194,7 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, looku
           ) : null}
           {(!options.length || !known) && (
             <Input
-              className={options.length ? "mt-1.5" : ""}
+              className={`${T} ${options.length ? "mt-1.5" : ""}`}
               value={item.tnved}
               inputMode="numeric"
               maxLength={10}
@@ -201,15 +222,40 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, looku
           href={item.siteUrl}
           target="_blank"
           rel="noreferrer"
-          className="ml-9 text-xs text-primary inline-flex items-center gap-1"
+          className="text-xs text-primary inline-flex items-center gap-1"
         >
           <Icon name="ExternalLink" size={13} />
           открыть на сайте
         </a>
       )}
 
-      <div className="ml-9 text-xs text-muted-foreground">
-        {!item.kind ? "Тип товара не определён — вес и код ТНВЭД введите вручную" : <>
+      <NomenSearchBox
+        base={base}
+        value={item.search ?? ""}
+        found={item.found}
+        onValue={(v) => onChange({ search: v })}
+        onFound={(r) => {
+          const best = r.options[0];
+          const avgW = avgWeight(similarWeights(item.name, r.weights));
+          const manual = item.weight.trim() && !item.weightAuto;
+          const patch: Partial<NewItem> = { found: r };
+          if (best) Object.assign(patch, { tnved: best.code, tnvedKey: best.key });
+          if (!manual) Object.assign(patch, avgW > 0 ? { weight: fmtWeight(avgW), weightAuto: true, weightSrc: undefined } : {});
+          if (auto?.country && !item.countryTouched) patch.countryKey = r.country?.options?.[0]?.key || "";
+          onChange(patch);
+        }}
+        onPick={(f) => {
+          const patch: Partial<NewItem> = {};
+          if (f.tnved) Object.assign(patch, { tnved: f.tnved, tnvedKey: f.tnved_key });
+          if (f.w) Object.assign(patch, { weight: fmtWeight(f.w), weightAuto: false, weightSrc: undefined });
+          onChange(patch);
+        }}
+      />
+
+      <div className="text-xs text-muted-foreground">
+        {item.found ? (
+          `Искал по «${item.found.query}»: найдено в 1С ${item.found.similar}, с кодом ТНВЭД ${options.reduce((s, o) => s + o.count, 0)}`
+        ) : !item.kind ? "Тип товара не определён — вес и код ТНВЭД введите вручную" : <>
         Тип «{item.kind}»:{" "}
         {tnved
           ? tnved.similar
@@ -217,10 +263,26 @@ const NomenNewItemRow = ({ item, groups, tnved, countries, onChange, site, looku
             : "похожих в 1С нет — код ТНВЭД введите вручную"
           : "подбираю ТНВЭД…"}
         </>}
+        {item.found && (
+          <button type="button" className="ml-2 underline underline-offset-2" onClick={() => {
+              const best = auto?.options?.[0];
+              const avgW = avgWeight(similarWeights(item.name, auto?.weights));
+              const manual = item.weight.trim() && !item.weightAuto;
+              onChange({
+                found: undefined,
+                tnved: best?.code || "",
+                tnvedKey: best?.key || "",
+                ...(manual ? {} : { weight: avgW > 0 ? fmtWeight(avgW) : "", weightAuto: avgW > 0 }),
+                ...(auto?.country && !item.countryTouched ? { countryKey: auto.country.options?.[0]?.key || "" } : {}),
+              });
+            }}>
+            вернуть автоподбор
+          </button>
+        )}
       </div>
 
       {similar.length > 0 && (
-        <div className="ml-9 text-xs">
+        <div className="text-xs">
           <div className="flex items-center gap-3 flex-wrap">
             <button
               type="button"

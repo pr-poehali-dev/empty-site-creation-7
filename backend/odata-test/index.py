@@ -761,6 +761,77 @@ def nomen_tnved(cfg, kinds):
     return {'ok': True, 'kinds': out, 'countries': countries, 'countries_error': cerr}
 
 
+SEARCH_LIST_MAX = 300
+
+
+def _word_clause(w):
+    variants = {w, w.lower(), w[:1].upper() + w[1:].lower(), w.upper()}
+    return '(' + ' or '.join(f"substringof('{_q(v)}',Description) eq true" for v in sorted(variants)) + ')'
+
+
+def nomen_search(cfg, query):
+    """Поиск номенклатуры по ключевым словам (все слова в любом порядке) и подбор ТНВЭД, веса, страны."""
+    words = [w for w in re.split(r'\s+', str(query or '').strip()) if w][:6]
+    if not words:
+        return {'ok': False, 'error': 'Введите слова для поиска'}
+    main = max(words, key=len)
+    r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=2000"
+                        "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара,СтранаПроисхождения_Key"
+                        f"&$filter=IsFolder eq false and DeletionMark eq false and {_word_clause(main)}")
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    low = [w.lower().replace('ё', 'е') for w in words]
+    counts, countries, weights, found = {}, {}, [], []
+    for x in r['data'].get('value', []):
+        name = (x.get('Description') or '').strip()
+        n = name.lower().replace('ё', 'е')
+        if not all(w in n for w in low):
+            continue
+        k = x.get('КодТНВЭД_Key') or EMPTY_GUID
+        k = '' if k == EMPTY_GUID else k
+        if k:
+            counts[k] = counts.get(k, 0) + 1
+        c = x.get('СтранаПроисхождения_Key') or EMPTY_GUID
+        c = '' if c == EMPTY_GUID else c
+        countries[c] = countries.get(c, 0) + 1
+        try:
+            w = float(x.get('ВесПоСертификатуТовара') or 0)
+        except (TypeError, ValueError):
+            w = 0
+        code = (x.get('Code') or '').strip()
+        if w > 0:
+            weights.append({'name': name, 'code': code, 'w': w})
+        found.append({'name': name, 'code': code, 'w': w, 'tk': k})
+    keys = sorted(counts)
+    codes, _ = _run_parallel(lambda k: tnved_code(cfg, k), [(k,) for k in keys])
+    opts = [{'key': g, 'code': codes.get((g,)) or '', 'count': n} for g, n in counts.items()]
+    opts.sort(key=lambda o: -o['count'])
+    found.sort(key=lambda f: (not f['tk'], not f['w'], f['name'].lower()))
+    items = [{'name': f['name'], 'code': f['code'], 'w': f['w'], 'tnved_key': f['tk'],
+              'tnved': codes.get((f['tk'],)) or '' if f['tk'] else ''} for f in found[:SEARCH_LIST_MAX]]
+    return {'ok': True, 'query': ' '.join(words), 'similar': len(found), 'basis': ' '.join(words),
+            'options': opts, 'weights': weights,
+            'country': {'basis': ' '.join(words), 'similar': len(found), 'options': country_options(countries)},
+            'items': items}
+
+
+def nomen_group_create(cfg, name, parent):
+    """Создание группы (папки) номенклатуры в 1С."""
+    name = str(name or '').strip()[:100]
+    parent = str(parent or '').strip()
+    if not name:
+        return {'ok': False, 'error': 'Укажите наименование группы'}
+    if parent and not re.fullmatch(r'[0-9a-f-]{36}', parent):
+        return {'ok': False, 'error': 'Неверная родительская группа'}
+    r = call_odata(cfg, 'Catalog_Номенклатура?$format=json', method='POST',
+                   payload={'Description': name, 'IsFolder': True, 'Parent_Key': parent or EMPTY_GUID})
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    d = r['data']
+    return {'ok': True, 'group': {'key': d.get('Ref_Key'), 'name': (d.get('Description') or name).strip(),
+                                  'parent': parent}}
+
+
 def country_code(cfg, key):
     r = call_odata(cfg, f"Catalog_СтраныМира(guid'{key}')?$format=json&$select=Code,Description")
     if not r['ok']:
@@ -2024,6 +2095,12 @@ def handler(event: dict, context) -> dict:
 
     if action == 'nomen_tnved':
         return resp(200, {'result': nomen_tnved(cfg, body.get('kinds') or [])})
+
+    if action == 'nomen_search':
+        return resp(200, {'result': nomen_search(cfg, body.get('query') or '')})
+
+    if action == 'nomen_group_create':
+        return resp(200, {'result': nomen_group_create(cfg, body.get('name'), body.get('parent'))})
 
     if action == 'nomen_add_barcodes':
         return resp(200, {'result': nomen_add_barcodes(cfg, body.get('rows') or [])})

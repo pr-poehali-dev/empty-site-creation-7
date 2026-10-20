@@ -66,6 +66,7 @@ const NomenSiteField = ({ value, inputMode, placeholder, unit, siteName, lookup,
     >
       <Input
         ref={ref}
+        className="text-sm md:text-sm"
         value={value}
         inputMode={inputMode}
         placeholder={placeholder}

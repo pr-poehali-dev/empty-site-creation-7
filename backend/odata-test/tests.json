@@ -33,6 +33,33 @@
         "error": "string"
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "nomen_search без токена запрещён",
+      "method": "POST",
+      "path": "/?action=nomen_search",
+      "body": {
+        "query": "кастрюл набор"
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "nomen_group_create без токена запрещён",
+      "method": "POST",
+      "path": "/?action=nomen_group_create",
+      "body": {
+        "name": "Тест",
+        "parent": ""
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }

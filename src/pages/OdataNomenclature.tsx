@@ -611,6 +611,11 @@ const OdataNomenclature = () => {
             onAll={patchAll}
             onReload={() => loadRefs(newItems, true)}
             base={base}
+            onGroupAdded={(g) =>
+              setGroups((prev) =>
+                [...prev.filter((x) => x.key !== g.key), g].sort((a, b) => a.path.toLowerCase().localeCompare(b.path.toLowerCase())),
+              )
+            }
           />
         )}
 
