@@ -36,6 +36,7 @@ import {
   avgWeight,
   fmtWeight,
   similarWeights,
+  countryByName,
 } from "./odata/nomenApi";
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
@@ -270,7 +271,10 @@ const OdataNomenclature = () => {
             const avg = avgWeight(similarWeights(x.name, k?.weights));
             y = avg > 0 ? { ...y, weight: fmtWeight(avg), weightAuto: true } : { ...y, weight: "", weightAuto: false };
           }
-          if (!(keepChoice && x.countryTouched)) y = { ...y, countryKey: k?.country?.options?.[0]?.key || "" };
+          const fileC = k?.country ? countryByName(x.fileCountry, t.countries) : undefined;
+          if (fileC && !(keepChoice && x.countryTouched && x.countrySrc !== "file"))
+            y = { ...y, countryKey: fileC.key, countryTouched: true, countrySrc: "file" };
+          else if (!(keepChoice && x.countryTouched)) y = { ...y, countryKey: k?.country?.options?.[0]?.key || "" };
           return y;
         }),
       );
@@ -298,6 +302,7 @@ const OdataNomenclature = () => {
         weightAuto: false,
         countryKey: "",
         countryTouched: false,
+        fileCountry: it.country || "",
         tnved: "",
         tnvedKey: "",
       }));

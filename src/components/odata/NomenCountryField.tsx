@@ -11,7 +11,7 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
-import { Country1C, CountryKind, SiteProduct, isTraceable } from "@/pages/odata/nomenApi";
+import { Country1C, CountryKind, SiteProduct, isTraceable, normCountry } from "@/pages/odata/nomenApi";
 
 const NONE = "__none";
 
@@ -24,11 +24,11 @@ interface Props {
   lookup?: (() => Promise<SiteProduct>) | null;
   fromSite?: boolean;
   onSite?: (key: string, p: SiteProduct) => void;
+  fromFile?: boolean;
+  fileCountry?: string;
 }
 
-const normCountry = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я]/g, "");
-
-const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup, fromSite, onSite }: Props) => {
+const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup, fromSite, onSite, fromFile, fileCountry }: Props) => {
   const [busy, setBusy] = useState(false);
   const [found, setFound] = useState<{ c: Country1C; p: SiteProduct } | null>(null);
   const [msg, setMsg] = useState("");
@@ -58,6 +58,7 @@ const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup,
   const used = new Set(info.options.map((o) => o.key));
   const rest = countries.filter((c) => !used.has(c.key));
   const traceable = isTraceable(value, countries);
+  const fileUnknown = !!fileCountry && !countries.some((c) => normCountry(c.name) === normCountry(fileCountry));
 
   return (
     <label className="block space-y-1">
@@ -134,8 +135,13 @@ const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup,
         </SelectContent>
       </Select>
       <span className={`block text-[11px] leading-tight ${traceable ? "text-amber-400" : "text-muted-foreground"}`}>
-        {fromSite && value ? "с сайта · " : ""}Прослеживаемый: {traceable ? "да" : "нет"}
+        {fromSite && value ? "с сайта · " : fromFile && value ? "из файла · " : ""}Прослеживаемый: {traceable ? "да" : "нет"}
       </span>
+      {fileUnknown && (
+        <span className="block text-[11px] leading-tight text-amber-400">
+          в файле: {fileCountry} — в справочнике 1С нет
+        </span>
+      )}
     </label>
   );
 };

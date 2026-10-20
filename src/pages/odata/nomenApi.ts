@@ -23,6 +23,7 @@ export interface InvoiceItem {
   unit: string;
   price: number | null;
   total: number | null;
+  country?: string;
 }
 
 export interface ParsedInvoice {
@@ -218,6 +219,13 @@ export interface TnvedResult {
 
 export const NOT_TRACEABLE = ["643", "112"];
 
+export const normCountry = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я]/g, "");
+
+export const countryByName = (name: string | undefined, countries: Country1C[]) => {
+  const n = normCountry(name || "");
+  return n ? countries.find((c) => normCountry(c.name) === n) : undefined;
+};
+
 export const isTraceable = (countryKey: string, countries: Country1C[]) => {
   const c = countries.find((x) => x.key === countryKey);
   return !!c && !NOT_TRACEABLE.includes(c.code);
@@ -324,7 +332,8 @@ export interface NewItem {
   weightAuto: boolean;
   priceSrc?: "site" | "manual";
   weightSrc?: "site";
-  countrySrc?: "site";
+  countrySrc?: "site" | "file";
+  fileCountry?: string;
   siteUrl?: string;
   countryKey: string;
   countryTouched: boolean;

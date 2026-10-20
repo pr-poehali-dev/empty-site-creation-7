@@ -17,6 +17,7 @@ const FIELDS: { key: string; title: string }[] = [
   { key: "unit", title: "Ед.изм." },
   { key: "price", title: "Цена" },
   { key: "total", title: "Сумма" },
+  { key: "country", title: "Страна" },
 ];
 
 interface Supplier {

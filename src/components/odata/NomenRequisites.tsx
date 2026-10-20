@@ -57,9 +57,16 @@ const countryPart = (item: NewItem, kind: TnvedKind | undefined, countries: Coun
   if (!c) return { text: "страна не указана", tone: "auto" };
   const n = kind.country.options.find((o) => o.key === c.key)?.count;
   return {
-    text: `${c.name}${item.countrySrc === "site" ? " (сайт)" : ""}${isTraceable(c.key, countries) ? ", прослеж." : ""}`,
-    tone: item.countryTouched && item.countrySrc !== "site" ? undefined : "auto",
-    title: item.countrySrc === "site" ? `с сайта ${item.siteUrl || ""}` : item.countryTouched ? "выбрано вручную" : `подобрано: у ${n ?? 0} похожих`,
+    text: `${c.name}${item.countrySrc === "site" ? " (сайт)" : item.countrySrc === "file" ? " (файл)" : ""}${isTraceable(c.key, countries) ? ", прослеж." : ""}`,
+    tone: item.countryTouched && !item.countrySrc ? undefined : "auto",
+    title:
+      item.countrySrc === "site"
+        ? `с сайта ${item.siteUrl || ""}`
+        : item.countrySrc === "file"
+          ? "из загруженного файла"
+          : item.countryTouched
+            ? "выбрано вручную"
+            : `подобрано: у ${n ?? 0} похожих`,
   };
 };
 

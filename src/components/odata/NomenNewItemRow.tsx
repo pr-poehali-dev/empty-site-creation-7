@@ -212,6 +212,8 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
             siteName={siteName}
             lookup={doLookup}
             fromSite={item.countrySrc === "site"}
+            fromFile={item.countrySrc === "file"}
+            fileCountry={item.fileCountry}
             onSite={(k, p) => onChange({ countryKey: k, countryTouched: true, countrySrc: "site", siteUrl: p.url })}
           />
         )}

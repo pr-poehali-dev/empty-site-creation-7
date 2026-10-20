@@ -10,13 +10,18 @@ SYN = {
     'price': ['цена'],
     'total': ['сумма', 'всего', 'итого', 'стоимость', 'сумма с ндс'],
     'num': ['№', 'n', 'no', '№ п/п', 'п/п', '#'],
+    'country': ['страна', 'страна происхождения', 'страна происх.', 'страна производства',
+                'страна происхождения товара'],
 }
+
+EMPTY_MARKS = {'-', '--', '—', '---'}
 
 SKIP_HEAD = ['сумма ндс', 'ставка ндс', 'ндс', '% ндс']
 
 FIELD_TITLES = {
     'num': '№', 'article': 'Артикул', 'barcode': 'Штрихкод', 'name': 'Наименование',
     'qty': 'Количество', 'unit': 'Ед.изм.', 'price': 'Цена', 'total': 'Сумма',
+    'country': 'Страна',
 }
 
 
@@ -181,6 +186,10 @@ def parse_rows(rows, hdr_idx, mp, limit=5000):
             art = art_from_name(name)
             art_guessed = bool(art)
 
+        country = norm(cell('country')) if 'country' in mp else ''
+        if country in EMPTY_MARKS:
+            country = ''
+
         mismatch = False
         if price_col and qty and total:
             mismatch = abs(price_col * qty - total) > max(0.05, total * 0.005)
@@ -197,6 +206,7 @@ def parse_rows(rows, hdr_idx, mp, limit=5000):
             'total': total,
             'price_source': src,
             'price_mismatch': mismatch,
+            'country': country,
         })
     return out
 
@@ -238,7 +248,11 @@ def parse_invoice(data, filename, forced_mapping=None):
         return {'error': 'Не нашёл строку заголовка таблицы'}
 
     if forced_mapping:
+        detected_country = mapping.get('country')
         mapping = {k: int(v) for k, v in forced_mapping.items() if v is not None}
+        if 'country' not in forced_mapping and detected_country is not None \
+                and detected_country not in mapping.values():
+            mapping['country'] = detected_country
 
     header_row = [norm(c) for c in rows[hdr_idx]]
     items = parse_rows(rows, hdr_idx, mapping)
