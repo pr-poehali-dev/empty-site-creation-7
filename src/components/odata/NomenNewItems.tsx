@@ -46,7 +46,7 @@ interface Props {
   tnvedMissing: string[];
 }
 
-type TnFilter = "all" | "has" | "none" | "missing";
+type TnFilter = "all" | "has" | "none" | "missing" | "skip";
 
 const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing }: Props) => {
   const [tf, setTf] = useState<TnFilter>("all");
@@ -68,22 +68,34 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
     }
     return p;
   };
-  const ready = items.filter((x) => newItemProblems(x).length === 0).length;
+  const active = items.filter((x) => !x.skip);
+  const skipped = items.length - active.length;
+  const ready = active.filter((x) => newItemProblems(x).length === 0).length;
   const isMissing = (x: NewItem) => tnvedMissing.includes(x.fileTnved || x.tnved.trim());
   const tnCounts = {
     all: items.length,
     has: items.filter((x) => x.fileTnved).length,
     none: items.filter((x) => !x.fileTnved).length,
     missing: items.filter(isMissing).length,
+    skip: skipped,
   };
   const shown = items.filter((x) =>
-    tf === "has" ? x.fileTnved : tf === "none" ? !x.fileTnved : tf === "missing" ? isMissing(x) : true,
+    tf === "skip"
+      ? x.skip
+      : tf === "has"
+        ? x.fileTnved
+        : tf === "none"
+          ? !x.fileTnved
+          : tf === "missing"
+            ? isMissing(x)
+            : true,
   );
   const tnChips: [TnFilter, string, string][] = [
     ["all", "Все", ""],
     ["has", "ТН ВЭД в файле есть", "text-emerald-400"],
     ["none", "ТН ВЭД в файле нет", "text-amber-400"],
     ["missing", "Код не в 1С", "text-rose-400"],
+    ["skip", "Не загружать", "text-muted-foreground"],
   ];
 
   return (
@@ -96,11 +108,23 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
           </div>
           <span
             className={`text-xs rounded-md px-2 py-1 ${
-              ready === items.length ? "text-emerald-400 bg-emerald-500/10" : "text-amber-400 bg-amber-500/10"
+              ready === active.length ? "text-emerald-400 bg-emerald-500/10" : "text-amber-400 bg-amber-500/10"
             }`}
           >
-            Готово {ready} из {items.length}
+            Готово {ready} из {active.length}
           </span>
+          {skipped > 0 && (
+            <button
+              type="button"
+              onClick={() => setTf(tf === "skip" ? "all" : "skip")}
+              className={`text-xs rounded-md px-2 py-1 flex items-center gap-1 bg-white/[0.06] ${
+                tf === "skip" ? "text-foreground ring-1 ring-primary" : "text-muted-foreground"
+              }`}
+            >
+              <Icon name="Ban" size={12} />
+              Не загружать: {skipped}
+            </button>
+          )}
           <Button variant="ghost" size="sm" onClick={onReload} disabled={loading}>
             <Icon name={loading ? "Loader2" : "RefreshCw"} size={14} className={loading ? "animate-spin" : ""} />
             Обновить группы
@@ -184,7 +208,7 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
       </div>
       <div className="px-4 py-3 flex flex-wrap gap-1.5 border-b border-white/[0.06]">
         {tnChips
-          .filter(([k]) => k !== "missing" || tnCounts.missing > 0)
+          .filter(([k]) => (k !== "missing" || tnCounts.missing > 0) && (k !== "skip" || tnCounts.skip > 0))
           .map(([k, label, cls]) => (
             <button
               key={k}

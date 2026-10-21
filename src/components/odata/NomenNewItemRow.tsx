@@ -65,22 +65,38 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
   const priceMissing = site.site === "weissgauff" && site.wgPrice === "old" ? "нет зачёркнутой цены" : "на сайте нет цены";
 
   return (
-    <div className="p-3 space-y-3">
+    <div className={`p-3 space-y-3 ${item.skip ? "opacity-50" : ""}`}>
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs">
-          <span className={`flex-1 min-w-0 truncate ${bad("наименование") ? "text-rose-400" : "text-muted-foreground"}`}>
+          <span className={`flex-1 min-w-0 truncate ${!item.skip && bad("наименование") ? "text-rose-400" : "text-muted-foreground"}`}>
             {item.idx + 1} · Наименование
           </span>
-          <span
-            className={`shrink-0 whitespace-nowrap flex items-center gap-1 ${
-              problems.length ? "text-amber-400" : "text-emerald-400"
+          {!item.skip && (
+            <span
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1 ${
+                problems.length ? "text-amber-400" : "text-emerald-400"
+              }`}
+            >
+              <Icon name={problems.length ? "CircleAlert" : "CircleCheck"} size={12} />
+              {problems.length ? `не хватает: ${problems.length}` : "готово"}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => onChange({ skip: !item.skip })}
+            aria-pressed={!!item.skip}
+            className={`shrink-0 whitespace-nowrap flex items-center gap-1 rounded-md border px-2 py-1 ${
+              item.skip
+                ? "border-rose-400/60 bg-rose-500/15 text-rose-300"
+                : "border-white/[0.1] text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Icon name={problems.length ? "CircleAlert" : "CircleCheck"} size={12} />
-            {problems.length ? `не хватает: ${problems.length}` : "готово"}
-          </span>
+            <Icon name={item.skip ? "Undo2" : "Ban"} size={12} />
+            {item.skip ? "Вернуть" : "Не загружать"}
+          </button>
         </div>
         <AutoTextarea value={item.name} onChange={(v) => onChange({ name: v })} />
+        {item.category && <div className="text-xs text-muted-foreground truncate">Категория: {item.category}</div>}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

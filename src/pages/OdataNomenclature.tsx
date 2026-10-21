@@ -292,6 +292,7 @@ const OdataNomenclature = () => {
       .filter(({ m }) => m?.status === "missing")
       .map(({ it, i }) => ({
         idx: i,
+        category: catCol === null ? undefined : catOf(it),
         article: it.article,
         barcode: it.barcode,
         name: it.name,
@@ -320,7 +321,7 @@ const OdataNomenclature = () => {
   };
 
   const tnvedCodesKey = useMemo(
-    () => Array.from(new Set(newItems.map((x) => x.tnved.trim()).filter((c) => /^\d{10}$/.test(c)))).sort().join(","),
+    () => Array.from(new Set(newItems.filter((x) => !x.skip).map((x) => x.tnved.trim()).filter((c) => /^\d{10}$/.test(c)))).sort().join(","),
     [newItems],
   );
 
@@ -343,12 +344,12 @@ const OdataNomenclature = () => {
   }, [tnvedFound, tnvedMissing, tnvedCodesKey]);
 
   const fileCodes = useMemo(
-    () => Array.from(new Set(newItems.map((x) => x.fileTnved || "").filter(Boolean))).sort(),
+    () => Array.from(new Set(newItems.filter((x) => !x.skip).map((x) => x.fileTnved || "").filter(Boolean))).sort(),
     [newItems],
   );
 
   const missingTnvedList = useMemo(() => {
-    const pending = newItems.filter((x) => !createResults[x.idx] || createResults[x.idx].state === "error");
+    const pending = newItems.filter((x) => !x.skip && (!createResults[x.idx] || createResults[x.idx].state === "error"));
     return tnvedMissing
       .map((code) => ({
         code,
@@ -393,7 +394,7 @@ const OdataNomenclature = () => {
       ),
     );
 
-  const similarTargets = newItems.filter((x) => x.kind && (!x.fileTnved || !x.fileWeight));
+  const similarTargets = newItems.filter((x) => !x.skip && x.kind && (!x.fileTnved || !x.fileWeight));
   const similarKinds = Array.from(new Set(similarTargets.map((x) => x.kind))).sort();
 
   const applySimilar = (t: TnvedResult) =>
@@ -443,7 +444,9 @@ const OdataNomenclature = () => {
 
   const patchAll = (patch: Partial<NewItem>) => setNewItems((prev) => prev.map((x) => ({ ...x, ...patch })));
 
-  const pendingNew = newItems.filter((x) => !createResults[x.idx] || createResults[x.idx].state === "error");
+  const pendingAll = newItems.filter((x) => !createResults[x.idx] || createResults[x.idx].state === "error");
+  const pendingNew = pendingAll.filter((x) => !x.skip);
+  const skippedCount = pendingAll.length - pendingNew.length;
   const readyNew = pendingNew.filter((x) => newItemProblems(x).length === 0);
   const conflicts = Object.values(createResults).filter((r) => r.state === "conflict");
   const pendingDecisions = conflicts.filter((r) => !decisions[r.idx]).length;
@@ -477,7 +480,7 @@ const OdataNomenclature = () => {
       }`
     : `Новых ${newItems.length}: готовы ${readyNew.length}${
         pendingNew.length - readyNew.length ? `, не хватает реквизитов ${pendingNew.length - readyNew.length}` : ""
-      }`;
+      }${skippedCount ? `, не загружать ${skippedCount}` : ""}`;
 
   const priceNow = async (results = createResults, decs = decisions, done = pricedKeys) => {
     const rows = unpricedList(results, decs, done);
@@ -806,9 +809,9 @@ const OdataNomenclature = () => {
           />
         )}
 
-        {checked && pendingNew.length > 0 && (
+        {checked && pendingAll.length > 0 && (
           <NomenNewItems
-            items={pendingNew}
+            items={pendingAll}
             groups={groups}
             tnved={tnved}
             countries={countries}

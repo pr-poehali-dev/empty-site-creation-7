@@ -368,6 +368,8 @@ export const productKind = (name: string, brands: string[] = []) => {
 
 export interface NewItem {
   idx: number;
+  category?: string;
+  skip?: boolean;
   article: string;
   barcode: string;
   name: string;
