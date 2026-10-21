@@ -1313,7 +1313,8 @@ def find_one_gtd(cfg, number):
     n = str(number or '').strip()
     if not n:
         return None, None
-    if gtd_kind(n) == 'rnpt':
+    four = len([p for p in n.split('/') if p]) == 4
+    if gtd_kind(n) == 'rnpt' or four:
         flt = f"Code eq '{n}'"
     else:
         flt = f"{GTD_NUM_FIELD} eq '{n}'"
@@ -1321,6 +1322,8 @@ def find_one_gtd(cfg, number):
     if not r['ok']:
         return None, str(r['error'])[:200]
     items = r['data'].get('value', []) or []
+    if four:
+        items = [i for i in items if str(i.get('Code') or '').strip() == n and not i.get('DeletionMark')]
     if gtd_kind(n) == 'rnpt':
         items = [i for i in items if i.get(GTD_FLAG_RNPT) and not i.get('DeletionMark')] or items
     else:
