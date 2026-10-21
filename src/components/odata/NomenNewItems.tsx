@@ -52,7 +52,12 @@ interface Props {
 type TnFilter = "all" | "has" | "none" | "missing" | "skip";
 
 const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing, similarCountry, onSimilarCountry }: Props) => {
-  const [tf, setTf] = useState<TnFilter>("all");
+  const [tf, setTfState] = useState<TnFilter>("all");
+  const [notReady, setNotReady] = useState<Set<number> | null>(null);
+  const setTf = (k: TnFilter) => {
+    setTfState(k);
+    if (k === "skip") setNotReady(null);
+  };
   const [allGroup, setAllGroup] = useState("");
   const [site, setSiteState] = useState<SiteSettings>(loadSite);
   const cache = useRef(new Map<string, Promise<SiteProduct>>());
@@ -82,7 +87,12 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
     missing: items.filter(isMissing).length,
     skip: skipped,
   };
-  const shown = items.filter((x) =>
+  const toggleNotReady = () => {
+    if (notReady) return setNotReady(null);
+    setNotReady(new Set(active.filter((x) => newItemProblems(x).length > 0).map((x) => x.idx)));
+    if (tf === "skip") setTfState("all");
+  };
+  const shown = items.filter((x) => (notReady ? notReady.has(x.idx) && !x.skip : true)).filter((x) =>
     tf === "skip"
       ? x.skip
       : tf === "has"
@@ -109,13 +119,22 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             <Icon name="ClipboardList" size={18} className="text-primary" />
             3. Новые позиции · {items.length}
           </div>
-          <span
+          <button
+            type="button"
+            onClick={toggleNotReady}
+            disabled={!notReady && ready === active.length}
             className={`text-xs rounded-md px-2 py-1 ${
-              ready === active.length ? "text-emerald-400 bg-emerald-500/10" : "text-amber-400 bg-amber-500/10"
+              notReady
+                ? "text-amber-400 bg-amber-500/10 ring-1 ring-amber-400"
+                : ready === active.length
+                  ? "text-emerald-400 bg-emerald-500/10"
+                  : "text-amber-400 bg-amber-500/10"
             }`}
           >
-            Готово {ready} из {active.length}
-          </span>
+            {notReady
+              ? `Не готовы: ${active.filter((x) => newItemProblems(x).length > 0).length} · показать все`
+              : `Готово ${ready} из ${active.length}`}
+          </button>
           {skipped > 0 && (
             <button
               type="button"
