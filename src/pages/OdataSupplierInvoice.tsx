@@ -14,6 +14,7 @@ import { findBase } from "./odata/bases";
 import { parseOdataFile, ParsedFile, formatMoney, applyTraceCols, TraceCols } from "./odata/parseOdataFile";
 import NomenTraceColumns from "@/components/odata/NomenTraceColumns";
 import ReceiptTraceCard from "@/components/odata/ReceiptTraceCard";
+import { collectMissing, downloadMissing, missingText } from "./odata/missingList";
 import { InvoiceItem } from "./odata/nomenApi";
 import { buildPlan, CardTrace, Country1C, findCountry, normCountry, TracePlan, TraceReport } from "./odata/receiptTrace";
 import GtdFixCard from "@/components/odata/GtdFixCard";
@@ -53,6 +54,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [matchError, setMatchError] = useState("");
 
   const [matchProgress, setMatchProgress] = useState("");
+  const [missingCopied, setMissingCopied] = useState(false);
   const [gtdMissing, setGtdMissing] = useState<string[] | null>(null);
   const [gtdAll, setGtdAll] = useState<string[]>([]);
   const [gtdRefs, setGtdRefs] = useState<Record<string, string>>({});
@@ -849,6 +851,49 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                 {!productsOk && " — документ создать нельзя, пока есть ненайденные"}
               </div>
             )}
+
+            {matches && !productsOk && parsed && (() => {
+              const missing = collectMissing(fileRows, matches.map((m) => m?.found));
+              const meta = {
+                docNumber,
+                docDate,
+                fileName,
+                total: fileRows.length,
+                withTrace: isReceipt,
+              };
+              const copy = async () => {
+                const text = missingText(missing, meta);
+                try {
+                  await navigator.clipboard.writeText(text);
+                } catch {
+                  const ta = document.createElement("textarea");
+                  ta.value = text;
+                  document.body.appendChild(ta);
+                  ta.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(ta);
+                }
+                setMissingCopied(true);
+                setTimeout(() => setMissingCopied(false), 2000);
+              };
+              return (
+                <div className="mt-3 rounded-lg border border-white/[0.08] p-3 space-y-2">
+                  <div className="text-sm">
+                    Нет в 1С: {missing.length} {missing.length === 1 ? "товар" : "товаров"} — список для поставщика
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" className="rounded-lg gap-2" onClick={() => downloadMissing(missing, meta)}>
+                      <Icon name="Download" size={15} />
+                      Скачать список (Excel)
+                    </Button>
+                    <Button size="sm" variant="outline" className="rounded-lg gap-2" onClick={copy}>
+                      <Icon name={missingCopied ? "Check" : "Copy"} size={15} />
+                      {missingCopied ? "Скопировано" : "Скопировать текстом"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {isReceipt && gtdMissing !== null && (
               <div
