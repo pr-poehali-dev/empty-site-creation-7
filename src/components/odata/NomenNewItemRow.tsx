@@ -163,7 +163,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
               : item.weightSrc === "site" && item.weight.trim()
               ? "с сайта"
               : !tnved
-              ? "подбираю вес…"
+              ? "подбор по похожим не запускался"
               : item.weightAuto
                 ? `среднее по ${similar.length} похожим`
                 : item.weight.trim()
@@ -296,7 +296,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
           ? tnved.similar
             ? `похожих в 1С ${tnved.similar}${tnved.basis && tnved.basis !== item.kind ? ` (искал по «${tnved.basis}»)` : ""}, с кодом ТНВЭД ${options.reduce((s, o) => s + o.count, 0)}`
             : "похожих в 1С нет — код ТНВЭД введите вручную"
-          : "подбираю ТНВЭД…"}
+          : "подбор по похожим не запускался"}
         </>}
         {item.found && (
           <button type="button" className="ml-2 underline underline-offset-2" onClick={() => {

@@ -290,18 +290,48 @@ export const createGroup = async (base: string, name: string, parent: string): P
   return r.group;
 };
 
-export const checkTnvedCodes = async (base: string, codes: string[]) =>
-  (await withRetry(() => odataPost("tnved_check", base, { codes }))) as {
+const PORTION_TIMEOUT = 40000;
+
+export const withTries = async <T,>(fn: () => Promise<T>, onRetry?: (attempt: number) => void): Promise<T> => {
+  let last: unknown;
+  for (let a = 1; a <= MATCH_TRIES; a++) {
+    if (a > 1) {
+      onRetry?.(a - 1);
+      await new Promise((r) => setTimeout(r, 1500 * (a - 1)));
+    }
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last;
+};
+
+export const RETRIES = MATCH_TRIES - 1;
+
+export const checkTnvedCodes = async (base: string, codes: string[], onRetry?: (a: number) => void) =>
+  (await withTries(() => odataPost("tnved_check", base, { codes }, PORTION_TIMEOUT), onRetry)) as {
     found: Record<string, string>;
     missing: string[];
   };
 
-export const createTnvedCodes = async (base: string, codes: string[]) =>
-  (await odataPost("tnved_create", base, { codes }, 60000)) as {
+export const createTnvedCodes = async (base: string, codes: string[], onRetry?: (a: number) => void) =>
+  (await withTries(() => odataPost("tnved_create", base, { codes }, PORTION_TIMEOUT), onRetry)) as {
     created: Record<string, string>;
     already: Record<string, string>;
     remaining: string[];
+    error?: string | null;
   };
+
+export const loadTnvedPortion = async (
+  base: string,
+  kinds: string[],
+  onRetry?: (a: number) => void,
+): Promise<TnvedResult> => {
+  const r = await withTries(() => odataPost("nomen_tnved", base, { kinds }, PORTION_TIMEOUT), onRetry);
+  return { kinds: r.kinds || {}, countries: r.countries || [] };
+};
 
 export const loadTnved = async (base: string, kinds: string[]): Promise<TnvedResult> => {
   const r = await withRetry(() => odataPost("nomen_tnved", base, { kinds }));
@@ -348,7 +378,7 @@ export interface NewItem {
   priceSrc?: "site" | "manual";
   weightSrc?: "site" | "file";
   fileWeight?: string;
-  tnvedSrc?: "file";
+  tnvedSrc?: "file" | "similar";
   fileTnved?: string;
   tnvedMissing?: boolean;
   countrySrc?: "site" | "file";

@@ -20,7 +20,8 @@ import {
   Country1C,
   addBarcodesPortion,
   loadGroups,
-  loadTnved,
+  loadTnvedPortion,
+  TnvedResult,
   matchPortion,
   parseInvoice,
   productKind,
@@ -39,7 +40,10 @@ import {
   countryByName,
   checkTnvedCodes,
 } from "./odata/nomenApi";
-import NomenTnvedMissing from "@/components/odata/NomenTnvedMissing";
+import NomenTnvedSteps, { TnvedStep } from "@/components/odata/NomenTnvedSteps";
+
+const CHECK_PORTION = 15;
+const SIMILAR_PORTION = 4;
 import NomenMatchTable, { BC_META, Filter, STATUS_META } from "@/components/odata/NomenMatchTable";
 import NomenSearchOptions from "@/components/odata/NomenSearchOptions";
 import NomenBarcodePanel from "@/components/odata/NomenBarcodePanel";
@@ -94,7 +98,9 @@ const OdataNomenclature = () => {
   const [refsLoading, setRefsLoading] = useState(false);
   const [tnvedFound, setTnvedFound] = useState<Record<string, string>>({});
   const [tnvedMissing, setTnvedMissing] = useState<string[]>([]);
-  const [tnvedChecking, setTnvedChecking] = useState(false);
+  const [tnvedFailed, setTnvedFailed] = useState<string[]>([]);
+  const [kindsFailed, setKindsFailed] = useState<string[]>([]);
+  const [step, setStep] = useState<TnvedStep>({ stage: "", done: 0, total: 0, retry: 0 });
   const [createResults, setCreateResults] = useState<Record<number, CreateResult>>({});
   const [priceDocs, setPriceDocs] = useState<PriceDocResult[]>([]);
   const [pricedKeys, setPricedKeys] = useState<string[]>([]);
@@ -254,43 +260,15 @@ const OdataNomenclature = () => {
     }
   };
 
-  const loadRefs = async (list: NewItem[], keepChoice: boolean) => {
+  const loadRefs = async () => {
     setRefsLoading(true);
     try {
       const g = await loadGroups(base);
       const brands = g.map((x) => x.name);
-      const kindOf = new Map(list.map((x) => [x.idx, productKind(x.name, brands)]));
-      const t = await loadTnved(base, Array.from(new Set(kindOf.values())).filter(Boolean));
       setGroups(g);
-      setTnved(t.kinds);
-      setCountries(t.countries);
-      setNewItems((prev) =>
-        prev.map((x) => {
-          const kind = kindOf.get(x.idx) ?? x.kind;
-          let y = { ...x, kind };
-          const k = kind ? t.kinds[kind] : undefined;
-          const best = k?.options?.[0];
-          const fileT = x.fileTnved && !(keepChoice && x.tnved && x.tnvedSrc !== "file");
-          if (fileT) {
-            const opt = k?.options?.find((o) => o.code === x.fileTnved);
-            y = { ...y, tnved: x.fileTnved!, tnvedKey: opt?.key || y.tnvedKey, tnvedSrc: "file" };
-          } else if (best && !(keepChoice && x.tnved)) y = { ...y, tnved: best.code, tnvedKey: best.key };
-          const manual = x.weight.trim() && !x.weightAuto;
-          if (x.fileWeight && (!manual || x.weightSrc === "file")) {
-            y = { ...y, weight: x.fileWeight, weightAuto: false, weightSrc: "file" };
-          } else if (!manual) {
-            const avg = avgWeight(similarWeights(x.name, k?.weights));
-            y = avg > 0 ? { ...y, weight: fmtWeight(avg), weightAuto: true } : { ...y, weight: "", weightAuto: false };
-          }
-          const fileC = k?.country ? countryByName(x.fileCountry, t.countries) : undefined;
-          if (fileC && !(keepChoice && x.countryTouched && x.countrySrc !== "file"))
-            y = { ...y, countryKey: fileC.key, countryTouched: true, countrySrc: "file" };
-          else if (!(keepChoice && x.countryTouched)) y = { ...y, countryKey: k?.country?.options?.[0]?.key || "" };
-          return y;
-        }),
-      );
+      setNewItems((prev) => prev.map((x) => ({ ...x, kind: productKind(x.name, brands) })));
     } catch (e) {
-      toast({ title: "Не загрузил группы и ТНВЭД", description: (e as Error).message, variant: "destructive" });
+      toast({ title: "Не загрузил группы", description: (e as Error).message, variant: "destructive" });
     } finally {
       setRefsLoading(false);
     }
@@ -309,8 +287,9 @@ const OdataNomenclature = () => {
         kind: productKind(it.name),
         groupKey: "",
         price: "",
-        weight: "",
+        weight: it.weight && it.weight > 0 ? fmtWeight(it.weight) : "",
         weightAuto: false,
+        weightSrc: it.weight && it.weight > 0 ? ("file" as const) : undefined,
         countryKey: "",
         countryTouched: false,
         fileCountry: it.country || "",
@@ -321,32 +300,17 @@ const OdataNomenclature = () => {
       }));
     setNewItems(list);
     setTnved({});
-    if (list.length) loadRefs(list, false);
+    setTnvedFound({});
+    setTnvedMissing([]);
+    setTnvedFailed([]);
+    setKindsFailed([]);
+    if (list.length) loadRefs();
   };
 
   const tnvedCodesKey = useMemo(
     () => Array.from(new Set(newItems.map((x) => x.tnved.trim()).filter((c) => /^\d{10}$/.test(c)))).sort().join(","),
     [newItems],
   );
-
-  useEffect(() => {
-    const codes = tnvedCodesKey ? tnvedCodesKey.split(",") : [];
-    const unknown = codes.filter((c) => !tnvedFound[c] && !tnvedMissing.includes(c));
-    if (!unknown.length) return;
-    let alive = true;
-    setTnvedChecking(true);
-    checkTnvedCodes(base, unknown)
-      .then((r) => {
-        if (!alive) return;
-        setTnvedFound((p) => ({ ...p, ...r.found }));
-        setTnvedMissing((p) => Array.from(new Set([...p.filter((c) => !r.found[c]), ...r.missing])));
-      })
-      .catch(() => {})
-      .finally(() => alive && setTnvedChecking(false));
-    return () => {
-      alive = false;
-    };
-  }, [tnvedCodesKey, base]);
 
   useEffect(() => {
     setNewItems((prev) => {
@@ -366,16 +330,100 @@ const OdataNomenclature = () => {
     });
   }, [tnvedFound, tnvedMissing, tnvedCodesKey]);
 
+  const fileCodes = useMemo(
+    () => Array.from(new Set(newItems.map((x) => x.fileTnved || "").filter(Boolean))).sort(),
+    [newItems],
+  );
+
   const missingTnvedList = useMemo(() => {
     const pending = newItems.filter((x) => !createResults[x.idx] || createResults[x.idx].state === "error");
     return tnvedMissing
-      .map((code) => ({ code, count: pending.filter((x) => x.tnved.trim() === code).length }))
+      .map((code) => ({
+        code,
+        count: pending.filter((x) => x.fileTnved === code || x.tnved.trim() === code).length,
+      }))
       .filter((m) => m.count > 0);
   }, [tnvedMissing, newItems, createResults]);
 
   const onTnvedCreated = (map: Record<string, string>) => {
     setTnvedFound((p) => ({ ...p, ...map }));
     setTnvedMissing((p) => p.filter((c) => !map[c]));
+  };
+
+  const setRetry = (a: number) => setStep((s) => ({ ...s, retry: a }));
+
+  const checkFileCodes = async () => {
+    const todo = fileCodes.filter((c) => !tnvedFound[c] && !tnvedMissing.includes(c));
+    setTnvedFailed([]);
+    setStep({ stage: "check", done: 0, total: todo.length, retry: 0 });
+    const failed: string[] = [];
+    for (let i = 0; i < todo.length; i += CHECK_PORTION) {
+      const part = todo.slice(i, i + CHECK_PORTION);
+      try {
+        const r = await checkTnvedCodes(base, part, setRetry);
+        setTnvedFound((p) => ({ ...p, ...r.found }));
+        setTnvedMissing((p) => Array.from(new Set([...p.filter((c) => !r.found[c]), ...r.missing])));
+      } catch {
+        failed.push(...part);
+      }
+      setStep((s) => ({ ...s, done: s.done + part.length, retry: 0 }));
+    }
+    setTnvedFailed(failed);
+    setStep((s) => ({ ...s, stage: "" }));
+  };
+
+  const applyFileCodes = () =>
+    setNewItems((prev) =>
+      prev.map((x) =>
+        x.fileTnved && tnvedFound[x.fileTnved] && (!x.tnved || x.tnvedSrc !== undefined)
+          ? { ...x, tnved: x.fileTnved, tnvedKey: tnvedFound[x.fileTnved], tnvedSrc: "file" as const }
+          : x,
+      ),
+    );
+
+  const similarTargets = newItems.filter((x) => x.kind && (!x.fileTnved || !x.fileWeight));
+  const similarKinds = Array.from(new Set(similarTargets.map((x) => x.kind))).sort();
+
+  const applySimilar = (t: TnvedResult) =>
+    setNewItems((prev) =>
+      prev.map((x) => {
+        const k = x.kind ? t.kinds[x.kind] : undefined;
+        if (!k) return x;
+        let y = x;
+        const best = k.options?.[0];
+        if (!x.fileTnved && best && (!x.tnved || x.tnvedSrc === "similar"))
+          y = { ...y, tnved: best.code, tnvedKey: best.key, tnvedSrc: "similar" };
+        if (!x.fileWeight && (!x.weight.trim() || x.weightAuto)) {
+          const avg = avgWeight(similarWeights(x.name, k.weights));
+          y = avg > 0 ? { ...y, weight: fmtWeight(avg), weightAuto: true, weightSrc: undefined } : y;
+        }
+        const fileC = k.country ? countryByName(x.fileCountry, t.countries) : undefined;
+        if (fileC && !(x.countryTouched && x.countrySrc !== "file"))
+          y = { ...y, countryKey: fileC.key, countryTouched: true, countrySrc: "file" };
+        else if (k.country && !x.countryTouched) y = { ...y, countryKey: k.country.options?.[0]?.key || "" };
+        return y;
+      }),
+    );
+
+  const runSimilar = async () => {
+    const todo = similarKinds.filter((k) => !tnved[k]);
+    setKindsFailed([]);
+    setStep({ stage: "similar", done: 0, total: todo.length, retry: 0 });
+    const failed: string[] = [];
+    for (let i = 0; i < todo.length; i += SIMILAR_PORTION) {
+      const part = todo.slice(i, i + SIMILAR_PORTION);
+      try {
+        const t = await loadTnvedPortion(base, part, setRetry);
+        setTnved((p) => ({ ...p, ...t.kinds }));
+        if (t.countries.length) setCountries(t.countries);
+        applySimilar(t);
+      } catch {
+        failed.push(...part);
+      }
+      setStep((s) => ({ ...s, done: s.done + part.length, retry: 0 }));
+    }
+    setKindsFailed(failed);
+    setStep((s) => ({ ...s, stage: "" }));
   };
 
   const patchNew = (idx: number, patch: Partial<NewItem>) =>
@@ -673,11 +721,23 @@ const OdataNomenclature = () => {
         )}
 
         {checked && pendingNew.length > 0 && (
-          <NomenTnvedMissing
+          <NomenTnvedSteps
             base={base}
+            items={pendingNew}
+            fileCodes={fileCodes}
+            found={tnvedFound}
             missing={missingTnvedList}
-            checking={tnvedChecking}
+            failed={tnvedFailed}
+            similarTotal={similarKinds.length}
+            similarDone={similarKinds.filter((k) => tnved[k]).length}
+            similarItems={similarTargets.length}
+            kindsFailed={kindsFailed}
+            step={step}
+            setStep={setStep}
+            onCheck={checkFileCodes}
             onCreated={onTnvedCreated}
+            onApply={applyFileCodes}
+            onSimilar={runSimilar}
           />
         )}
 
@@ -690,7 +750,8 @@ const OdataNomenclature = () => {
             loading={refsLoading}
             onChange={patchNew}
             onAll={patchAll}
-            onReload={() => loadRefs(newItems, true)}
+            onReload={loadRefs}
+            tnvedMissing={tnvedMissing}
             base={base}
             onGroupAdded={(g) =>
               setGroups((prev) =>

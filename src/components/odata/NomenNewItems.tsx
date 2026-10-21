@@ -43,9 +43,13 @@ interface Props {
   onReload: () => void;
   base: string;
   onGroupAdded: (g: Group1C) => void;
+  tnvedMissing: string[];
 }
 
-const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded }: Props) => {
+type TnFilter = "all" | "has" | "none" | "missing";
+
+const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing }: Props) => {
+  const [tf, setTf] = useState<TnFilter>("all");
   const [allGroup, setAllGroup] = useState("");
   const [site, setSiteState] = useState<SiteSettings>(loadSite);
   const cache = useRef(new Map<string, Promise<SiteProduct>>());
@@ -65,6 +69,22 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
     return p;
   };
   const ready = items.filter((x) => newItemProblems(x).length === 0).length;
+  const isMissing = (x: NewItem) => tnvedMissing.includes(x.fileTnved || x.tnved.trim());
+  const tnCounts = {
+    all: items.length,
+    has: items.filter((x) => x.fileTnved).length,
+    none: items.filter((x) => !x.fileTnved).length,
+    missing: items.filter(isMissing).length,
+  };
+  const shown = items.filter((x) =>
+    tf === "has" ? x.fileTnved : tf === "none" ? !x.fileTnved : tf === "missing" ? isMissing(x) : true,
+  );
+  const tnChips: [TnFilter, string, string][] = [
+    ["all", "Все", ""],
+    ["has", "ТН ВЭД в файле есть", "text-emerald-400"],
+    ["none", "ТН ВЭД в файле нет", "text-amber-400"],
+    ["missing", "Код не в 1С", "text-rose-400"],
+  ];
 
   return (
     <section className="rounded-xl border border-white/[0.08] bg-card">
@@ -83,12 +103,12 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
           </span>
           <Button variant="ghost" size="sm" onClick={onReload} disabled={loading}>
             <Icon name={loading ? "Loader2" : "RefreshCw"} size={14} className={loading ? "animate-spin" : ""} />
-            Обновить из 1С
+            Обновить группы
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Автоматически: ставка НДС 22%, единица «шт», вид номенклатуры «Товары». Код ТНВЭД подставлен
-          самый частый у похожих товаров в 1С — проверьте.
+          Автоматически: ставка НДС 22%, единица «шт», вид номенклатуры «Товары». Коды ТН ВЭД и подбор по
+          похожим — в блоке «Коды ТН ВЭД» выше.
         </p>
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1">
@@ -162,8 +182,23 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
           </p>
         )}
       </div>
+      <div className="px-4 py-3 flex flex-wrap gap-1.5 border-b border-white/[0.06]">
+        {tnChips
+          .filter(([k]) => k !== "missing" || tnCounts.missing > 0)
+          .map(([k, label, cls]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setTf(k)}
+              className={`text-xs rounded-md px-2.5 py-1.5 border ${tf === k ? "border-primary" : "border-white/[0.08]"} ${cls}`}
+            >
+              {label} · {tnCounts[k]}
+            </button>
+          ))}
+      </div>
       <div className="divide-y divide-white/[0.06]">
-        {items.map((x) => (
+        {shown.length === 0 && <div className="p-4 text-sm text-muted-foreground">Нет позиций в этом фильтре.</div>}
+        {shown.map((x) => (
           <NomenNewItemRow
             key={x.idx}
             item={x}

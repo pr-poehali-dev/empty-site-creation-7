@@ -914,7 +914,7 @@ def tnved_create(cfg, codes):
             created[c] = r['data'].get('Ref_Key')
         else:
             errors.append(f'{c}: {r["error"]}')
-    return {'ok': not errors, 'created': created, 'already': already,
+    return {'ok': True, 'created': created, 'already': already,
             'remaining': [c for c in codes if c not in created and c not in already],
             'error': '; '.join(errors) if errors else None}
 
