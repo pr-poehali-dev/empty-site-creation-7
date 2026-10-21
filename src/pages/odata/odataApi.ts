@@ -140,6 +140,13 @@ export const odataApi = {
     call("create_supplier_invoice", "POST", payload, undefined, base),
   createGoodsReceipt: (base: string, payload: DocPayload) =>
     call("create_goods_receipt", "POST", payload, undefined, base),
+  traceRead: (base: string, keys: string[], withCountries: boolean) =>
+    call("trace_read", "POST", { keys, with_countries: withCountries }, undefined, base),
+  traceApply: (
+    base: string,
+    create: { name: string; code: string }[],
+    cards: { key: string; country_key?: string; traceable?: boolean }[],
+  ) => call("trace_apply", "POST", { create, cards }, undefined, base),
   createProduct: (base: string) =>
     call("create_product", "POST", undefined, undefined, base),
   remove: (base: string, entity: string, key: string, hard: boolean) =>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,11 @@ import TestCard from "@/components/odata/TestCard";
 import ResultBox from "@/components/odata/ResultBox";
 import { odataApi, RefItem, CreatedObject, VAT_RATES } from "./odata/odataApi";
 import { findBase } from "./odata/bases";
-import { parseOdataFile, ParsedFile, formatMoney } from "./odata/parseOdataFile";
+import { parseOdataFile, ParsedFile, formatMoney, applyTraceCols, TraceCols } from "./odata/parseOdataFile";
+import NomenTraceColumns from "@/components/odata/NomenTraceColumns";
+import ReceiptTraceCard from "@/components/odata/ReceiptTraceCard";
+import { InvoiceItem } from "./odata/nomenApi";
+import { buildPlan, CardTrace, Country1C, findCountry, normCountry, TracePlan, TraceReport } from "./odata/receiptTrace";
 import GtdFixCard from "@/components/odata/GtdFixCard";
 import {
   findProblemRows, applyFixes, GtdFix, isRussia, gtdKind,
@@ -75,6 +79,15 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const [gtdUnknown, setGtdUnknown] = useState<string[]>([]);
   const [gtdFixes, setGtdFixes] = useState<Record<number, GtdFix>>({});
 
+  const [traceCols, setTraceCols] = useState<TraceCols>({ country: null, gtd: null, rnpt: null });
+  const fileRows = useMemo(() => (parsed ? applyTraceCols(parsed, traceCols) : []), [parsed, traceCols]);
+  const [tracePlan, setTracePlan] = useState<TracePlan | null>(null);
+  const [traceBusy, setTraceBusy] = useState(false);
+  const [traceProgress, setTraceProgress] = useState("");
+  const [traceError, setTraceError] = useState("");
+  const [traceApply, setTraceApply] = useState(true);
+  const [traceReport, setTraceReport] = useState<TraceReport | null>(null);
+  const [countries1c, setCountries1c] = useState<Country1C[]>([]);
   const [created, setCreated] = useState<CreatedObject | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
 
@@ -127,6 +140,10 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
       const buf = await f.arrayBuffer();
       const p = parseOdataFile(buf);
       setParsed(p);
+      setTraceCols(p.defaultCols);
+      setTracePlan(null);
+      setTraceReport(null);
+      setGtdFixes({});
       setFileName(f.name);
       setDocNumber(p.docNumber);
       setDocDate(p.docDate);
@@ -136,8 +153,99 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const changeTraceCols = (field: keyof TraceCols, col: number | null) => {
+    setTraceCols((p) => ({ ...p, [field]: col }));
+    setMatches(null);
+    setGtdMissing(null);
+    setGtdFixes({});
+    setTracePlan(null);
+    setTraceReport(null);
+    setCreated(null);
+  };
+
+  const doTraceCheck = async () => {
+    if (!matches) return;
+    setTraceBusy(true);
+    setTraceError("");
+    setTracePlan(null);
+    setTraceReport(null);
+    try {
+      const rows = applyFixes(fileRows, gtdFixes);
+      const keys = rows.map((r, i) => (r.country.trim() ? matches[i]?.key || "" : ""));
+      const uniq = [...new Set(keys.filter(Boolean))];
+      const cards: Record<string, CardTrace> = {};
+      let cs = countries1c;
+      const step = 200;
+      for (let i = 0; i < Math.max(uniq.length, 1); i += step) {
+        setTraceProgress(`Карточки: ${Math.min(i + step, uniq.length)} из ${uniq.length}`);
+        const r = await odataApi.traceRead(base, uniq.slice(i, i + step), i === 0 && !cs.length);
+        if (!r.result.ok) throw new Error(r.result.error || "Ошибка чтения");
+        Object.assign(cards, r.result.cards || {});
+        if (r.result.countries?.length) cs = r.result.countries;
+      }
+      setCountries1c(cs);
+      setTracePlan(buildPlan(rows, keys, cards, cs));
+    } catch (e) {
+      setTraceError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setTraceProgress("");
+      setTraceBusy(false);
+    }
+  };
+
+  const runTraceApply = async (plan: TracePlan): Promise<{ report: TraceReport; names: Record<string, string> }> => {
+    const report: TraceReport = { countryChanged: [], traceChanged: [], created: [], failed: [] };
+    const keyByName = { ...plan.keyByName };
+    const names: Record<string, string> = {};
+    const cs = [...countries1c];
+    for (let i = 0; i < plan.create.length; i += 10) {
+      setTraceProgress(`Страны: ${Math.min(i + 10, plan.create.length)} из ${plan.create.length}`);
+      const part = plan.create.slice(i, i + 10);
+      const r = await odataApi.traceApply(base, part, []);
+      (r.result.countries || []).forEach((c: { name: string; code: string; state: string; key?: string; error?: string }, j: number) => {
+        const src = part[j];
+        if (c.key) {
+          keyByName[normCountry(src.name)] = c.key;
+          cs.push({ key: c.key, code: c.code, name: c.name });
+          if (c.state === "created") report.created.push({ name: c.name, code: c.code });
+        } else report.failed.push({ name: `страна ${src.name}`, reason: c.error || "не создана" });
+      });
+    }
+    setCountries1c(cs);
+    const cname = (k: string) => cs.find((c) => c.key === k)?.name || "";
+    const todo = plan.diffs.map((d) => {
+      const ck = d.toCountryKey || keyByName[normCountry(d.toCountry)] || "";
+      return { d, ck, countryChange: d.countryDiff && !!ck };
+    });
+    for (let i = 0; i < todo.length; i += 10) {
+      setTraceProgress(`Карточки: ${Math.min(i + 10, todo.length)} из ${todo.length}`);
+      const part = todo.slice(i, i + 10);
+      const r = await odataApi.traceApply(
+        base,
+        [],
+        part.map((t) => ({ key: t.d.key, country_key: t.countryChange ? t.ck : undefined, traceable: t.d.toTrace })),
+      );
+      (r.result.cards || []).forEach((c: { state: string; error?: string }, j: number) => {
+        const t = part[j];
+        const name = `${t.d.article} · ${t.d.name}`;
+        if (c.state === "ok") {
+          if (t.countryChange) report.countryChanged.push({ name, from: t.d.fromCountry, to: cname(t.ck) });
+          if (t.d.toTrace !== undefined) report.traceChanged.push({ name, from: t.d.fromTrace, to: t.d.toTrace });
+        } else if (c.state === "error") report.failed.push({ name, reason: c.error || "не записалось" });
+        if (t.d.countryDiff && !t.ck) report.failed.push({ name, reason: `страны «${t.d.toCountry}» нет в 1С` });
+      });
+    }
+    Object.entries(keyByName).forEach(([n, k]) => {
+      const nm = cname(k);
+      if (nm) names[n] = nm;
+    });
+    return { report, names };
+  };
+
   const doMatch = async () => {
     if (!parsed) return;
+    setTracePlan(null);
+    setTraceReport(null);
     setMatchBusy(true);
     setMatchError("");
     setMatches(null);
@@ -162,7 +270,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
       setMatches(acc);
 
       if (isReceipt) {
-        const fixedRows = applyFixes(parsed.rows, gtdFixes);
+        const fixedRows = applyFixes(fileRows, gtdFixes);
         const nums = [
           ...new Set(
             fixedRows
@@ -487,15 +595,39 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     if (!parsed || !matches) return;
     setCreateBusy(true);
     setCreated(null);
+    setTraceReport(null);
     try {
-      const rows = applyFixes(parsed.rows, gtdFixes).map((r, i) => ({
+      let names: Record<string, string> = {};
+      if (isReceipt && tracePlan) {
+        names = Object.fromEntries(
+          Object.entries(tracePlan.keyByName).map(([n, k]) => [n, countries1c.find((c) => c.key === k)?.name || ""]),
+        );
+        if (traceApply && (tracePlan.diffs.length || tracePlan.create.length)) {
+          try {
+            const res = await runTraceApply(tracePlan);
+            names = res.names;
+            setTraceReport(res.report);
+          } catch (e) {
+            setTraceReport({
+              countryChanged: [],
+              traceChanged: [],
+              created: [],
+              failed: [{ name: "Исправление карточек", reason: e instanceof Error ? e.message : "ошибка" }],
+            });
+          }
+          setTraceProgress("");
+        }
+      }
+      const toName = (c: string) =>
+        names[normCountry(c)] || findCountry(c, countries1c)?.name || c;
+      const rows = applyFixes(fileRows, gtdFixes).map((r, i) => ({
         key: matches[i]?.key || "",
         article: r.article,
         name: r.name,
         quantity: r.quantity,
         price: r.price,
         ...(isReceipt
-          ? { country: r.country, gtd: r.gtd, rnpt: r.rnpt }
+          ? { country: r.country ? toName(r.country) : "", gtd: r.gtd, rnpt: r.rnpt }
           : {}),
       }));
       const iso = toIso(docDate);
@@ -522,7 +654,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
 
   const foundCount = matches?.filter((m) => m.found).length ?? 0;
   const productsOk = matches !== null && foundCount === matches.length;
-  const problems = isReceipt && parsed ? findProblemRows(parsed.rows) : [];
+  const problems = isReceipt && parsed ? findProblemRows(fileRows) : [];
   const problemsResolved = problems.every((p) => {
     const f = gtdFixes[p.index];
     return f && f.country && (isRussia(f.country) || gtdKind(f.number));
@@ -591,6 +723,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
             />
           )}
         </TestCard>
+
+        {parsed && isReceipt && (
+          <NomenTraceColumns
+            columns={parsed.columns}
+            items={parsed.cells.map((cells) => ({ cells }) as InvoiceItem)}
+            value={traceCols}
+            disabled={matchBusy || createBusy}
+            onChange={changeTraceCols}
+          />
+        )}
 
         {parsed && (
           <TestCard title="Шапка документа" icon="FileText">
@@ -864,7 +1006,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
 
             <div className="mt-3 rounded-lg border border-white/[0.08] overflow-hidden">
               <div className="max-h-96 overflow-y-auto divide-y divide-white/[0.06]">
-                {parsed.rows.map((r, i) => {
+                {fileRows.map((r, i) => {
                   const m = matches?.[i];
                   return (
                     <div
@@ -904,6 +1046,20 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
           </TestCard>
         )}
 
+        {parsed && isReceipt && (
+          <ReceiptTraceCard
+            plan={tracePlan}
+            busy={traceBusy || createBusy}
+            progress={traceProgress}
+            error={traceError}
+            apply={traceApply}
+            onApply={setTraceApply}
+            onCheck={doTraceCheck}
+            disabled={!productsOk}
+            report={traceReport}
+          />
+        )}
+
         {parsed && (
           <TestCard title="Создание в 1С" icon="Send">
             <Button
@@ -923,6 +1079,11 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                 {!productsOk
                   ? "Сначала проверьте товары — кнопка включится, когда найдутся все"
                   : "Создайте недостающие номера ГТД — после этого кнопка включится"}
+              </p>
+            )}
+            {isReceipt && allFound && !tracePlan && (
+              <p className="text-xs text-amber-400 mt-2">
+                Карточки не проверены — страна и признак в них не исправятся. Нажмите «Проверить карточки» выше.
               </p>
             )}
             {created && !created.ok && (

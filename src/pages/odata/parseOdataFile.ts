@@ -11,7 +11,16 @@ export interface OdataRow {
   rnpt: string;
 }
 
+export interface TraceCols {
+  country: number | null;
+  gtd: number | null;
+  rnpt: number | null;
+}
+
 export interface ParsedFile {
+  columns: { index: number; title: string }[];
+  cells: string[][];
+  defaultCols: TraceCols;
   header: string;
   docNumber: string;
   docDate: string;
@@ -70,11 +79,13 @@ export const parseOdataFile = (data: ArrayBuffer): ParsedFile => {
   const dateMatch = title.match(/(\d{2}[.,]\d{2}[.,]\d{2,4})/);
 
   const rows: OdataRow[] = [];
+  const cells: string[][] = [];
   for (let i = headerRow + 1; i < grid.length; i++) {
     const r = grid[i] || [];
     const article = txt(r[idx.article]);
     const name = txt(r[idx.name]);
     if (!article && !name) continue;
+    cells.push(head.map((_, j) => txt(r[j])));
     rows.push({
       article,
       barcode: idx.barcode >= 0 ? txt(r[idx.barcode]) : "",
@@ -89,7 +100,12 @@ export const parseOdataFile = (data: ArrayBuffer): ParsedFile => {
 
   const total = rows.reduce((s, r) => s + r.quantity * r.price, 0);
 
+  const titles = (grid[headerRow] || []).map((c) => txt(c));
+  const opt = (i: number) => (i >= 0 ? i : null);
   return {
+    columns: titles.map((t, index) => ({ index, title: t })).filter((c) => c.title),
+    cells,
+    defaultCols: { country: opt(idx.country), gtd: opt(idx.gtd), rnpt: opt(idx.rnpt) },
     header: title,
     docNumber: numMatch ? numMatch[1] : "",
     docDate: dateMatch ? dateMatch[1].replace(/,/g, ".") : "",
@@ -100,3 +116,28 @@ export const parseOdataFile = (data: ArrayBuffer): ParsedFile => {
 
 export const formatMoney = (n: number) =>
   n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const EMPTY_MARKS = ["-", "--", "—", "---"];
+
+export const applyTraceCols = (p: ParsedFile, cols: TraceCols): OdataRow[] =>
+  p.rows.map((r, i) => {
+    const cell = (c: number | null) => {
+      const v = c === null ? "" : String(p.cells[i]?.[c] || "").trim();
+      return EMPTY_MARKS.includes(v) ? "" : v;
+    };
+    const kind = (n: string) => {
+      const parts = n.split("/").filter((x) => x.trim() !== "");
+      return parts.length === 4 ? "rnpt" : parts.length === 3 ? "td" : null;
+    };
+    let gtd = "";
+    let rnpt = "";
+    const put = (v: string, own: "gtd" | "rnpt") => {
+      if (!v) return;
+      const k = kind(v);
+      if (k === "rnpt" || (!k && own === "rnpt")) rnpt = rnpt || v;
+      else gtd = gtd || v;
+    };
+    put(cell(cols.gtd), "gtd");
+    if (cols.rnpt !== cols.gtd) put(cell(cols.rnpt), "rnpt");
+    return { ...r, country: cell(cols.country), gtd, rnpt };
+  });

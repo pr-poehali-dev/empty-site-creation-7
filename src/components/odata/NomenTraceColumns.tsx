@@ -1,7 +1,7 @@
 import Icon from "@/components/ui/icon";
 import { InvoiceItem } from "@/pages/odata/nomenApi";
 
-type Column = { index: number; title: string; field: string | null };
+type Column = { index: number; title: string; field?: string | null };
 export type TraceField = "country" | "gtd" | "rnpt";
 export type TraceCols = Record<TraceField, number | null>;
 

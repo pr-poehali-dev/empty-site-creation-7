@@ -12,6 +12,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
 from sites import site_lookup
+from card_trace import cards_trace, trace_apply
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -2123,6 +2124,17 @@ def handler(event: dict, context) -> dict:
     if action == 'nomen_refs':
         refs, err = nomen_refs(cfg)
         return resp(200, {'result': {'ok': not err, 'refs': refs, 'error': err}})
+
+    if action == 'trace_read':
+        oc = lambda path, **kw: call_odata(cfg, path, **kw)
+        cards, err = cards_trace(oc, _run_parallel, body.get('keys') or [])
+        countries, cerr = load_countries(cfg) if body.get('with_countries') else ([], None)
+        return resp(200, {'result': {'ok': not (err or cerr), 'cards': cards, 'countries': countries,
+                                     'error': err or cerr}})
+
+    if action == 'trace_apply':
+        oc = lambda path, **kw: call_odata(cfg, path, **kw)
+        return resp(200, {'result': trace_apply(oc, _run_parallel, body.get('create') or [], body.get('cards') or [])})
 
     if action == 'nomen_countries':
         countries, err = load_countries(cfg)
