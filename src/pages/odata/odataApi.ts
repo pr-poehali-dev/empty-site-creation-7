@@ -57,6 +57,11 @@ const authHeaders = () => ({
   Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}`,
 });
 
+let numberKinds: Record<string, "td" | "rnpt"> = {};
+export const setNumberKinds = (k: Record<string, "td" | "rnpt">) => {
+  numberKinds = k;
+};
+
 const call = async (
   action: string,
   method: "GET" | "POST" = "GET",
@@ -75,7 +80,7 @@ const call = async (
     method,
     headers: authHeaders(),
     body:
-      method === "POST" ? JSON.stringify({ action, base, ...payload }) : undefined,
+      method === "POST" ? JSON.stringify({ action, base, kinds: numberKinds, ...payload }) : undefined,
   });
   const text = await res.text();
   let data;

@@ -249,10 +249,8 @@ export const itemTrace = (x: NewItem): ItemTrace | null => {
   if (!x.countryKey) return null;
   const rn = (x.fileRnpt || "").trim();
   const gt = (x.fileGtd || "").trim();
-  if (rn && numberKind(rn) !== "gtd") return { traceable: true, kind: "rnpt", number: rn };
-  if (gt && numberKind(gt) === "rnpt") return { traceable: true, kind: "rnpt", number: gt };
+  if (rn) return { traceable: true, kind: "rnpt", number: rn };
   if (gt) return { traceable: false, kind: "gtd", number: gt };
-  if (rn) return { traceable: false, kind: "gtd", number: rn };
   return { traceable: false, kind: null, number: "" };
 };
 

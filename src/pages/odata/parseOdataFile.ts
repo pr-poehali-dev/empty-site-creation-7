@@ -125,19 +125,7 @@ export const applyTraceCols = (p: ParsedFile, cols: TraceCols): OdataRow[] =>
       const v = c === null ? "" : String(p.cells[i]?.[c] || "").trim();
       return EMPTY_MARKS.includes(v) ? "" : v;
     };
-    const kind = (n: string) => {
-      const parts = n.split("/").filter((x) => x.trim() !== "");
-      return parts.length === 4 ? "rnpt" : parts.length === 3 ? "td" : null;
-    };
-    let gtd = "";
-    let rnpt = "";
-    const put = (v: string, own: "gtd" | "rnpt") => {
-      if (!v) return;
-      const k = kind(v);
-      if (k === "rnpt" || (!k && own === "rnpt")) rnpt = rnpt || v;
-      else gtd = gtd || v;
-    };
-    put(cell(cols.gtd), "gtd");
-    if (cols.rnpt !== cols.gtd) put(cell(cols.rnpt), "rnpt");
-    return { ...r, country: cell(cols.country), gtd, rnpt };
+    const gtd = cell(cols.gtd);
+    const rnpt = cols.rnpt !== cols.gtd ? cell(cols.rnpt) : "";
+    return { ...r, country: cell(cols.country), gtd: rnpt ? "" : gtd, rnpt };
   });

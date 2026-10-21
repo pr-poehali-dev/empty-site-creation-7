@@ -6,7 +6,7 @@ import {
   ProblemRow,
   GtdFix,
   isRussia,
-  gtdKind,
+  isNumberFormat,
 } from "@/pages/odata/gtdFix";
 
 interface Props {
@@ -24,18 +24,24 @@ const GtdFixCard = ({ problems, fixes, onChange, onApply, busy }: Props) => {
   const setCountry = (p: ProblemRow, country: string) => {
     const russia = isRussia(country);
     const number = russia ? "" : p.hintNumber;
-    onChange({ ...fixes, [p.index]: { country, number } });
+    const kind = fixes[p.index]?.kind || p.hintKind;
+    onChange({ ...fixes, [p.index]: { country, number, kind } });
   };
 
   const setNumber = (p: ProblemRow, number: string) => {
-    const cur = fixes[p.index] || { country: "", number: "" };
+    const cur = fixes[p.index] || { country: "", number: "", kind: p.hintKind };
     onChange({ ...fixes, [p.index]: { ...cur, number } });
+  };
+
+  const setKind = (p: ProblemRow, kind: "td" | "rnpt") => {
+    const cur = fixes[p.index] || { country: "", number: "", kind };
+    onChange({ ...fixes, [p.index]: { ...cur, kind } });
   };
 
   const done = problems.filter((p) => fixes[p.index]?.country).length;
   const allDone = problems.every((p) => {
     const f = fixes[p.index];
-    return f && f.country && (isRussia(f.country) || gtdKind(f.number));
+    return f && f.country && (isRussia(f.country) || isNumberFormat(f.number));
   });
 
   return (
@@ -104,16 +110,28 @@ const GtdFixCard = ({ problems, fixes, onChange, onApply, busy }: Props) => {
 
                 {f?.country && !russia && (
                   <div className="space-y-1">
+                    <div className="flex gap-2">
+                      {(["td", "rnpt"] as const).map((k) => (
+                        <Button
+                          key={k}
+                          size="sm"
+                          variant={f.kind === k ? "default" : "outline"}
+                          className="h-8 rounded-lg text-xs"
+                          onClick={() => setKind(p, k)}
+                        >
+                          {k === "td" ? "ГТД (не прослеживаемый)" : "РНПТ (прослеживаемый)"}
+                        </Button>
+                      ))}
+                    </div>
                     <Input
                       value={f.number}
                       onChange={(e) => setNumber(p, e.target.value)}
-                      placeholder="Номер ГТД или РНПТ"
+                      placeholder={f.kind === "rnpt" ? "Номер РНПТ" : "Номер ГТД"}
                       className="h-8 rounded-lg text-xs font-mono"
                     />
-                    {f.number && !gtdKind(f.number) && (
+                    {f.number && !isNumberFormat(f.number) && (
                       <div className="text-xs text-red-300">
-                        Не похоже на номер: нужно три части для ГТД или
-                        четыре для РНПТ
+                        Не похоже на номер: нужно три или четыре части через «/»
                       </div>
                     )}
                     {!f.number && (

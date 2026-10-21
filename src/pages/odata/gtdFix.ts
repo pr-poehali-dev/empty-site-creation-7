@@ -1,13 +1,11 @@
 import { OdataRow } from "./parseOdataFile";
 
-export const gtdKind = (n: string): "td" | "rnpt" | null => {
+export const isNumberFormat = (n: string) => {
   const parts = String(n || "")
     .trim()
     .split("/")
     .filter((p) => p !== "");
-  if (parts.length === 3) return "td";
-  if (parts.length === 4) return "rnpt";
-  return null;
+  return parts.length === 3 || parts.length === 4;
 };
 
 export const isRussia = (c: string) =>
@@ -21,6 +19,7 @@ export interface ProblemRow {
   rawCountry: string;
   hintCountry: string;
   hintNumber: string;
+  hintKind: "td" | "rnpt";
   conflict: boolean;
 }
 
@@ -37,11 +36,11 @@ export const findProblemRows = (rows: OdataRow[]): ProblemRow[] => {
   const out: ProblemRow[] = [];
   rows.forEach((r, index) => {
     const raw = String(r.gtd || r.rnpt || "").trim();
-    if (!raw || gtdKind(raw)) return;
+    if (!raw || isNumberFormat(raw)) return;
 
     const a = String(r.article || "").trim().toLowerCase();
     const siblings = (byArticle.get(a) || []).filter(
-      (s) => s !== r && gtdKind(String(s.gtd || s.rnpt || "")),
+      (s) => s !== r && isNumberFormat(String(s.gtd || s.rnpt || "")),
     );
     const numbers = [
       ...new Set(siblings.map((s) => String(s.gtd || s.rnpt || "").trim())),
@@ -60,6 +59,13 @@ export const findProblemRows = (rows: OdataRow[]): ProblemRow[] => {
       rawCountry: String(r.country || "").trim(),
       hintCountry: countries.length === 1 ? countries[0] : "",
       hintNumber: numbers.length === 1 ? numbers[0] : "",
+      hintKind:
+        numbers.length === 1 &&
+        siblings.some((s) => String(s.rnpt || "").trim() === numbers[0])
+          ? "rnpt"
+          : r.rnpt
+            ? "rnpt"
+            : "td",
       conflict: numbers.length > 1,
     });
   });
@@ -69,6 +75,7 @@ export const findProblemRows = (rows: OdataRow[]): ProblemRow[] => {
 export interface GtdFix {
   country: string;
   number: string;
+  kind: "td" | "rnpt";
 }
 
 export const applyFixes = (
@@ -78,11 +85,23 @@ export const applyFixes = (
   rows.map((r, i) => {
     const f = fixes[i];
     if (!f) return r;
-    const kind = gtdKind(f.number);
     return {
       ...r,
       country: f.country,
-      gtd: kind === "td" ? f.number : "",
-      rnpt: kind === "rnpt" ? f.number : "",
+      gtd: f.kind === "td" ? f.number : "",
+      rnpt: f.kind === "rnpt" ? f.number : "",
     };
   });
+
+export const numberKinds = (rows: OdataRow[]) => {
+  const out: Record<string, "td" | "rnpt"> = {};
+  rows.forEach((r) => {
+    const g = String(r.gtd || "").trim();
+    if (g && !out[g]) out[g] = "td";
+  });
+  rows.forEach((r) => {
+    const n = String(r.rnpt || "").trim();
+    if (n) out[n] = "rnpt";
+  });
+  return out;
+};

@@ -336,14 +336,16 @@ GTD_FLAG_TD = 'ЭтоНомерТД'
 GTD_FLAG_RNPT = 'ЭтоРНПТ'
 
 
+NUMBER_KINDS = {}
+
+
 def gtd_kind(number):
-    """Различает номер декларации и РНПТ по числу частей: три — ГТД, четыре — РНПТ."""
-    parts = [p for p in str(number or '').strip().split('/') if p != '']
-    if len(parts) == 3:
-        return 'td'
-    if len(parts) == 4:
-        return 'rnpt'
-    return None
+    """Вид номера берётся из колонки файла (РНПТ — прослеживаемый, ГТД — нет). Число частей — только проверка формата."""
+    n = str(number or '').strip()
+    parts = [p for p in n.split('/') if p != '']
+    if len(parts) not in (3, 4):
+        return None
+    return NUMBER_KINDS.get(n) or 'td'
 
 
 def entity_fields_from_metadata(cfg, entity_type):
@@ -1717,6 +1719,13 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
         return {'ok': False, 'error': 'Нет строк товаров'}
 
     is_receipt = entity == 'Document_ПоступлениеТоваровУслуг'
+    for r in rows:
+        g = str(r.get('gtd') or '').strip()
+        if g:
+            NUMBER_KINDS.setdefault(g, 'td')
+        rn = str(r.get('rnpt') or '').strip()
+        if rn:
+            NUMBER_KINDS[rn] = 'rnpt'
     schema = doc_schema(cfg, entity)
     fields = schema['fields']
     table = schema['table']
@@ -1800,9 +1809,6 @@ def create_supplier_invoice(cfg, payload, entity='Document_СчетНаОпла�
 
         if is_receipt and trace_table:
             rn = str(r.get('rnpt') or '').strip()
-            g4 = str(r.get('gtd') or '').strip()
-            if not rn and gtd_kind(g4) == 'rnpt':
-                rn = g4
             if rn:
                 lost = {'line': line, 'article': r.get('article') or '', 'name': r.get('name') or '',
                         'kind': 'РНПТ', 'number': rn}
@@ -2075,6 +2081,10 @@ def handler(event: dict, context) -> dict:
     params = event.get('queryStringParameters') or {}
     body = json.loads(event.get('body') or '{}')
     action = params.get('action') or body.get('action') or ''
+
+    NUMBER_KINDS.clear()
+    NUMBER_KINDS.update({str(k).strip(): v for k, v in (body.get('kinds') or {}).items()
+                         if v in ('td', 'rnpt')})
 
     if not check_owner(get_token(event)):
         return resp(401, {'error': 'Доступ только для владельца'})

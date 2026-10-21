@@ -9,7 +9,7 @@ import {
 import Icon from "@/components/ui/icon";
 import TestCard from "@/components/odata/TestCard";
 import ResultBox from "@/components/odata/ResultBox";
-import { odataApi, RefItem, CreatedObject, VAT_RATES } from "./odata/odataApi";
+import { odataApi, RefItem, CreatedObject, VAT_RATES, setNumberKinds } from "./odata/odataApi";
 import { findBase } from "./odata/bases";
 import { parseOdataFile, ParsedFile, formatMoney, applyTraceCols, TraceCols } from "./odata/parseOdataFile";
 import NomenTraceColumns from "@/components/odata/NomenTraceColumns";
@@ -19,7 +19,7 @@ import { InvoiceItem } from "./odata/nomenApi";
 import { buildPlan, CardTrace, Country1C, findCountry, normCountry, TracePlan, TraceReport } from "./odata/receiptTrace";
 import GtdFixCard from "@/components/odata/GtdFixCard";
 import {
-  findProblemRows, applyFixes, GtdFix, isRussia, gtdKind,
+  findProblemRows, applyFixes, GtdFix, isRussia, isNumberFormat, numberKinds,
 } from "./odata/gtdFix";
 
 interface MatchItem {
@@ -83,6 +83,9 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
 
   const [traceCols, setTraceCols] = useState<TraceCols>({ country: null, gtd: null, rnpt: null });
   const fileRows = useMemo(() => (parsed ? applyTraceCols(parsed, traceCols) : []), [parsed, traceCols]);
+  useEffect(() => {
+    setNumberKinds(numberKinds(applyFixes(fileRows, gtdFixes)));
+  }, [fileRows, gtdFixes]);
   const [tracePlan, setTracePlan] = useState<TracePlan | null>(null);
   const [traceBusy, setTraceBusy] = useState(false);
   const [traceProgress, setTraceProgress] = useState("");
@@ -659,7 +662,7 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
   const problems = isReceipt && parsed ? findProblemRows(fileRows) : [];
   const problemsResolved = problems.every((p) => {
     const f = gtdFixes[p.index];
-    return f && f.country && (isRussia(f.country) || gtdKind(f.number));
+    return f && f.country && (isRussia(f.country) || isNumberFormat(f.number));
   });
   const gtdOk =
     !isReceipt ||

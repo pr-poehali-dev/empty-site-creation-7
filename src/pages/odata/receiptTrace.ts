@@ -1,4 +1,3 @@
-import { gtdKind } from "./gtdFix";
 import { OdataRow } from "./parseOdataFile";
 
 export interface Country1C {
@@ -160,20 +159,14 @@ export const buildPlan = (
     if (!card) return;
     plan.checked += 1;
     const names = new Set(e.rows.map((r) => normCountry(r.country)));
-    const kinds = new Set(
-      e.rows
-        .map((r) => {
-          const n = String(r.rnpt || r.gtd || "").trim();
-          return n ? gtdKind(n) : null;
-        })
-        .filter(Boolean),
-    );
+    const withNumber = e.rows.filter((r) => String(r.gtd || r.rnpt || "").trim());
+    const kinds = new Set(withNumber.map((r) => (String(r.rnpt || "").trim() ? "rnpt" : "td")));
     if (names.size > 1 || kinds.size > 1) {
       plan.conflicts.push({
         key,
         name: first.name,
         article: first.article,
-        reason: names.size > 1 ? "разные страны в УПД" : "и РНПТ, и ГТД в УПД",
+        reason: names.size > 1 ? "разные страны в УПД" : "в УПД у товара и РНПТ, и ГТД",
       });
       return;
     }
