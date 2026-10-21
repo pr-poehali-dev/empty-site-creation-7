@@ -427,6 +427,40 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
     }
   };
 
+  const doGtdShow = async () => {
+    const pool = (gtdMissing?.length ? gtdMissing : gtdAll).filter(
+      (n) => n.split("/").filter((x) => x.trim()).length === 4,
+    );
+    const nums = pool.length ? pool : gtdMissing?.length ? gtdMissing : gtdAll;
+    if (!nums.length) return;
+    setGtdBusy(true);
+    setGtdError("");
+    try {
+      const r = await odataApi.gtdShow(base, nums.slice(0, 2));
+      type Try = { how: string; found?: number; error?: string; rows?: Record<string, unknown>[] };
+      const text = ((r.result.results || []) as { number: string; tries: Try[] }[])
+        .map(
+          (p) =>
+            `● ${p.number}\n` +
+            p.tries
+              .map(
+                (t) =>
+                  `  ${t.how}: ${t.error ? "ошибка: " + t.error : "найдено " + t.found}` +
+                  (t.rows || [])
+                    .map((row) => `\n${JSON.stringify(row, null, 1)}`)
+                    .join(""),
+              )
+              .join("\n"),
+        )
+        .join("\n\n");
+      setGtdProgress("КАК НОМЕР ХРАНИТСЯ В 1С:\n\n" + text);
+    } catch (e) {
+      setGtdError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setGtdBusy(false);
+    }
+  };
+
   const doGtdDebug = async () => {
     setGtdBusy(true);
     setGtdError("");
@@ -925,6 +959,16 @@ const OdataSupplierInvoice = ({ mode = "invoice" }: { mode?: "invoice" | "receip
                         ` и ещё ${(gtdMissing.length || gtdAll.length) - 3}`}
                     </div>
                     <div className="flex flex-wrap gap-2 mt-2">
+                      <Button
+                        onClick={doGtdShow}
+                        disabled={gtdBusy}
+                        size="sm"
+                        variant="outline"
+                        className="rounded-lg gap-2 border-sky-500/50 text-sky-200"
+                      >
+                        <Icon name="Eye" size={15} />
+                        Показать номер в 1С
+                      </Button>
                       <Button
                         onClick={doCreateGtd}
                         disabled={gtdBusy}

@@ -1506,6 +1506,36 @@ def rnpt_debug(cfg, numbers):
     return out
 
 
+def gtd_show(cfg, numbers):
+    """Только чтение: показывает, как 1С хранит номер ГТД, найденный разными способами."""
+    want = []
+    for x in numbers or []:
+        n = str(x or '').strip()
+        if n and n not in want:
+            want.append(n)
+    want = want[:2]
+    out = []
+    for n in want:
+        base3 = '/'.join([p for p in n.split('/') if p][:3])
+        tries = [
+            ('рег. номер = полный', f"{GTD_NUM_FIELD} eq '{n}'"),
+            ('код = полный', f"Code eq '{n}'"),
+            ('рег. номер = первые 3 части', f"{GTD_NUM_FIELD} eq '{base3}'"),
+            ('код = первые 3 части', f"Code eq '{base3}'"),
+            ('код содержит первые 3 части', f"substringof('{base3}', Code)"),
+        ]
+        res = []
+        for label, flt in tries:
+            q = call_odata(cfg, f"Catalog_НомераГТД?$format=json&$filter={flt}&$top=10")
+            if q['ok']:
+                rows = q['data'].get('value', []) or []
+                res.append({'how': label, 'found': len(rows), 'rows': rows})
+            else:
+                res.append({'how': label, 'error': str(q.get('error'))[:200]})
+        out.append({'number': n, 'tries': res})
+    return {'results': out}
+
+
 def gtd_fix_payload(number):
     """Реквизиты как в настоящей записи 1С."""
     kind = gtd_kind(number)
@@ -2204,6 +2234,9 @@ def handler(event: dict, context) -> dict:
 
     if action == 'check_gtd':
         return resp(200, {'result': check_gtd(cfg, body.get('numbers') or [])})
+
+    if action == 'gtd_show':
+        return resp(200, {'result': gtd_show(cfg, body.get('numbers') or [])})
 
     if action == 'gtd_probe':
         return resp(200, {'result': gtd_probe(cfg, body.get('numbers') or [])})
