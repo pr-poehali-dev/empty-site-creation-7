@@ -1,0 +1,1 @@
+INSERT INTO converted_files (title, description, file_url, file_name, s3_key, size_bytes) VALUES ('Химия на таможне', 'Распознано с трёх фото: 51 строка, 4 товарные позиции, 259 шт. «Изготовитель: Россия» заменено на «Россия». Внизу строка ИТОГО.', '/converted/himiya-na-tamozhne.xlsx', 'Химия на таможне.xlsx', 'converted/himiya-na-tamozhne.xlsx', 7940);
