@@ -26,11 +26,13 @@ export interface InvoiceItem {
   country?: string;
   weight?: number | null;
   tnved?: string;
+  cells?: string[];
 }
 
 export interface ParsedInvoice {
   file_name: string;
   items: InvoiceItem[];
+  columns?: { index: number; title: string; field: string | null }[];
 }
 
 export interface Card1C {
@@ -127,7 +129,7 @@ export const parseInvoice = async (b64: string, fileName: string): Promise<Parse
   const r = await fetch(INVOICE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "parse", file: b64, file_name: fileName }),
+    body: JSON.stringify({ action: "parse", file: b64, file_name: fileName, with_cells: true }),
   });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error || "Не удалось разобрать счёт");

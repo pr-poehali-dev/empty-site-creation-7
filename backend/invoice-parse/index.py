@@ -346,13 +346,14 @@ def handler(event, context):
         file_name = body.get('file_name') or 'invoice.xlsx'
         supplier_id = body.get('supplier_id')
         forced = body.get('mapping')
+        with_cells = bool(body.get('with_cells'))
 
         try:
             data = base64.b64decode(file_b64)
         except Exception:
             return _resp(400, {'error': 'Файл повреждён'})
 
-        result = parse_invoice(data, file_name, forced_mapping=forced)
+        result = parse_invoice(data, file_name, forced_mapping=forced, with_cells=with_cells)
         if 'error' in result:
             return _resp(400, result)
 
@@ -360,7 +361,7 @@ def handler(event, context):
         if not forced and supplier_id:
             saved = find_layout(supplier_id, result['header_signature'])
             if saved:
-                result = parse_invoice(data, file_name, forced_mapping=saved['mapping'])
+                result = parse_invoice(data, file_name, forced_mapping=saved['mapping'], with_cells=with_cells)
                 layout_used = True
 
         result['layout_used'] = layout_used

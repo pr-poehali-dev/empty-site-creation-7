@@ -172,7 +172,7 @@ def split_qty_unit(v):
     return to_num(v), ''
 
 
-def parse_rows(rows, hdr_idx, mp, limit=5000):
+def parse_rows(rows, hdr_idx, mp, limit=5000, with_cells=False):
     out = []
     blanks = 0
     header_keys = {nkey(c) for c in rows[hdr_idx] if nkey(c)}
@@ -245,6 +245,7 @@ def parse_rows(rows, hdr_idx, mp, limit=5000):
             'country': country,
             'weight': pick_weight(cell('weight'), cell('weight_gross')),
             'tnved': clean_tnved(cell('tnved')) if 'tnved' in mp else '',
+            **({'cells': cells[:len(rows[hdr_idx])]} if with_cells else {}),
         })
     return out
 
@@ -276,7 +277,7 @@ def header_signature(row):
     return '|'.join(parts)[:500]
 
 
-def parse_invoice(data, filename, forced_mapping=None):
+def parse_invoice(data, filename, forced_mapping=None, with_cells=False):
     rows = read_workbook(data, filename)
     if not rows:
         return {'error': 'Файл пустой или не читается'}
@@ -297,7 +298,7 @@ def parse_invoice(data, filename, forced_mapping=None):
             mapping[f] = i
 
     header_row = [norm(c) for c in rows[hdr_idx]]
-    items = parse_rows(rows, hdr_idx, mapping)
+    items = parse_rows(rows, hdr_idx, mapping, with_cells=with_cells)
 
     columns = []
     for idx, title in enumerate(header_row):

@@ -40,6 +40,7 @@ import {
   countryByName,
   checkTnvedCodes,
 } from "./odata/nomenApi";
+import NomenCategories, { guessCategoryColumn, suggestExcluded } from "@/components/odata/NomenCategories";
 import NomenTnvedSteps, { TnvedStep } from "@/components/odata/NomenTnvedSteps";
 
 const CHECK_PORTION = 15;
@@ -115,7 +116,15 @@ const OdataNomenclature = () => {
     if (user.role !== "owner") navigate("/admin/dashboard");
   }, []);
 
-  const items: InvoiceItem[] = invoice?.items || [];
+  const [catCol, setCatCol] = useState<number | null>(null);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const allItems: InvoiceItem[] = useMemo(() => invoice?.items || [], [invoice]);
+  const catOf = (x: InvoiceItem) => (catCol === null ? "" : (x.cells?.[catCol] || "").trim()) || "—";
+  const items: InvoiceItem[] = useMemo(
+    () => (catCol === null || !excluded.size ? allItems : allItems.filter((x) => !excluded.has(catOf(x)))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allItems, catCol, excluded],
+  );
 
   const filled = useMemo(
     () => ({
@@ -154,6 +163,9 @@ const OdataNomenclature = () => {
       try {
         const d = await parseInvoice(b64, f.name);
         setInvoice(d);
+        const col = guessCategoryColumn(d.columns || []);
+        setCatCol(col);
+        setExcluded(suggestExcluded(d.items, col));
         const best = (["article", "name"] as SearchBy[]).find((k) =>
           d.items.every((x) => x[k]),
         );
@@ -568,6 +580,8 @@ const OdataNomenclature = () => {
     setPriceDocByKey({});
     setDecisions({});
     setInvoice(null);
+    setCatCol(null);
+    setExcluded(new Set());
     setMatches([]);
     setResumeFrom(null);
     setDone(0);
@@ -577,6 +591,26 @@ const OdataNomenclature = () => {
   };
 
   const hasResults = matches.some(Boolean);
+
+  const dropResults = () => {
+    setMatches([]);
+    setResumeFrom(null);
+    setDone(0);
+    setFilter("all");
+    setWriteResults(null);
+    setNewItems([]);
+    setCreateResults({});
+    setDecisions({});
+  };
+
+  const changeCategories = (apply: () => void) => {
+    if (hasResults || resumeFrom !== null) {
+      if (Object.keys(createResults).length && !window.confirm("Уже есть созданные карточки. Сбросить результаты и проверить заново?")) return;
+      if (!Object.keys(createResults).length && !window.confirm("Результаты проверки устареют. Сбросить их и проверить заново?")) return;
+      dropResults();
+    }
+    apply();
+  };
   const checked = hasResults && !checking;
   const busy = checking || writing || creating || pricing;
 
@@ -638,7 +672,7 @@ const OdataNomenclature = () => {
               <div className="text-sm min-w-0 flex-1">
                 <div className="truncate">{invoice.file_name}</div>
                 <div className="text-xs text-muted-foreground">
-                  Позиций: {items.length} · с артикулом {filled.article} · со штрихкодом {items.filter((x) => x.barcode).length}
+                  Позиций: {allItems.length} · с артикулом {filled.article} · со штрихкодом {items.filter((x) => x.barcode).length}
                 </div>
               </div>
               <Button variant="outline" size="sm" onClick={reset} disabled={busy}>
@@ -647,6 +681,32 @@ const OdataNomenclature = () => {
             </div>
           )}
         </section>
+
+        {invoice && (
+          <NomenCategories
+            columns={invoice.columns || []}
+            items={allItems}
+            column={catCol}
+            excluded={excluded}
+            disabled={busy}
+            onColumn={(c) =>
+              changeCategories(() => {
+                setCatCol(c);
+                setExcluded(suggestExcluded(allItems, c));
+              })
+            }
+            onToggle={(cat) =>
+              changeCategories(() =>
+                setExcluded((prev) => {
+                  const n = new Set(prev);
+                  if (n.has(cat)) n.delete(cat);
+                  else n.add(cat);
+                  return n;
+                }),
+              )
+            }
+          />
+        )}
 
         {invoice && (
           <section className="rounded-xl border border-white/[0.08] bg-card p-4 space-y-3">
@@ -661,6 +721,11 @@ const OdataNomenclature = () => {
               total={items.length}
               disabled={busy}
             />
+            {items.length < allItems.length && (
+              <div className="text-sm text-muted-foreground">
+                К проверке {items.length} из {allItems.length}, отсеяно {allItems.length - items.length}
+              </div>
+            )}
             <div className="flex items-center gap-3 flex-wrap">
               {checking ? (
                 <Button variant="outline" onClick={() => (stopRef.current = true)}>
@@ -675,7 +740,7 @@ const OdataNomenclature = () => {
                     Продолжить с {resumeFrom + 1}
                   </Button>
                 )}
-                <Button variant={resumeFrom !== null ? "outline" : "default"} onClick={runCheck} disabled={writing}>
+                <Button variant={resumeFrom !== null ? "outline" : "default"} onClick={runCheck} disabled={writing || !items.length}>
                   <Icon name="Search" size={16} />
                   {hasResults ? "Проверить заново" : "Проверить в 1С"}
                 </Button>
