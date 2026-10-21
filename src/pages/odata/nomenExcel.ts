@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import func2url from "../../../backend/func2url.json";
-import { Country1C, CreateResult, Decision, Group1C, NewItem, isTraceable, toNumber } from "./nomenApi";
+import { Country1C, CreateResult, Decision, Group1C, NewItem, itemTrace, toNumber } from "./nomenApi";
 
 const HEADERS = [
   "Код 1С (Трейд Ресурс)",
@@ -65,7 +65,7 @@ export const buildNomenExcel = (rows: ExcelRow[], groups: Group1C[], countries: 
     "Основная номенклатурная группа",
     toNumber(item.price),
     countryFailed ? `${countryName(item.countryKey)} (не записана)` : countryName(item.countryKey),
-    item.countryKey && !countryFailed ? (isTraceable(item.countryKey, countries) ? "Да" : "Нет") : "",
+    item.countryKey && !countryFailed ? (itemTrace(item)?.traceable ? "Да" : "Нет") : "",
   ]);
   const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...data]);
   ws["!cols"] = [12, 50, 60, 14, 16, 22, 12, 8, 9, 10, 12, 14, 12, 13, 28, 14, 18, 12].map((wch) => ({ wch }));

@@ -11,13 +11,14 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
-import { Country1C, CountryKind, SiteProduct, isTraceable, normCountry } from "@/pages/odata/nomenApi";
+import { Country1C, CountryKind, ItemTrace, SiteProduct, normCountry } from "@/pages/odata/nomenApi";
 
 const NONE = "__none";
 
 interface Props {
   value: string;
   info: CountryKind;
+  trace: ItemTrace | null;
   countries: Country1C[];
   onChange: (key: string) => void;
   siteName?: string;
@@ -28,7 +29,7 @@ interface Props {
   fileCountry?: string;
 }
 
-const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup, fromSite, onSite, fromFile, fileCountry }: Props) => {
+const NomenCountryField = ({ value, info, trace, countries, onChange, siteName, lookup, fromSite, onSite, fromFile, fileCountry }: Props) => {
   const [busy, setBusy] = useState(false);
   const [found, setFound] = useState<{ c: Country1C; p: SiteProduct } | null>(null);
   const [msg, setMsg] = useState("");
@@ -57,7 +58,6 @@ const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup,
   const name = (k: string) => countries.find((c) => c.key === k)?.name || "страна из 1С";
   const used = new Set(info.options.map((o) => o.key));
   const rest = countries.filter((c) => !used.has(c.key));
-  const traceable = isTraceable(value, countries);
   const fileUnknown = !!fileCountry && !countries.some((c) => normCountry(c.name) === normCountry(fileCountry));
 
   return (
@@ -109,9 +109,11 @@ const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup,
             </>
           )}
           <SelectGroup>
-            <SelectLabel className="text-xs text-muted-foreground font-normal">
-              У похожих: {info.basis.toLowerCase()}, {info.similar}
-            </SelectLabel>
+            {info.options.length > 0 && (
+              <SelectLabel className="text-xs text-muted-foreground font-normal">
+                У похожих: {info.basis.toLowerCase()}, {info.similar}
+              </SelectLabel>
+            )}
             {info.options.map((o) => (
               <SelectItem key={o.key || NONE} value={o.key || NONE}>
                 {o.key ? name(o.key) : "Не указывать"} · у {o.count}
@@ -134,9 +136,20 @@ const NomenCountryField = ({ value, info, countries, onChange, siteName, lookup,
           )}
         </SelectContent>
       </Select>
-      <span className={`block text-[11px] leading-tight ${traceable ? "text-amber-400" : "text-muted-foreground"}`}>
-        {fromSite && value ? "с сайта · " : fromFile && value ? "из файла · " : ""}Прослеживаемый: {traceable ? "да" : "нет"}
-      </span>
+      {value ? (
+        <span
+          className={`block text-[11px] leading-tight break-all ${
+            trace?.traceable ? "text-amber-400" : trace?.kind ? "text-muted-foreground" : "text-rose-400"
+          }`}
+        >
+          {fromSite ? "с сайта · " : fromFile ? "из файла · " : ""}Прослеживаемый: {trace?.traceable ? "да" : "нет"}
+          {trace?.kind ? ` · ${trace.kind === "rnpt" ? "РНПТ" : "ГТД"} ${trace.number}` : " · нет РНПТ/ГТД"}
+        </span>
+      ) : (
+        <span className="block text-[11px] leading-tight text-muted-foreground">
+          Без страны и без прослеживаемости
+        </span>
+      )}
       {fileUnknown && (
         <span className="block text-[11px] leading-tight text-amber-400">
           в файле: {fileCountry} — в справочнике 1С нет

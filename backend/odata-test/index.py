@@ -1021,19 +1021,22 @@ def create_one_card(cfg, refs, row, force=False):
     d = r['data']
     res = dict(base, state='created', key=d.get('Ref_Key'), code=(d.get('Code') or '').strip(),
                name=d.get('Description'))
-    res.update(write_country(cfg, res['key'], str(row.get('country_key') or '').strip()))
+    res.update(write_country(cfg, res['key'], str(row.get('country_key') or '').strip(), row.get('traceable')))
     res.update(write_barcode(cfg, res['key'], barcode))
     return res
 
 
-def write_country(cfg, key, ckey):
-    """Страна происхождения + галочка «Прослеживаемый товар» (не Россия и не Беларусь)."""
+def write_country(cfg, key, ckey, traceable=None):
+    """Страна происхождения + галочка «Прослеживаемый товар». traceable задан сайтом (РНПТ — да, ГТД — нет),
+    иначе — по стране (не Россия и не Беларусь)."""
     if not re.fullmatch(r'[0-9a-f-]{36}', ckey) or ckey == EMPTY_GUID:
         return {'country': 'none'}
-    code, err = country_code(cfg, ckey)
-    if err:
-        return {'country': 'error', 'country_error': err}
-    traceable = code not in NOT_TRACEABLE_COUNTRIES
+    if traceable is None:
+        code, err = country_code(cfg, ckey)
+        if err:
+            return {'country': 'error', 'country_error': err}
+        traceable = code not in NOT_TRACEABLE_COUNTRIES
+    traceable = bool(traceable)
     r = call_odata(cfg, f"Catalog_Номенклатура(guid'{key}')?$format=json", method='PATCH',
                    payload={'СтранаПроисхождения_Key': ckey, 'ПрослеживаемыйТовар': traceable})
     if not r['ok']:
@@ -2120,6 +2123,10 @@ def handler(event: dict, context) -> dict:
     if action == 'nomen_refs':
         refs, err = nomen_refs(cfg)
         return resp(200, {'result': {'ok': not err, 'refs': refs, 'error': err}})
+
+    if action == 'nomen_countries':
+        countries, err = load_countries(cfg)
+        return resp(200, {'result': {'ok': not err, 'countries': countries, 'error': err}})
 
     if action == 'nomen_create':
         return resp(200, {'result': nomen_create(cfg, body.get('rows') or [], bool(body.get('force')))})

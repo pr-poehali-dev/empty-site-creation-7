@@ -230,6 +230,38 @@ export const countryByName = (name: string | undefined, countries: Country1C[]) 
   return n ? countries.find((c) => normCountry(c.name) === n) : undefined;
 };
 
+export type TraceKind = "rnpt" | "gtd";
+
+export const numberKind = (n: string): TraceKind | null => {
+  const parts = n.split("/").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 4) return "rnpt";
+  if (parts.length === 3) return "gtd";
+  return null;
+};
+
+export interface ItemTrace {
+  traceable: boolean;
+  kind: TraceKind | null;
+  number: string;
+}
+
+export const itemTrace = (x: NewItem): ItemTrace | null => {
+  if (!x.countryKey) return null;
+  const rn = (x.fileRnpt || "").trim();
+  const gt = (x.fileGtd || "").trim();
+  if (rn && numberKind(rn) !== "gtd") return { traceable: true, kind: "rnpt", number: rn };
+  if (gt && numberKind(gt) === "rnpt") return { traceable: true, kind: "rnpt", number: gt };
+  if (gt) return { traceable: false, kind: "gtd", number: gt };
+  if (rn) return { traceable: false, kind: "gtd", number: rn };
+  return { traceable: false, kind: null, number: "" };
+};
+
+export const loadCountries = async (base: string): Promise<Country1C[]> => {
+  const r = await odataPost("nomen_countries", base, {});
+  if (!r.ok) throw new Error(r.error || "Не загрузил страны");
+  return r.countries || [];
+};
+
 export const isTraceable = (countryKey: string, countries: Country1C[]) => {
   const c = countries.find((x) => x.key === countryKey);
   return !!c && !NOT_TRACEABLE.includes(c.code);
@@ -370,6 +402,8 @@ export interface NewItem {
   idx: number;
   category?: string;
   skip?: boolean;
+  fileGtd?: string;
+  fileRnpt?: string;
   article: string;
   barcode: string;
   name: string;
@@ -464,6 +498,7 @@ export const createPortion = async (base: string, list: NewItem[], force = false
         tnved: x.tnved.trim(),
         tnved_key: x.tnvedKey,
         country_key: x.countryKey,
+        traceable: x.countryKey ? itemTrace(x)?.traceable ?? false : undefined,
       })),
     })
   ).items;

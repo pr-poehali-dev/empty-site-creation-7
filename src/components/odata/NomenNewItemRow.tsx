@@ -26,6 +26,7 @@ import {
   fmtWeight,
   newItemProblems,
   similarWeights,
+  itemTrace,
 } from "@/pages/odata/nomenApi";
 
 interface Props {
@@ -33,6 +34,7 @@ interface Props {
   groups: Group1C[];
   tnved?: TnvedKind;
   countries: Country1C[];
+  similarCountry: boolean;
   onChange: (patch: Partial<NewItem>) => void;
   site: SiteSettings;
   lookup: (article: string) => Promise<SiteProduct>;
@@ -49,7 +51,7 @@ const Field = ({ label, children, bad }: { label: string; children: React.ReactN
 
 const T = "text-sm md:text-sm";
 
-const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site, lookup, base, onGroupAdded }: Props) => {
+const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry, onChange, site, lookup, base, onGroupAdded }: Props) => {
   const tnved: TnvedKind | undefined = item.found
     ? { ...item.found, country: auto?.country ? item.found.country : undefined }
     : auto;
@@ -252,10 +254,11 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
             </button>
           )}
         </Field>
-        {tnved?.country && (
+        {(tnved?.country || item.fileCountry || item.countryKey || item.fileGtd || item.fileRnpt) && (
           <NomenCountryField
             value={item.countryKey}
-            info={tnved.country}
+            info={tnved?.country || { basis: "", similar: 0, options: [] }}
+            trace={itemTrace(item)}
             countries={countries}
             onChange={(k) => onChange({ countryKey: k, countryTouched: true, countrySrc: undefined })}
             siteName={siteName}
@@ -292,7 +295,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
           const patch: Partial<NewItem> = { found: r };
           if (best && item.tnvedSrc !== "file") Object.assign(patch, { tnved: best.code, tnvedKey: best.key });
           if (!manual && item.weightSrc !== "file") Object.assign(patch, avgW > 0 ? { weight: fmtWeight(avgW), weightAuto: true, weightSrc: undefined } : {});
-          if (auto?.country && !item.countryTouched) patch.countryKey = r.country?.options?.[0]?.key || "";
+          if (similarCountry && auto?.country && !item.countryTouched) patch.countryKey = r.country?.options?.[0]?.key || "";
           onChange(patch);
         }}
         onPick={(f) => {
@@ -324,7 +327,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, onChange, site,
                 tnved: best?.code || "",
                 tnvedKey: best?.key || "",
                 ...(manual ? {} : { weight: avgW > 0 ? fmtWeight(avgW) : "", weightAuto: avgW > 0 }),
-                ...(auto?.country && !item.countryTouched ? { countryKey: auto.country.options?.[0]?.key || "" } : {}),
+                ...(similarCountry && auto?.country && !item.countryTouched ? { countryKey: auto.country.options?.[0]?.key || "" } : {}),
               });
             }}>
             вернуть автоподбор

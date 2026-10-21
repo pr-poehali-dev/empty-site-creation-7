@@ -6,7 +6,7 @@ import {
   TnvedKind,
   avgWeight,
   fmtWeight,
-  isTraceable,
+  itemTrace,
   newItemProblems,
   similarWeights,
   toNumber,
@@ -57,7 +57,7 @@ const countryPart = (item: NewItem, kind: TnvedKind | undefined, countries: Coun
   if (!c) return { text: "страна не указана", tone: "auto" };
   const n = kind.country.options.find((o) => o.key === c.key)?.count;
   return {
-    text: `${c.name}${item.countrySrc === "site" ? " (сайт)" : item.countrySrc === "file" ? " (файл)" : ""}${isTraceable(c.key, countries) ? ", прослеж." : ""}`,
+    text: `${c.name}${item.countrySrc === "site" ? " (сайт)" : item.countrySrc === "file" ? " (файл)" : ""}${itemTrace(item)?.traceable ? ", прослеж." : ""}`,
     tone: item.countryTouched && !item.countrySrc ? undefined : "auto",
     title:
       item.countrySrc === "site"

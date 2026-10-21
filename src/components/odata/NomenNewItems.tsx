@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Icon from "@/components/ui/icon";
+import { Switch } from "@/components/ui/switch";
 import {
   Country1C,
   Group1C,
@@ -44,11 +45,13 @@ interface Props {
   base: string;
   onGroupAdded: (g: Group1C) => void;
   tnvedMissing: string[];
+  similarCountry: boolean;
+  onSimilarCountry: (on: boolean) => void;
 }
 
 type TnFilter = "all" | "has" | "none" | "missing" | "skip";
 
-const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing }: Props) => {
+const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing, similarCountry, onSimilarCountry }: Props) => {
   const [tf, setTf] = useState<TnFilter>("all");
   const [allGroup, setAllGroup] = useState("");
   const [site, setSiteState] = useState<SiteSettings>(loadSite);
@@ -164,6 +167,17 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             Проставить всем
           </Button>
         </div>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <Switch checked={similarCountry} onCheckedChange={onSimilarCountry} className="mt-0.5" />
+          <span className="space-y-0.5">
+            <span className="block text-sm">Страна по похожим</span>
+            <span className="block text-xs text-muted-foreground">
+              {similarCountry
+                ? "Страна подставляется по похожим товарам из 1С"
+                : "Выключено: страна только из файла или вручную, иначе карточка без страны"}
+            </span>
+          </span>
+        </label>
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1">
             <span className="text-xs text-muted-foreground">Где искать цену и вес</span>
@@ -229,6 +243,7 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             groups={groups}
             tnved={tnved[x.kind]}
             countries={countries}
+            similarCountry={similarCountry}
             onChange={(p) => onChange(x.idx, p)}
             site={site}
             lookup={lookup}

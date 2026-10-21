@@ -39,7 +39,9 @@ import {
   similarWeights,
   countryByName,
   checkTnvedCodes,
+  loadCountries,
 } from "./odata/nomenApi";
+import NomenTraceColumns, { EMPTY_TRACE_COLS, TraceCols, cellOf } from "@/components/odata/NomenTraceColumns";
 import NomenCategories, { guessCategoryColumn, suggestExcluded } from "@/components/odata/NomenCategories";
 import NomenTnvedSteps, { TnvedStep } from "@/components/odata/NomenTnvedSteps";
 
@@ -117,6 +119,8 @@ const OdataNomenclature = () => {
   }, []);
 
   const [catCol, setCatCol] = useState<number | null>(null);
+  const [traceCols, setTraceCols] = useState<TraceCols>(EMPTY_TRACE_COLS);
+  const [similarCountry, setSimilarCountryState] = useState(() => localStorage.getItem("nomen_similar_country") === "1");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const allItems: InvoiceItem[] = useMemo(() => invoice?.items || [], [invoice]);
   const catOf = (x: InvoiceItem) => (catCol === null ? "" : (x.cells?.[catCol] || "").trim()) || "—";
@@ -166,6 +170,7 @@ const OdataNomenclature = () => {
         const col = guessCategoryColumn(d.columns || []);
         setCatCol(col);
         setExcluded(suggestExcluded(d.items, col));
+        setTraceCols(EMPTY_TRACE_COLS);
         const best = (["article", "name"] as SearchBy[]).find((k) =>
           d.items.every((x) => x[k]),
         );
@@ -275,9 +280,13 @@ const OdataNomenclature = () => {
   const loadRefs = async () => {
     setRefsLoading(true);
     try {
-      const g = await loadGroups(base);
+      const [g, cs] = await Promise.all([
+        loadGroups(base),
+        countries.length ? Promise.resolve(countries) : loadCountries(base).catch(() => [] as Country1C[]),
+      ]);
       const brands = g.map((x) => x.name);
       setGroups(g);
+      if (cs.length && cs !== countries) setCountries(cs);
       setNewItems((prev) => prev.map((x) => ({ ...x, kind: productKind(x.name, brands) })));
     } catch (e) {
       toast({ title: "Не загрузил группы", description: (e as Error).message, variant: "destructive" });
@@ -305,7 +314,9 @@ const OdataNomenclature = () => {
         weightSrc: it.weight && it.weight > 0 ? ("file" as const) : undefined,
         countryKey: "",
         countryTouched: false,
-        fileCountry: it.country || "",
+        fileCountry: cellOf(it, traceCols.country),
+        fileGtd: cellOf(it, traceCols.gtd) || undefined,
+        fileRnpt: cellOf(it, traceCols.rnpt) || undefined,
         fileWeight: it.weight && it.weight > 0 ? fmtWeight(it.weight) : undefined,
         fileTnved: /^\d{10}$/.test(it.tnved || "") ? it.tnved : undefined,
         tnved: "",
@@ -413,7 +424,7 @@ const OdataNomenclature = () => {
         const fileC = k.country ? countryByName(x.fileCountry, t.countries) : undefined;
         if (fileC && !(x.countryTouched && x.countrySrc !== "file"))
           y = { ...y, countryKey: fileC.key, countryTouched: true, countrySrc: "file" };
-        else if (k.country && !x.countryTouched) y = { ...y, countryKey: k.country.options?.[0]?.key || "" };
+        else if (k.country && !x.countryTouched && similarCountry) y = { ...y, countryKey: k.country.options?.[0]?.key || "" };
         return y;
       }),
     );
@@ -437,6 +448,33 @@ const OdataNomenclature = () => {
     }
     setKindsFailed(failed);
     setStep((s) => ({ ...s, stage: "" }));
+  };
+
+  useEffect(() => {
+    if (!countries.length) return;
+    setNewItems((prev) => {
+      let changed = false;
+      const next = prev.map((x) => {
+        if (x.countryTouched || !x.fileCountry) return x;
+        const c = countryByName(x.fileCountry, countries);
+        if (!c) return x;
+        changed = true;
+        return { ...x, countryKey: c.key, countryTouched: true, countrySrc: "file" as const };
+      });
+      return changed ? next : prev;
+    });
+  }, [countries, newItems.length]);
+
+  const setSimilarCountry = (on: boolean) => {
+    setSimilarCountryState(on);
+    localStorage.setItem("nomen_similar_country", on ? "1" : "0");
+    setNewItems((prev) =>
+      prev.map((x) => {
+        if (x.countryTouched) return x;
+        const k = (tnved[x.kind]?.country && x.found?.country) || tnved[x.kind]?.country;
+        return { ...x, countryKey: on ? k?.options?.[0]?.key || "" : "" };
+      }),
+    );
   };
 
   const patchNew = (idx: number, patch: Partial<NewItem>) =>
@@ -585,6 +623,7 @@ const OdataNomenclature = () => {
     setInvoice(null);
     setCatCol(null);
     setExcluded(new Set());
+    setTraceCols(EMPTY_TRACE_COLS);
     setMatches([]);
     setResumeFrom(null);
     setDone(0);
@@ -684,6 +723,16 @@ const OdataNomenclature = () => {
             </div>
           )}
         </section>
+
+        {invoice && (
+          <NomenTraceColumns
+            columns={invoice.columns || []}
+            items={allItems}
+            value={traceCols}
+            disabled={busy}
+            onChange={(f, c) => changeCategories(() => setTraceCols((p) => ({ ...p, [f]: c })))}
+          />
+        )}
 
         {invoice && (
           <NomenCategories
@@ -820,6 +869,8 @@ const OdataNomenclature = () => {
             onAll={patchAll}
             onReload={loadRefs}
             tnvedMissing={tnvedMissing}
+            similarCountry={similarCountry}
+            onSimilarCountry={setSimilarCountry}
             base={base}
             onGroupAdded={(g) =>
               setGroups((prev) =>
