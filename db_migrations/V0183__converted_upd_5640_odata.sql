@@ -1,0 +1,2 @@
+INSERT INTO converted_files (title, description, file_url, file_name, s3_key, size_bytes) VALUES
+('УПД № УТ-5640 от 23.10.2026 в загрузку OData', 'УПД ООО «Эй Джи Групп» № УТ-5640 от 23.10.2026, правило «Создание файла для OData». 43 строки, 5 596 шт, 1 445 484,00 руб. — сходится с «Всего к оплате». Прослеживаемых позиций нет, все номера в «Номер ГТД».', '/converted/upd-ut-5640-23-10-2026-v-zagruzku-odata.xlsx', 'УПД № УТ-5640 от 23.10.2026 в загрузку OData.xlsx', 'converted/upd-ut-5640-23-10-2026-v-zagruzku-odata.xlsx', 8937);
