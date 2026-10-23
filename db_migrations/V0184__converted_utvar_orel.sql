@@ -1,0 +1,2 @@
+INSERT INTO converted_files (title, description, file_url, file_name, s3_key, size_bytes) VALUES
+('Утварь в Орёл 23.10.26', 'Из «Утварь в Орёл»: цена из последней колонки перенесена в колонку «Цена» (бывшая «Цена с НДС»), сумма пересчитана как количество × цена, последняя колонка удалена. 44 позиции, 6 101 шт, 1 903 890,00 руб.', '/converted/utvar-v-orel-23-10-26.xlsx', 'Утварь в Орёл 23.10.26.xlsx', 'converted/utvar-v-orel-23-10-26.xlsx', 8596);
