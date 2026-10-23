@@ -1,0 +1,2 @@
+INSERT INTO converted_files (title, description, file_url, file_name, s3_key, size_bytes) VALUES
+('Утварь в Орёл', 'Из УПД ООО «Эй Джи Групп» № УТ-5639 от 22.10.2026: артикул, наименование, количество, цена с НДС (сумма ÷ количество), сумма. 44 строки, 6 101 шт, 1 464 704,00 руб. — сходится с «Всего к оплате».', '/converted/utvar-v-oryol.xlsx', 'Утварь в Орёл.xlsx', 'converted/utvar-v-oryol.xlsx', 8614);
