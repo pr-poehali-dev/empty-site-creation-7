@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from held import held_error
+from reset import preview as reset_preview, reset as reset_item
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -62,7 +63,7 @@ def who(cur, token):
     if not token:
         return None
     cur.execute(
-        f"SELECT u.role, u.phone FROM users u JOIN user_sessions s ON s.user_id=u.id "
+        f"SELECT u.id, u.role, u.phone FROM users u JOIN user_sessions s ON s.user_id=u.id "
         f"WHERE s.token='{_esc(token)}' AND s.expires_at > NOW() LIMIT 1"
     )
     u = cur.fetchone()
@@ -73,6 +74,7 @@ def who(cur, token):
     )
     m = cur.fetchone()
     return {
+        'user_id': u['id'],
         'is_owner': u['role'] == 'owner',
         'manager_id': m['id'] if m else None,
         'role_id': m['role_id'] if m else None,
@@ -298,6 +300,7 @@ def handler(event: dict, context) -> dict:
             return _resp(200, {
                 'visible': fields,
                 'editable': editable,
+                'can_reset': actor['is_owner'],
                 'modes': {
                     'beauty': bool(actor['is_owner'] or perms.get('name_beauty')),
                     'tech': bool(actor['is_owner'] or perms.get('name_tech')),
@@ -326,6 +329,16 @@ def handler(event: dict, context) -> dict:
         if action == 'update_item':
             data, err = update_item(cur, body, editable)
             return _resp(403, {'error': err}) if err else _resp(200, data)
+
+        if action in ('reset_preview', 'reset_item'):
+            if not actor['is_owner']:
+                return _resp(403, {'error': 'Сбрасывать историю может только владелец'})
+            item_id = int(body.get('id') or params.get('id') or 0)
+            if action == 'reset_preview':
+                data, err = reset_preview(cur, item_id)
+            else:
+                data, err = reset_item(cur, actor, item_id)
+            return _resp(409, {'error': err}) if err else _resp(200, data)
 
         if action == 'update_group':
             data, err = update_group(cur, body, editable)

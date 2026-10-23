@@ -16,6 +16,7 @@ import SimilarCodesDialog from "@/components/receiving/SimilarCodesDialog";
 import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import { permHeaders } from "@/hooks/useReceivingPerms";
 import CatalogItemCard from "@/components/receiving/CatalogItemCard";
+import ResetHistoryDialog from "@/components/receiving/ResetHistoryDialog";
 import {
   RECEIVING_CATALOG_URL,
   FIELD_TITLES,
@@ -53,6 +54,8 @@ const ReceivingCatalog = () => {
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<GroupRow | null>(null);
+  const [resetId, setResetId] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
   const seePrice = Boolean(meta?.visible.includes("price"));
   const timer = useRef<number>();
 
@@ -239,6 +242,15 @@ const ReceivingCatalog = () => {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-4 flex-1">
+        {notice && (
+          <div className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 flex items-center gap-2">
+            <Icon name="Check" size={16} />
+            <span className="flex-1">{notice}</span>
+            <button onClick={() => setNotice("")} className="text-emerald-200/70">
+              <Icon name="X" size={14} />
+            </button>
+          </div>
+        )}
         {loading && <p className="text-sm text-muted-foreground">Загружаю...</p>}
 
         {!loading && shown === 0 && (
@@ -298,6 +310,7 @@ const ReceivingCatalog = () => {
                       {FIELD_TITLES[f]}
                     </th>
                   ))}
+                  {meta?.can_reset && <th className="py-2 px-3" />}
                 </tr>
               </thead>
               <tbody>
@@ -308,6 +321,19 @@ const ReceivingCatalog = () => {
                         {cellText(f, it[f])}
                       </td>
                     ))}
+                    {meta?.can_reset && (
+                      <td className="py-1 px-2 align-top">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-muted-foreground hover:text-red-300 whitespace-nowrap"
+                          onClick={() => setResetId(it.id)}
+                        >
+                          <Icon name="RotateCcw" size={14} className="mr-1" />
+                          Сбросить историю
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -333,6 +359,17 @@ const ReceivingCatalog = () => {
           meta={meta}
           onClose={() => setOpen(null)}
           onChanged={() => load(0)}
+        />
+      )}
+      {resetId != null && (
+        <ResetHistoryDialog
+          itemId={resetId}
+          onClose={() => setResetId(null)}
+          onDone={() => {
+            setResetId(null);
+            setNotice("История товара сброшена — он как только что загруженный");
+            load(0);
+          }}
         />
       )}
       {similar.code && (

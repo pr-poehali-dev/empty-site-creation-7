@@ -5,7 +5,9 @@
       "method": "GET",
       "path": "/",
       "expectedStatus": 200,
-      "expectedBody": {"status": "ok"},
+      "expectedBody": {
+        "status": "ok"
+      },
       "bodyMatcher": "partial"
     },
     {
@@ -13,7 +15,23 @@
       "method": "GET",
       "path": "/?action=meta",
       "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Сброс без токена запрещён",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "reset_item",
+        "id": 1
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
       "bodyMatcher": "partial"
     }
   ]

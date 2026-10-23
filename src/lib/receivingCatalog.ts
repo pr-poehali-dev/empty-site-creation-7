@@ -61,6 +61,7 @@ export interface CatalogMeta {
   visible: string[];
   editable: string[];
   modes: { beauty: boolean; tech: boolean };
+  can_reset?: boolean;
   directions: string[];
   brands: string[];
 }
