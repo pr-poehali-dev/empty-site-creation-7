@@ -17,6 +17,9 @@ import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import { permHeaders } from "@/hooks/useReceivingPerms";
 import CatalogItemCard from "@/components/receiving/CatalogItemCard";
 import ResetHistoryDialog from "@/components/receiving/ResetHistoryDialog";
+import { SiteCell, TotalCell } from "@/components/receiving/MarketPriceCells";
+import { useMarketPrices } from "@/hooks/useMarketPrices";
+import { SITE_COLUMNS, TOTAL_COLUMNS } from "@/lib/marketPrices";
 import {
   RECEIVING_CATALOG_URL,
   FIELD_TITLES,
@@ -58,6 +61,7 @@ const ReceivingCatalog = () => {
   const [notice, setNotice] = useState("");
   const seePrice = Boolean(meta?.visible.includes("price"));
   const timer = useRef<number>();
+  const market = useMarketPrices(items, Boolean(meta) && mode === "tech");
 
   useEffect(() => {
     fetch(`${RECEIVING_CATALOG_URL}?action=meta`, { headers: permHeaders() })
@@ -251,6 +255,15 @@ const ReceivingCatalog = () => {
             </button>
           </div>
         )}
+        {market.error && (
+          <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200 flex items-center gap-2">
+            <Icon name="TriangleAlert" size={16} />
+            <span className="flex-1">{market.error}</span>
+            <button onClick={market.clearError} className="text-red-200/70">
+              <Icon name="X" size={14} />
+            </button>
+          </div>
+        )}
         {loading && <p className="text-sm text-muted-foreground">Загружаю...</p>}
 
         {!loading && shown === 0 && (
@@ -310,6 +323,18 @@ const ReceivingCatalog = () => {
                       {FIELD_TITLES[f]}
                     </th>
                   ))}
+                  {market.allowed &&
+                    SITE_COLUMNS.map((c) => (
+                      <th key={c.key} className="py-2 px-3 font-normal whitespace-nowrap text-violet-200/80">
+                        {c.title}, {c.cur}
+                      </th>
+                    ))}
+                  {market.allowed &&
+                    TOTAL_COLUMNS.map((c) => (
+                      <th key={c.key} className="py-2 px-3 font-normal whitespace-nowrap text-emerald-200/80">
+                        {c.title}, {c.cur}
+                      </th>
+                    ))}
                   {meta?.can_reset && <th className="py-2 px-3" />}
                 </tr>
               </thead>
@@ -321,6 +346,29 @@ const ReceivingCatalog = () => {
                         {cellText(f, it[f])}
                       </td>
                     ))}
+                    {market.allowed &&
+                      SITE_COLUMNS.map((c) => (
+                        <td key={c.key} className="py-1.5 px-3 align-top whitespace-nowrap">
+                          <SiteCell
+                            site={c.key}
+                            row={market.rowOf(it)}
+                            busy={market.isBusy(it, c.key)}
+                            canEdit={market.canEdit}
+                            onFetch={() => market.fetchPrice(it, c.key)}
+                          />
+                        </td>
+                      ))}
+                    {market.allowed &&
+                      TOTAL_COLUMNS.map((c) => (
+                        <td key={c.key} className="py-1.5 px-3 align-top whitespace-nowrap">
+                          <TotalCell
+                            field={c.key}
+                            row={market.rowOf(it)}
+                            canEdit={market.canEdit}
+                            onSave={(v) => market.setTotal(it, c.key, v)}
+                          />
+                        </td>
+                      ))}
                     {meta?.can_reset && (
                       <td className="py-1 px-2 align-top">
                         <Button

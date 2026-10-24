@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Проверка живости",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Без токена доступа нет",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "lookup", "models": []},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
