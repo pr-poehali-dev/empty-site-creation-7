@@ -5,7 +5,8 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from sources import SITES, Blocked, clean_model, search
+import proxymarket as pm
+from sources import SITES, Blocked, NoTraffic, clean_model, search
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -14,13 +15,18 @@ CORS = {
     'Access-Control-Max-Age': '86400',
 }
 
-TOTALS = {'total_ru': ['wb_ru', 'mv_ru'], 'total_by': ['wb_by']}
+TOTALS = {
+    'total_ru': [s for s, v in SITES.items() if v['country'] == 'ru'],
+    'total_by': [s for s, v in SITES.items() if v['country'] == 'by'],
+}
 
 COLS = (
     'brand_key, model_key, brand, model, '
     + ', '.join(f'{s}, {s}_status, {s}_at, {s}_title' for s in SITES)
     + ', total_ru, total_ru_manual, total_by, total_by_manual, updated_at'
 )
+
+PROVIDER = 'proxy_market'
 
 
 def _resp(status, body):
@@ -74,6 +80,200 @@ def perms_of(cur, actor):
     return result
 
 
+# ---------- настройки ----------
+
+def proxy_row(cur):
+    cur.execute(f"SELECT * FROM market_proxy_settings WHERE provider='{PROVIDER}'")
+    row = cur.fetchone()
+    if row:
+        if not row['api_key'] and os.environ.get('PROXY_MARKET_API_KEY'):
+            cur.execute(
+                f"UPDATE market_proxy_settings SET api_key={_lit(os.environ['PROXY_MARKET_API_KEY'])} "
+                f"WHERE provider='{PROVIDER}'"
+            )
+            cur.execute(f"SELECT * FROM market_proxy_settings WHERE provider='{PROVIDER}'")
+            row = cur.fetchone()
+        return row
+    key = os.environ.get('PROXY_MARKET_API_KEY') or None
+    cur.execute(
+        f"INSERT INTO market_proxy_settings (provider, api_key) VALUES ('{PROVIDER}', {_lit(key)}) "
+        f"ON CONFLICT (provider) DO NOTHING"
+    )
+    cur.execute(f"SELECT * FROM market_proxy_settings WHERE provider='{PROVIDER}'")
+    return cur.fetchone()
+
+
+def site_rows(cur):
+    cur.execute("SELECT * FROM market_site_settings")
+    return {r['site']: r for r in cur.fetchall()}
+
+
+def enabled_sites(cur):
+    rows = site_rows(cur)
+    return [s for s in SITES if rows.get(s, {}).get('enabled', True)]
+
+
+def _mask(key):
+    return f'••••{key[-4:]}' if key else ''
+
+
+def proxy_info(cur, live):
+    row = proxy_row(cur)
+    info = {
+        'provider': PROVIDER,
+        'title': 'Proxy.Market',
+        'has_key': bool(row['api_key']),
+        'key_mask': _mask(row['api_key']),
+        'package_id': row['package_id'],
+        'proxy_ru': bool(row['proxy_ru']),
+        'proxy_by': bool(row['proxy_by']),
+        'proxy_ru_host': re.sub(r':[^:@/]*@', '@', row['proxy_ru'] or ''),
+        'proxy_by_host': re.sub(r':[^:@/]*@', '@', row['proxy_by'] or ''),
+    }
+    if live and row['api_key']:
+        try:
+            info['balance'] = pm.balance(row['api_key'])
+            pkg = pm.active_package(row['api_key'])
+            if pkg:
+                info['package'] = {
+                    'id': pkg.get('id'), 'name': pkg.get('name'), 'total': pkg.get('total'),
+                    'used': pkg.get('used'), 'expires_at': pkg.get('expires_at'),
+                    'prepaid': pkg.get('prepaid'),
+                }
+        except Exception as e:
+            info['error'] = str(e)
+    return info
+
+
+def settings(cur, live=True):
+    rows = site_rows(cur)
+    sites = []
+    for key, meta in SITES.items():
+        r = rows.get(key) or {}
+        sites.append({
+            'site': key, **meta,
+            'enabled': r.get('enabled', True), 'via_proxy': r.get('via_proxy', True),
+            'test_brand': r.get('test_brand') or 'Blackton', 'test_model': r.get('test_model') or 'TP536',
+            'last_status': r.get('last_status'), 'last_message': r.get('last_message'),
+            'last_price': r.get('last_price'), 'last_title': r.get('last_title'), 'last_at': r.get('last_at'),
+        })
+    return {'proxies': [proxy_info(cur, live)], 'sites': sites}
+
+
+def save_key(cur, body):
+    key = (body.get('api_key') or '').strip()
+    if not key:
+        return None, 'Введите API-ключ'
+    proxy_row(cur)
+    try:
+        pm.balance(key)
+    except pm.PMError as e:
+        return None, str(e)
+    cur.execute(
+        f"UPDATE market_proxy_settings SET api_key={_lit(key)}, package_id=NULL, proxy_ru=NULL, "
+        f"proxy_ru_id=NULL, proxy_by=NULL, proxy_by_id=NULL, updated_at=NOW() WHERE provider='{PROVIDER}'"
+    )
+    return settings(cur), None
+
+
+def create_proxies(cur, body):
+    row = proxy_row(cur)
+    if not row['api_key']:
+        return None, 'Сначала сохраните API-ключ'
+    which = [c for c in (body.get('countries') or ['ru', 'by']) if c in ('ru', 'by')]
+    missing = []
+    try:
+        pkg = pm.active_package(row['api_key'])
+        if not pkg:
+            return None, 'В Proxy.Market нет активного пакета трафика — купите резидентские прокси'
+        allowed = [str(c).lower() for c in pm.countries(row['api_key'])]
+        sets = [f"package_id={int(pkg['id'])}"]
+        for c in which:
+            if allowed and c not in allowed:
+                missing.append('Беларусь' if c == 'by' else 'Россия')
+                continue
+            p = pm.create_proxy(row['api_key'], int(pkg['id']), c, reuse=not body.get('recreate'))
+            sets.append(f"proxy_{c}={_lit(pm.proxy_url(p))}, proxy_{c}_id={int(p.get('id') or 0)}")
+    except pm.PMError as e:
+        return None, str(e)
+    cur.execute(
+        f"UPDATE market_proxy_settings SET {', '.join(sets)}, updated_at=NOW() WHERE provider='{PROVIDER}'"
+    )
+    data = settings(cur)
+    if missing:
+        data['warning'] = f"Proxy.Market не даёт страну: {', '.join(missing)}"
+    return data, None
+
+
+def save_site(cur, body):
+    site = body.get('site')
+    if site not in SITES:
+        return None, 'Неизвестный сайт'
+    sets = []
+    for f in ('enabled', 'via_proxy'):
+        if f in body:
+            sets.append(f"{f}={'TRUE' if body[f] else 'FALSE'}")
+    for f in ('test_brand', 'test_model'):
+        if f in body and str(body[f]).strip():
+            sets.append(f"{f}={_lit(str(body[f]).strip())}")
+    if sets:
+        cur.execute(
+            f"INSERT INTO market_site_settings (site) VALUES ('{site}') ON CONFLICT (site) DO NOTHING"
+        )
+        cur.execute(f"UPDATE market_site_settings SET {', '.join(sets)} WHERE site='{site}'")
+    return settings(cur, live=False), None
+
+
+# ---------- поиск ----------
+
+def proxy_for(cur, site):
+    r = site_rows(cur).get(site) or {}
+    if not r.get('via_proxy', True):
+        return None, None
+    row = proxy_row(cur)
+    country = SITES[site]['country']
+    url = row.get(f'proxy_{country}')
+    if not url:
+        name = 'Беларусь' if country == 'by' else 'Россия'
+        return None, f'Не создан прокси «{name}» — откройте Настройки'
+    return url, None
+
+
+def run_search(cur, site, brand, model):
+    """Возвращает (status, price, title, message)."""
+    proxy, err = proxy_for(cur, site)
+    if err:
+        return 'no_proxy', None, None, err
+    try:
+        found = search(site, brand, model, proxy)
+    except NoTraffic as e:
+        return 'no_traffic', None, None, str(e)
+    except Blocked as e:
+        return 'blocked', None, None, str(e)
+    except Exception as e:
+        print(f'{site} {brand} {model}: {e}')
+        return 'error', None, None, 'Сайт ответил ошибкой или не успел ответить'
+    if not found:
+        return 'not_found', None, None, 'Точной модели не найдено'
+    title, price = found
+    return 'ok', price, title, ''
+
+
+def test_site(cur, body):
+    site = body.get('site')
+    if site not in SITES:
+        return None, 'Неизвестный сайт'
+    r = site_rows(cur).get(site) or {}
+    brand = r.get('test_brand') or 'Blackton'
+    model = r.get('test_model') or 'TP536'
+    status, price, title, msg = run_search(cur, site, brand, model)
+    cur.execute(
+        f"UPDATE market_site_settings SET last_status='{status}', last_message={_lit(msg)}, "
+        f"last_price={_lit(price)}, last_title={_lit(title)}, last_at=NOW() WHERE site='{site}'"
+    )
+    return settings(cur, live=False), None
+
+
 def get_row(cur, b, m):
     cur.execute(
         f"SELECT {COLS} FROM model_market_prices WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
@@ -112,19 +312,8 @@ def fetch_price(cur, body):
     if site not in SITES or not clean_model(brand, model):
         return None, 'Нужны сайт, бренд и модель'
     b, m = ensure_row(cur, brand, model)
-    price, title, status = None, None, 'ok'
-    try:
-        found = search(site, brand, model)
-        if found:
-            title, price = found
-        else:
-            status = 'not_found'
-    except Blocked:
-        status = 'blocked'
-    except Exception as e:
-        print(f'{site} {brand} {model}: {e}')
-        status = 'error'
-    if status == 'ok' or status == 'not_found':
+    status, price, title, msg = run_search(cur, site, brand, model)
+    if status in ('ok', 'not_found'):
         cur.execute(
             f"UPDATE model_market_prices SET {site}={_lit(price)}, {site}_status='{status}', "
             f"{site}_at=NOW(), {site}_title={_lit(title)}, updated_at=NOW() "
@@ -133,10 +322,11 @@ def fetch_price(cur, body):
     else:
         cur.execute(
             f"UPDATE model_market_prices SET {site}_status='{status}', {site}_at=NOW(), "
-            f"updated_at=NOW() WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
+            f"{site}_title={_lit(msg)}, updated_at=NOW() "
+            f"WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
         )
     recalc(cur, b, m)
-    return {'row': get_row(cur, b, m), 'status': status}, None
+    return {'row': get_row(cur, b, m), 'status': status, 'message': msg}, None
 
 
 def set_total(cur, body):
@@ -152,8 +342,9 @@ def set_total(cur, body):
             return None, 'Введите число'
     b, m = ensure_row(cur, body.get('brand') or '', body.get('model') or '')
     cur.execute(
-        f"UPDATE model_market_prices SET {field}={_lit(value)}, {field}_manual={'TRUE' if value is not None else 'FALSE'}, "
-        f"updated_at=NOW() WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
+        f"UPDATE model_market_prices SET {field}={_lit(value)}, "
+        f"{field}_manual={'TRUE' if value is not None else 'FALSE'}, updated_at=NOW() "
+        f"WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
     )
     return {'row': get_row(cur, b, m)}, None
 
@@ -161,20 +352,21 @@ def set_total(cur, body):
 def lookup(cur, body):
     pairs = {keys(p.get('brand'), p.get('model')) for p in (body.get('models') or [])[:500]}
     pairs = [p for p in pairs if p[1]]
-    if not pairs:
-        return {'rows': []}
-    vals = ', '.join(f"({_lit(b)}, {_lit(m)})" for b, m in pairs)
-    cur.execute(f"SELECT {COLS} FROM model_market_prices WHERE (brand_key, model_key) IN ({vals})")
-    return {'rows': cur.fetchall()}
+    rows = []
+    if pairs:
+        vals = ', '.join(f"({_lit(b)}, {_lit(m)})" for b, m in pairs)
+        cur.execute(f"SELECT {COLS} FROM model_market_prices WHERE (brand_key, model_key) IN ({vals})")
+        rows = cur.fetchall()
+    return {'rows': rows, 'sites': enabled_sites(cur)}
 
 
 def handler(event: dict, context) -> dict:
-    """Цены маркетплейсов по модели: поиск минимальной цены на Wildberries РФ/РБ и М.Видео, средняя по стране, ручной ввод. Цена общая для всех товаров одной модели."""
+    """Цены маркетплейсов по модели (WB РФ/РБ, Ozon РФ/РБ, Яндекс Маркет, М.Видео): поиск минимальной цены, средняя по стране, ручной ввод, настройки прокси Proxy.Market и проверка каждого сайта."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
     if method == 'GET':
-        return _resp(200, {'status': 'ok', 'service': 'market-prices', 'sites': SITES})
+        return _resp(200, {'status': 'ok', 'service': 'market-prices', 'sites': list(SITES)})
 
     headers = event.get('headers') or {}
     token = headers.get('X-Authorization') or headers.get('x-authorization') or ''
@@ -186,13 +378,14 @@ def handler(event: dict, context) -> dict:
         if not actor:
             return _resp(401, {'error': 'Войдите заново'})
         perms = perms_of(cur, actor)
-        can_see = actor['is_owner'] or perms.get('market_see') or perms.get('market_edit')
-        can_edit = actor['is_owner'] or perms.get('market_edit')
+        owner = actor['is_owner']
+        can_see = owner or perms.get('market_see') or perms.get('market_edit')
+        can_edit = owner or perms.get('market_edit')
         if not can_see:
             return _resp(403, {'error': 'Нет доступа к ценам маркетплейсов'})
 
         if action == 'lookup':
-            return _resp(200, {**lookup(cur, body), 'can_edit': bool(can_edit)})
+            return _resp(200, {**lookup(cur, body), 'can_edit': bool(can_edit), 'is_owner': owner})
         if action in ('fetch', 'set_total') and not can_edit:
             return _resp(403, {'error': 'Нет права получать и править цены'})
         if action == 'fetch':
@@ -200,6 +393,19 @@ def handler(event: dict, context) -> dict:
             return _resp(400, {'error': err}) if err else _resp(200, data)
         if action == 'set_total':
             data, err = set_total(cur, body)
+            return _resp(400, {'error': err}) if err else _resp(200, data)
+
+        handlers = {
+            'settings': lambda: (settings(cur), None),
+            'save_key': lambda: save_key(cur, body),
+            'create_proxies': lambda: create_proxies(cur, body),
+            'save_site': lambda: save_site(cur, body),
+            'test_site': lambda: test_site(cur, body),
+        }
+        if action in handlers:
+            if not owner:
+                return _resp(403, {'error': 'Настройки доступны только владельцу'})
+            data, err = handlers[action]()
             return _resp(400, {'error': err}) if err else _resp(200, data)
 
     return _resp(400, {'error': 'Неизвестное действие'})

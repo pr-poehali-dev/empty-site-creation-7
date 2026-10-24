@@ -15,6 +15,9 @@ export const useMarketPrices = (items: Item[], enabled: boolean) => {
   const [rows, setRows] = useState<Record<string, PriceRow>>({});
   const [allowed, setAllowed] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [sites, setSites] = useState<SiteKey[]>([]);
+  const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
 
@@ -28,6 +31,8 @@ export const useMarketPrices = (items: Item[], enabled: boolean) => {
       .then((d) => {
         setAllowed(true);
         setCanEdit(d.can_edit);
+        setIsOwner(d.is_owner);
+        setSites(d.sites || []);
         setRows((prev) => {
           const next = { ...prev };
           d.rows.forEach((r) => (next[`${r.brand_key}|${r.model_key}`] = r));
@@ -35,7 +40,7 @@ export const useMarketPrices = (items: Item[], enabled: boolean) => {
         });
       })
       .catch(() => setAllowed(false));
-  }, [items, enabled]);
+  }, [items, enabled, reload]);
 
   const rowOf = useCallback((it: Item) => rows[modelKey(it.brand, it.model)], [rows]);
 
@@ -63,7 +68,17 @@ export const useMarketPrices = (items: Item[], enabled: boolean) => {
     }
   };
 
+  const fetchAll = (it: Item) => {
+    sites.forEach((s) => fetchPrice(it, s));
+  };
+
   const isBusy = (it: Item, site: SiteKey) => Boolean(busy[`${modelKey(it.brand, it.model)}#${site}`]);
 
-  return { allowed, canEdit, rowOf, fetchPrice, setTotal, isBusy, error, clearError: () => setError("") };
+  return {
+    sites,
+    isOwner,
+    fetchAll,
+    refresh: () => setReload((n) => n + 1),
+    allowed,
+    canEdit, rowOf, fetchPrice, setTotal, isBusy, error, clearError: () => setError("") };
 };

@@ -3,13 +3,16 @@ import { permHeaders } from "@/hooks/useReceivingPerms";
 export const MARKET_PRICES_URL =
   "https://functions.poehali.dev/07b7a61f-8174-437a-8dfe-fa779828a911";
 
-export type SiteKey = "wb_ru" | "mv_ru" | "wb_by";
+export type SiteKey = "wb_ru" | "oz_ru" | "ym_ru" | "mv_ru" | "wb_by" | "oz_by";
 export type TotalKey = "total_ru" | "total_by";
 
 export const SITE_COLUMNS: { key: SiteKey; title: string; cur: string }[] = [
   { key: "wb_ru", title: "WB РФ", cur: "₽" },
+  { key: "oz_ru", title: "Ozon РФ", cur: "₽" },
+  { key: "ym_ru", title: "Я.Маркет", cur: "₽" },
   { key: "mv_ru", title: "М.Видео", cur: "₽" },
   { key: "wb_by", title: "WB РБ", cur: "BYN" },
+  { key: "oz_by", title: "Ozon РБ", cur: "BYN" },
 ];
 
 export const TOTAL_COLUMNS: { key: TotalKey; title: string; cur: string }[] = [
@@ -41,6 +44,8 @@ export const STATUS_TEXT: Record<string, string> = {
   not_found: "не найдено",
   blocked: "сайт не пустил",
   error: "ошибка сайта",
+  no_proxy: "нет прокси",
+  no_traffic: "нет трафика",
 };
 
 const post = async (body: Record<string, unknown>) => {
@@ -55,7 +60,60 @@ const post = async (body: Record<string, unknown>) => {
 };
 
 export const lookupPrices = (models: { brand: unknown; model: unknown }[]) =>
-  post({ action: "lookup", models }) as Promise<{ rows: PriceRow[]; can_edit: boolean }>;
+  post({ action: "lookup", models }) as Promise<{
+    rows: PriceRow[];
+    can_edit: boolean;
+    is_owner: boolean;
+    sites: SiteKey[];
+  }>;
+
+export interface ProxyInfo {
+  provider: string;
+  title: string;
+  has_key: boolean;
+  key_mask: string;
+  package_id: number | null;
+  proxy_ru: boolean;
+  proxy_by: boolean;
+  balance?: string | number;
+  error?: string;
+  package?: {
+    id: number;
+    name: string;
+    total?: number;
+    used?: number;
+    expires_at?: number;
+    prepaid?: boolean;
+  };
+}
+
+export interface SiteSetting {
+  site: SiteKey;
+  title: string;
+  country: "ru" | "by";
+  cur: string;
+  enabled: boolean;
+  via_proxy: boolean;
+  test_brand: string;
+  test_model: string;
+  last_status: string | null;
+  last_message: string | null;
+  last_price: string | null;
+  last_title: string | null;
+  last_at: string | null;
+}
+
+export interface MarketSettings {
+  proxies: ProxyInfo[];
+  sites: SiteSetting[];
+  warning?: string;
+}
+
+export const settingsCall = (action: string, extra: Record<string, unknown> = {}) =>
+  post({ action, ...extra }) as Promise<MarketSettings>;
+
+export const mb = (bytes?: number) =>
+  bytes == null ? "—" : `${(bytes / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МБ`;
 
 export const fetchSitePrice = (site: SiteKey, brand: string, model: string) =>
   post({ action: "fetch", site, brand, model }) as Promise<{ row: PriceRow; status: string }>;

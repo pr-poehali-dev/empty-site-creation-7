@@ -20,6 +20,7 @@ import ResetHistoryDialog from "@/components/receiving/ResetHistoryDialog";
 import { SiteCell, TotalCell } from "@/components/receiving/MarketPriceCells";
 import { useMarketPrices } from "@/hooks/useMarketPrices";
 import { SITE_COLUMNS, TOTAL_COLUMNS } from "@/lib/marketPrices";
+import MarketSettingsDialog from "@/components/receiving/market/MarketSettingsDialog";
 import {
   RECEIVING_CATALOG_URL,
   FIELD_TITLES,
@@ -62,6 +63,8 @@ const ReceivingCatalog = () => {
   const seePrice = Boolean(meta?.visible.includes("price"));
   const timer = useRef<number>();
   const market = useMarketPrices(items, Boolean(meta) && mode === "tech");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const siteCols = SITE_COLUMNS.filter((c) => market.sites.includes(c.key));
 
   useEffect(() => {
     fetch(`${RECEIVING_CATALOG_URL}?action=meta`, { headers: permHeaders() })
@@ -169,6 +172,17 @@ const ReceivingCatalog = () => {
                 {loading ? "Загружаю..." : `${total} ${mode === "beauty" ? "позиций" : "строк"}`}
               </p>
             </div>
+            {market.isOwner && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                title="Настройки цен маркетплейсов"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Icon name="Settings" size={18} />
+              </Button>
+            )}
             {meta?.modes.beauty && meta?.modes.tech && (
               <div className="flex rounded-lg border border-white/[0.08] p-0.5">
                 <button
@@ -323,8 +337,9 @@ const ReceivingCatalog = () => {
                       {FIELD_TITLES[f]}
                     </th>
                   ))}
+                  {market.allowed && market.canEdit && <th className="py-2 px-3" />}
                   {market.allowed &&
-                    SITE_COLUMNS.map((c) => (
+                    siteCols.map((c) => (
                       <th key={c.key} className="py-2 px-3 font-normal whitespace-nowrap text-violet-200/80">
                         {c.title}, {c.cur}
                       </th>
@@ -346,8 +361,22 @@ const ReceivingCatalog = () => {
                         {cellText(f, it[f])}
                       </td>
                     ))}
+                    {market.allowed && market.canEdit && (
+                      <td className="py-1.5 px-2 align-top">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-violet-200 whitespace-nowrap"
+                          title="Запросить цены на всех включённых сайтах"
+                          onClick={() => market.fetchAll(it)}
+                        >
+                          <Icon name="RefreshCw" size={13} className="mr-1" />
+                          Все цены
+                        </Button>
+                      </td>
+                    )}
                     {market.allowed &&
-                      SITE_COLUMNS.map((c) => (
+                      siteCols.map((c) => (
                         <td key={c.key} className="py-1.5 px-3 align-top whitespace-nowrap">
                           <SiteCell
                             site={c.key}
@@ -409,6 +438,13 @@ const ReceivingCatalog = () => {
           onChanged={() => load(0)}
         />
       )}
+      <MarketSettingsDialog
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          market.refresh();
+        }}
+      />
       {resetId != null && (
         <ResetHistoryDialog
           itemId={resetId}
