@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 import proxymarket as pm
+import vps
 from sources import SITES, Blocked, NoTraffic, clean_model, search
 
 CORS = {
@@ -374,6 +375,16 @@ def handler(event: dict, context) -> dict:
     action = body.get('action', '')
 
     with psycopg2.connect(os.environ['DATABASE_URL']) as c, c.cursor(cursor_factory=RealDictCursor) as cur:
+        if action in ('vps_install', 'vps_file', 'vps_register'):
+            ip = ((event.get('requestContext') or {}).get('identity') or {}).get('sourceIp')
+            if action == 'vps_install':
+                data, err = vps.public_install(cur, body)
+            elif action == 'vps_file':
+                data, err = vps.public_file(cur, body)
+            else:
+                data, err = vps.public_register(cur, body, ip)
+            return _resp(403, {'error': err}) if err else _resp(200, data)
+
         actor = who(cur, token)
         if not actor:
             return _resp(401, {'error': 'Войдите заново'})
@@ -401,6 +412,12 @@ def handler(event: dict, context) -> dict:
             'create_proxies': lambda: create_proxies(cur, body),
             'save_site': lambda: save_site(cur, body),
             'test_site': lambda: test_site(cur, body),
+            'vps_state': lambda: vps.state(cur),
+            'vps_ping': lambda: (vps.ping(cur), None),
+            'vps_new_code': lambda: vps.new_code(cur),
+            'vps_restart': lambda: vps.command(cur, '/restart'),
+            'vps_clear': lambda: vps.command(cur, '/clear_cookies'),
+            'vps_update': lambda: vps.command(cur, '/update'),
         }
         if action in handlers:
             if not owner:

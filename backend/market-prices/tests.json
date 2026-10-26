@@ -16,6 +16,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Установка VPS с неверным кодом не проходит",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "vps_install", "code": "wrong"},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }
