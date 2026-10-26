@@ -39,6 +39,13 @@ import migSecrets from "@/data/migration/07-secrets.md?raw";
 import migFile from "@/data/migration/08-instruction-file.md?raw";
 import migVerify from "@/data/migration/09-verify.md?raw";
 import migTodo from "@/data/migration/10-todo.md?raw";
+import vpsOverview from "@/data/vps/00-overview.md?raw";
+import vpsRent from "@/data/vps/01-rent.md?raw";
+import vpsProgram from "@/data/vps/02-program.md?raw";
+import vpsFunction from "@/data/vps/03-function.md?raw";
+import vpsSettings from "@/data/vps/04-settings.md?raw";
+import vpsLaunch from "@/data/vps/05-launch.md?raw";
+import vpsNotes from "@/data/vps/06-notes.md?raw";
 import RecipeMarkdown from "@/components/RecipeMarkdown";
 import { REPOSITORY_RULE, REPOSITORY_RULE_CREATE, RECIPES, getRecipe } from "@/data/repository";
 
@@ -85,6 +92,16 @@ const MIGRATION_TABS = [
   { key: "file", label: "8. Инструкция-файл", content: migFile },
   { key: "verify", label: "9. Проверка", content: migVerify },
   { key: "todo", label: "Доработки", content: migTodo },
+];
+
+const VPS_TABS = [
+  { key: "overview", label: "Общее", content: vpsOverview },
+  { key: "rent", label: "1. Аренда VPS", content: vpsRent },
+  { key: "program", label: "2. Программа для сервера", content: vpsProgram },
+  { key: "function", label: "3. Функция цен", content: vpsFunction },
+  { key: "settings", label: "4. Настройки в каталоге", content: vpsSettings },
+  { key: "launch", label: "5. Запуск", content: vpsLaunch },
+  { key: "notes", label: "Важно учесть", content: vpsNotes },
 ];
 
 const TAB_CREATION = `# Создание обработки ОбменССайтом
@@ -603,8 +620,9 @@ const Instructions = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
-  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "invoices" | "receiving" | "migration" | "plans" | "backup" | "repo" | "about">("menu");
+  const [section, setSection] = useState<"menu" | "1c" | "hosting" | "journal" | "invoices" | "receiving" | "migration" | "vps" | "plans" | "backup" | "repo" | "about">("menu");
   const [migrationTab, setMigrationTab] = useState(MIGRATION_TABS[0].key);
+  const [vpsTab, setVpsTab] = useState(VPS_TABS[0].key);
   const [activeTab, setActiveTab] = useState("creation");
   const [journalTab, setJournalTab] = useState(JOURNAL_TABS[0]?.key || "");
   const [invoiceTab, setInvoiceTab] = useState(INVOICE_TABS[0]?.key || "");
@@ -642,6 +660,8 @@ const Instructions = () => {
       ? "Приёмки"
       : section === "migration"
       ? "Архивация — перенос"
+      : section === "vps"
+      ? "Сервер VPS и парсинг"
       : section === "plans"
       ? "Планы"
       : section === "backup"
@@ -768,6 +788,18 @@ const Instructions = () => {
                 <span className="text-lg font-semibold">Архивация — перенос</span>
               </div>
               <p className="text-sm text-muted-foreground">Полная копия сайта, Яндекс Диск, перенос и обновление на своём VPS. Этапы и ход работы</p>
+            </button>
+            <button
+              onClick={() => setSection("vps")}
+              className="rounded-xl border border-white/[0.08] bg-card p-6 text-left hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                  <Icon name="Bot" size={20} className="text-orange-400" />
+                </div>
+                <span className="text-lg font-semibold">Сервер VPS и парсинг</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Свой сервер с браузером для цен Wildberries и Ozon: аренда, программа, настройки, запуск</p>
             </button>
             <button
               onClick={() => setSection("plans")}
@@ -1013,6 +1045,28 @@ const Instructions = () => {
               {renderMarkdown(
                 MIGRATION_TABS.find((t) => t.key === migrationTab)?.content || "",
               )}
+            </div>
+          </>
+        )}
+        {section === "vps" && (
+          <>
+            <div className="flex gap-2 mb-4 overflow-x-auto">
+              {VPS_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setVpsTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
+                    vpsTab === tab.key
+                      ? "bg-orange-500/20 text-orange-300 font-medium"
+                      : "text-muted-foreground hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="rounded-xl border border-white/[0.08] bg-card p-4 sm:p-6">
+              {renderMarkdown(VPS_TABS.find((t) => t.key === vpsTab)?.content || "")}
             </div>
           </>
         )}
