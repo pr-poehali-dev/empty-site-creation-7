@@ -21,6 +21,7 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 const ProxySection = ({ proxy, busy, onSaveKey, onCreate }: Props) => {
   const [key, setKey] = useState("");
   const pkg = proxy.package;
+  const mob = proxy.mobile_package;
   const expires = pkg?.expires_at ? new Date(pkg.expires_at * 1000).toLocaleDateString("ru-RU") : "—";
   const left = pkg?.total != null ? pkg.total - (pkg.used || 0) : null;
 
@@ -78,6 +79,24 @@ const ProxySection = ({ proxy, busy, onSaveKey, onCreate }: Props) => {
           </Row>
           <Row label="Прокси Беларусь">
             {proxy.proxy_by ? <span className="text-emerald-300">создан</span> : <span className="text-amber-300">нет</span>}
+          </Row>
+          <Row label="Мобильный пакет (Ozon)">
+            {mob ? (
+              <span>
+                осталось {mob.total != null ? mb(mob.total - (mob.used || 0)) : "без лимита"} из {mb(mob.total)}
+              </span>
+            ) : (
+              <span className="text-amber-300">нет — Ozon не пустит</span>
+            )}
+          </Row>
+          <Row label="Мобильные прокси">
+            {proxy.proxy_ru_mobile || proxy.proxy_by_mobile ? (
+              <span className="text-emerald-300">
+                {[proxy.proxy_ru_mobile && "Россия", proxy.proxy_by_mobile && "Беларусь"].filter(Boolean).join(", ")}
+              </span>
+            ) : (
+              <span className="text-amber-300">нет</span>
+            )}
           </Row>
         </div>
       )}

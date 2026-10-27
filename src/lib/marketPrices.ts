@@ -135,16 +135,21 @@ export interface ProxyInfo {
   package_id: number | null;
   proxy_ru: boolean;
   proxy_by: boolean;
+  proxy_ru_mobile?: boolean;
+  proxy_by_mobile?: boolean;
   balance?: string | number;
   error?: string;
-  package?: {
-    id: number;
-    name: string;
-    total?: number;
-    used?: number;
-    expires_at?: number;
-    prepaid?: boolean;
-  };
+  package?: ProxyPackage;
+  mobile_package?: ProxyPackage;
+}
+
+export interface ProxyPackage {
+  id: number;
+  name: string;
+  total?: number;
+  used?: number;
+  expires_at?: number;
+  prepaid?: boolean;
 }
 
 export interface SiteSetting {

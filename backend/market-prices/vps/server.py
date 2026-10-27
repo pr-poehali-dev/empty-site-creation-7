@@ -11,7 +11,7 @@ import urllib.request
 from aiohttp import web
 from playwright.async_api import async_playwright
 
-VERSION = '1.1.2'
+VERSION = '1.3.1'
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, 'data')
@@ -174,12 +174,20 @@ def wb_cards(data):
     return cards
 
 
+def wb_score(data, query):
+    cards = wb_cards(data)
+    keys = [k.lower() for k in re.findall(r'[A-Za-zА-Яа-я]*\d[\w-]*', query)] or [query.lower()]
+    hits = sum(1 for c in cards if any(k in (c[0] or '').lower().replace(' ', '') for k in keys))
+    return hits, cards
+
+
 async def search_wb(page, host, query):
-    got = asyncio.get_running_loop().create_future()
+    found = []
+    first = asyncio.Event()
 
     async def on_response(resp):
         u = resp.url
-        if got.done() or 'search' not in u or 'filters' in u:
+        if 'search' not in u or 'filters' in u:
             return
         if 'resultset=catalog' not in u and 'exactmatch' not in u:
             return
@@ -187,14 +195,15 @@ async def search_wb(page, host, query):
             data = await resp.json()
         except Exception:
             return
-        if not got.done() and isinstance(data, dict):
-            got.set_result(data)
+        if isinstance(data, dict):
+            found.append(data)
+            first.set()
 
     page.on('response', on_response)
-    url = f'{host}/catalog/0/search.aspx?search={urllib.parse.quote(query)}&sort=priceup'
+    url = f'{host}/catalog/0/search.aspx?search={urllib.parse.quote(query)}'
     await page.goto(url, wait_until='domcontentloaded', timeout=20000)
     try:
-        data = await asyncio.wait_for(got, 15)
+        await asyncio.wait_for(first.wait(), 15)
     except asyncio.TimeoutError:
         text = await page.content()
         if WB_EMPTY.search(text):
@@ -202,7 +211,9 @@ async def search_wb(page, host, query):
         if WB_CAPTCHA.search(text):
             raise Captcha()
         raise
-    return wb_cards(data)
+    await page.wait_for_timeout(2500)
+    best = max((wb_score(d, query) for d in found), key=lambda x: (x[0], -len(x[1])))
+    return best[1]
 
 
 def price_num(text):
@@ -213,20 +224,40 @@ def price_num(text):
         return None
 
 
+def oz_tile(state):
+    price, title = None, ''
+    for atom in state:
+        if not isinstance(atom, dict):
+            continue
+        if atom.get('type') == 'priceV2' and price is None:
+            for p in (atom.get('priceV2') or {}).get('price') or []:
+                t = p.get('text') or ''
+                if p.get('textStyle') == 'PRICE' and not re.search(r'[×x]\s*\d+\s*мес|/\s*мес|в месяц', t):
+                    price = price_num(t)
+                    break
+        if atom.get('id') == 'name' or atom.get('type') == 'textAtom' and not title:
+            t = ((atom.get('textDS') or atom.get('textAtom') or {}).get('text')) or ''
+            if t and (atom.get('id') == 'name' or not title):
+                title = t
+    if price is None or not title:
+        a = json.dumps(state, ensure_ascii=False)
+        if price is None:
+            for m in re.finditer(r'"text":\s*"([^"]*\d[^"]*(?:₽|BYN|р\.|руб)[^"]*)"', a):
+                if not re.search(r'мес', m.group(1)):
+                    price = price_num(m.group(1))
+                    break
+        if not title:
+            texts = re.findall(r'"text":\s*"([^"]{12,})"', a)
+            title = max(texts, key=len) if texts else ''
+    return title, price
+
+
 def walk_ozon(node, out):
     if isinstance(node, dict):
         if isinstance(node.get('mainState'), list):
-            texts, price = [], None
-            for atom in node['mainState']:
-                a = json.dumps(atom, ensure_ascii=False)
-                if price is None and 'price' in a.lower():
-                    for m in re.finditer(r'"text":\s*"([^"]*\d[^"]*(?:₽|BYN|р\.|руб)[^"]*)"', a):
-                        price = price_num(m.group(1))
-                        if price:
-                            break
-                for m in re.finditer(r'"text":\s*"([^"]{8,})"', a):
-                    texts.append(m.group(1))
-            out.append([max(texts, key=len) if texts else '', price, None])
+            title, price = oz_tile(node['mainState'])
+            out.append([title, price, node.get('sku')])
+            return
         for v in node.values():
             walk_ozon(v, out)
     elif isinstance(node, list):
@@ -235,21 +266,23 @@ def walk_ozon(node, out):
 
 
 OZ_HOST = {'ru': 'https://www.ozon.ru', 'by': 'https://ozon.by'}
-OZ_VIEW = {'width': 820, 'height': 760}
+OZ_VIEW = {'width': 412, 'height': 860}
+OZ_UA = (
+    'Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/{v}.0.0.0 Mobile Safari/537.36'
+)
 oz = {'browser': None, 'ctx': {}, 'page': {}}
 oz_lock = asyncio.Lock()
 
 
 def oz_cookie_file(country):
-    return os.path.join(DATA, f'oz_cookies_{country}.json')
+    return os.path.join(DATA, f'oz_mobile_cookies_{country}.json')
 
 
 async def oz_browser():
     if oz['browser'] and oz['browser'].is_connected():
         return oz['browser']
-    await get_browser()
-    start_xvfb()
-    oz['browser'] = await pw.firefox.launch(headless=False, env={**os.environ, 'DISPLAY': ':99'})
+    oz['browser'] = await get_browser()
     oz['ctx'].clear()
     oz['page'].clear()
     return oz['browser']
@@ -264,11 +297,14 @@ async def oz_context(country, proxy):
             await oz_close_ctx(country)
         b = await oz_browser()
         cf = oz_cookie_file(country)
+        major = (b.version or '130').split('.')[0]
         ctx = await b.new_context(
             proxy=split_proxy(proxy), locale='ru-RU',
             timezone_id='Europe/Minsk' if country == 'by' else 'Europe/Moscow',
             viewport=OZ_VIEW, storage_state=cf if os.path.exists(cf) else None,
+            user_agent=OZ_UA.format(v=major), is_mobile=True, has_touch=True, device_scale_factor=2.75,
         )
+        await ctx.route('**/*', block_heavy)
         oz['ctx'][country] = (proxy, ctx)
         return ctx
 
@@ -299,26 +335,40 @@ async def oz_state(page):
         text = await page.evaluate('document.body ? document.body.innerText.slice(0, 3000) : ""')
     except Exception:
         return 'loading'
-    if 'Antibot' in title or re.search(r'не бот|пазл|ползун', text, re.IGNORECASE):
+    if re.search(r'пазл|ползун', text, re.IGNORECASE):
         return 'captcha'
+    if 'Antibot' in title:
+        return 'loading'
     if re.search(r'нет соединения|доступ ограничен', title + text, re.IGNORECASE):
         return 'blocked'
-    if not text.strip():
+    if not text.strip() or re.search(r'проверяем|подождите', text[:300], re.IGNORECASE):
         return 'loading'
     return 'ok'
 
 
 async def search_oz(page, host, query):
-    path = '/search/?' + urllib.parse.urlencode({'text': query, 'sorting': 'price', 'from_global': 'true'})
+    path = '/search/?' + urllib.parse.urlencode({'text': query, 'from_global': 'true'})
     await page.goto(host + path, wait_until='domcontentloaded', timeout=20000)
     st = 'loading'
-    for _ in range(12):
+    for _ in range(18):
         st = await oz_state(page)
-        if st != 'loading':
+        if st == 'captcha' or st == 'ok' and ('abt_att' in page.url or '__rr' not in page.url):
             break
         await page.wait_for_timeout(700)
     if st in ('captcha', 'blocked'):
         raise Captcha()
+    states = await page.evaluate(
+        "() => [...document.querySelectorAll('[data-state]')]"
+        ".filter(e => /tileGrid|searchResults/.test(e.id)).map(e => e.getAttribute('data-state'))"
+    )
+    cards = []
+    for val in states or []:
+        try:
+            walk_ozon(json.loads(val), cards)
+        except ValueError:
+            continue
+    if cards:
+        return cards
     api = '/api/entrypoint-api.bx/page/json/v2?url=' + urllib.parse.quote(path)
     res = await page.evaluate(
         "async (u) => { const r = await fetch(u, {credentials: 'include', headers: {Accept: 'application/json'}});"
@@ -330,10 +380,12 @@ async def search_oz(page, host, query):
     except ValueError:
         raise Captcha()
     if res['status'] == 403 or 'challengeURL' in data or 'incidentId' in data:
+        text = await page.evaluate('document.body ? document.body.innerText.slice(0, 2000) : ""')
+        if re.search(r'ничего не нашлось|не нашлось|ничего не найдено', text, re.IGNORECASE):
+            return []
         raise Captcha()
-    cards = []
     for key, val in (data.get('widgetStates') or {}).items():
-        if 'searchResults' not in key:
+        if 'searchResults' not in key and 'tileGrid' not in key:
             continue
         try:
             walk_ozon(json.loads(val), cards)
@@ -468,6 +520,16 @@ async def h_oz_close(request):
 
 
 async def run_task(site, query, proxy):
+    try:
+        return await run_task_once(site, query, proxy)
+    except Exception as e:
+        if 'ERR_TUNNEL' not in str(e) and 'ERR_PROXY' not in str(e):
+            raise
+        await asyncio.sleep(1)
+        return await run_task_once(site, query, proxy)
+
+
+async def run_task_once(site, query, proxy):
     if site in OZ:
         return await run_oz(site, query, proxy)
     if site in WB:
@@ -578,9 +640,12 @@ async def debug_inner(request):
     if b.get('fresh') or own:
         br = own or await get_browser()
         ua = b.get('ua') or (None if engine == 'firefox' else user_agent(br))
+        extra = {}
+        if b.get('mobile'):
+            extra = {'is_mobile': True, 'has_touch': True, 'device_scale_factor': 2.75}
         ctx = await br.new_context(
-            proxy=split_proxy(b.get('proxy')), locale='ru-RU', timezone_id='Europe/Moscow',
-            viewport={'width': 1366, 'height': 800}, user_agent=ua,
+            proxy=split_proxy(b.get('proxy')), locale='ru-RU', timezone_id=b.get('tz') or 'Europe/Moscow',
+            viewport=b.get('viewport') or {'width': 1366, 'height': 800}, user_agent=ua, **extra,
         )
         if b.get('stealth'):
             await ctx.add_init_script(STEALTH)
@@ -682,6 +747,33 @@ async def h_extra(request):
     return ok({'running': running, 'log': tail, 'chrome': chrome_path()})
 
 
+async def h_oz_eval(request):
+    b = await request.json()
+    page = oz['page'].get(b.get('country'))
+    if b.get('wb'):
+        page = True
+    if not page or page is not True and page.is_closed():
+        ctx = oz['ctx'].get(b.get('country'))
+        if not ctx:
+            return ok({'error': 'нет контекста'})
+        page = await ctx[1].new_page()
+        oz['page'][b.get('country')] = page
+    if b.get('wb'):
+        ctx = await get_context(b['wb'], b.get('proxy'))
+        page = await ctx.new_page()
+    if b.get('url'):
+        try:
+            await page.goto(b['url'], wait_until='domcontentloaded', timeout=20000)
+        except Exception as e:
+            return ok({'error': str(e)[:300]})
+        await page.wait_for_timeout(int(b.get('wait') or 4000))
+    try:
+        res = await page.evaluate(b['js'])
+    except Exception as e:
+        res = {'error': str(e)[:500]}
+    return ok({'url': page.url, 'title': await page.title(), 'res': res})
+
+
 async def h_diag(request):
     import shutil
     import subprocess
@@ -705,11 +797,6 @@ async def save_all_wb():
 async def close_oz():
     for country in list(oz['ctx']):
         await oz_close_ctx(country)
-    if oz['browser']:
-        try:
-            await oz['browser'].close()
-        except Exception:
-            pass
     oz['browser'] = None
 
 
@@ -784,6 +871,7 @@ def main():
     app.router.add_post('/oz/shot', h_oz_shot)
     app.router.add_post('/oz/input', h_oz_input)
     app.router.add_post('/oz/close', h_oz_close)
+    app.router.add_post('/oz/eval', h_oz_eval)
     app.router.add_post('/clear_cookies', h_clear)
     app.router.add_post('/update', h_update)
     app.on_cleanup.append(on_cleanup)

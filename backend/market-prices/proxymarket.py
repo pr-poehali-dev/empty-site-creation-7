@@ -29,16 +29,24 @@ def packages(key):
     return _call('GET', '/dev-api/v2/packages', key, params={'page': 1, 'perPage': 50}).get('data') or []
 
 
-def active_package(key):
+def _ptype(p):
+    return ((p.get('product') or {}).get('product_type')) or 'resident'
+
+
+def active_package(key, kind='resident'):
+    best = None
     for p in packages(key):
-        if p.get('is_active', True):
-            return p
-    return None
+        if not p.get('is_active', True) or _ptype(p) != kind:
+            continue
+        left = (p.get('total') or 0) - (p.get('used') or 0)
+        if best is None or left > best[0]:
+            best = (left, p)
+    return best[1] if best else None
 
 
-def package_proxies(key, package_id):
+def package_proxies(key, package_id, kind='resident'):
     data = _call('POST', '/dev-api/list', key, json={
-        'type': 'all', 'proxy_type': 'resident', 'package_id': package_id,
+        'type': 'all', 'proxy_type': kind, 'package_id': package_id,
         'page': 1, 'page_size': 100, 'sort': 0,
     })
     lst = data.get('list') or {}
@@ -49,8 +57,8 @@ def countries(key):
     return _call('GET', '/dev-api/v2/package/countries', key).get('data') or []
 
 
-def create_proxy(key, package_id, country, reuse=True):
-    existing = package_proxies(key, package_id)
+def create_proxy(key, package_id, country, reuse=True, kind='resident'):
+    existing = package_proxies(key, package_id, kind)
     if reuse:
         for p in existing:
             if str(p.get('country', '')).lower() == country:
@@ -59,10 +67,10 @@ def create_proxy(key, package_id, country, reuse=True):
     _call('POST', '/dev-api/v2/package/create-proxy', key, json={
         'packageId': package_id, 'country': country, 'rotation': 0,
     })
-    for p in package_proxies(key, package_id):
+    for p in package_proxies(key, package_id, kind):
         if p.get('id') not in before and str(p.get('country', '')).lower() == country:
             return p
-    for p in package_proxies(key, package_id):
+    for p in package_proxies(key, package_id, kind):
         if str(p.get('country', '')).lower() == country:
             return p
     raise PMError('Прокси создан, но не найден в списке пакета')

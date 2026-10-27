@@ -132,17 +132,20 @@ def proxy_info(cur, live):
         'proxy_by': bool(row['proxy_by']),
         'proxy_ru_host': re.sub(r':[^:@/]*@', '@', row['proxy_ru'] or ''),
         'proxy_by_host': re.sub(r':[^:@/]*@', '@', row['proxy_by'] or ''),
+        'proxy_ru_mobile': bool(row.get('proxy_ru_mobile')),
+        'proxy_by_mobile': bool(row.get('proxy_by_mobile')),
     }
     if live and row['api_key']:
         try:
             info['balance'] = pm.balance(row['api_key'])
-            pkg = pm.active_package(row['api_key'])
-            if pkg:
-                info['package'] = {
-                    'id': pkg.get('id'), 'name': pkg.get('name'), 'total': pkg.get('total'),
-                    'used': pkg.get('used'), 'expires_at': pkg.get('expires_at'),
-                    'prepaid': pkg.get('prepaid'),
-                }
+            for field, kind in (('package', 'resident'), ('mobile_package', 'mobile')):
+                pkg = pm.active_package(row['api_key'], kind)
+                if pkg:
+                    info[field] = {
+                        'id': pkg.get('id'), 'name': pkg.get('name'), 'total': pkg.get('total'),
+                        'used': pkg.get('used'), 'expires_at': pkg.get('expires_at'),
+                        'prepaid': pkg.get('prepaid'),
+                    }
         except Exception as e:
             info['error'] = str(e)
     return info
@@ -188,16 +191,25 @@ def create_proxies(cur, body):
     missing = []
     try:
         pkg = pm.active_package(row['api_key'])
-        if not pkg:
+        mob = pm.active_package(row['api_key'], 'mobile')
+        if not pkg and not mob:
             return None, 'В Proxy.Market нет активного пакета трафика — купите резидентские прокси'
         allowed = [str(c).lower() for c in pm.countries(row['api_key'])]
-        sets = [f"package_id={int(pkg['id'])}"]
+        sets = []
+        if pkg:
+            sets.append(f"package_id={int(pkg['id'])}")
+        if mob:
+            sets.append(f"mobile_package_id={int(mob['id'])}")
         for c in which:
             if allowed and c not in allowed:
                 missing.append('Беларусь' if c == 'by' else 'Россия')
                 continue
-            p = pm.create_proxy(row['api_key'], int(pkg['id']), c, reuse=not body.get('recreate'))
-            sets.append(f"proxy_{c}={_lit(pm.proxy_url(p))}, proxy_{c}_id={int(p.get('id') or 0)}")
+            if pkg:
+                p = pm.create_proxy(row['api_key'], int(pkg['id']), c, reuse=not body.get('recreate'))
+                sets.append(f"proxy_{c}={_lit(pm.proxy_url(p))}, proxy_{c}_id={int(p.get('id') or 0)}")
+            if mob:
+                p = pm.create_proxy(row['api_key'], int(mob['id']), c, reuse=not body.get('recreate'), kind='mobile')
+                sets.append(f"proxy_{c}_mobile={_lit(pm.proxy_url(p))}")
     except pm.PMError as e:
         return None, str(e)
     cur.execute(
@@ -232,6 +244,25 @@ def save_site(cur, body):
 
 # ---------- поиск ----------
 
+def ensure_mobile(cur, row, country):
+    if not row.get('api_key'):
+        return None
+    try:
+        pkg = pm.active_package(row['api_key'], 'mobile')
+        if not pkg:
+            return None
+        p = pm.create_proxy(row['api_key'], int(pkg['id']), country, reuse=True, kind='mobile')
+        url = pm.proxy_url(p)
+    except pm.PMError as e:
+        print(f'mobile proxy {country}: {e}')
+        return None
+    cur.execute(
+        f"UPDATE market_proxy_settings SET mobile_package_id={int(pkg['id'])}, proxy_{country}_mobile={_lit(url)}, "
+        f"updated_at=NOW() WHERE provider='{PROVIDER}'"
+    )
+    return url
+
+
 def site_method(cur, site):
     r = site_rows(cur).get(site) or {}
     m = r.get('method') or ('proxy' if r.get('via_proxy', True) else 'direct')
@@ -246,6 +277,10 @@ def proxy_for(cur, site, need=False):
     row = proxy_row(cur)
     country = SITES[site]['country']
     url = row.get(f'proxy_{country}')
+    if site.startswith('oz_') and need:
+        mobile = row.get(f'proxy_{country}_mobile') or ensure_mobile(cur, row, country)
+        if mobile:
+            url = mobile
     if not url:
         name = 'Беларусь' if country == 'by' else 'Россия'
         return None, f'Не создан прокси «{name}» — откройте Настройки'
@@ -280,25 +315,6 @@ def run_search(cur, site, brand, model):
         return 'not_found', None, None, 'Точной модели не найдено'
     title, price = found
     return 'ok', price, title, ''
-
-
-def oz_action(cur, body, path):
-    country = body.get('country')
-    if country not in ('ru', 'by'):
-        return None, 'Неизвестная страна'
-    payload = {'country': country, 'crop': body.get('crop', True)}
-    if path == '/oz/open':
-        url, err = proxy_for(cur, f'oz_{country}', need=True)
-        if err:
-            return None, err
-        payload['proxy'] = url
-        r = site_rows(cur).get(f'oz_{country}') or {}
-        payload['query'] = f"{r.get('test_brand') or 'Blackton'} {r.get('test_model') or 'TP536'}"
-    if path == '/oz/input':
-        payload['path'] = body.get('path') or []
-        payload['phase'] = body.get('phase') or 'full'
-        payload['clip'] = body.get('clip')
-    return vps.oz_call(cur, path, payload, timeout=28)
 
 
 def test_site(cur, body):
@@ -459,10 +475,6 @@ def handler(event: dict, context) -> dict:
             'vps_restart': lambda: vps.command(cur, '/restart'),
             'vps_clear': lambda: vps.command(cur, '/clear_cookies'),
             'vps_update': lambda: vps.command(cur, '/update'),
-            'oz_open': lambda: oz_action(cur, body, '/oz/open'),
-            'oz_shot': lambda: oz_action(cur, body, '/oz/shot'),
-            'oz_input': lambda: oz_action(cur, body, '/oz/input'),
-            'oz_close': lambda: oz_action(cur, body, '/oz/close'),
         }
         if action in handlers:
             if not owner:
