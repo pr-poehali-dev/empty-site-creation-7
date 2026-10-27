@@ -1,0 +1,9 @@
+CREATE TABLE label_sizes (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  w INTEGER NOT NULL,
+  h INTEGER NOT NULL,
+  created_by_name VARCHAR(200),
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  active BOOLEAN NOT NULL DEFAULT true
+);

@@ -235,3 +235,18 @@ export const resolveBatchCode = async (code: string): Promise<number | null> => 
   const r = await findBatch(code.trim());
   return r.found && r.id ? r.id : null;
 };
+
+export interface SavedLabelSize {
+  id: number;
+  name: string;
+  w: number;
+  h: number;
+}
+
+export const loadLabelSizes = () => get<{ sizes: SavedLabelSize[] }>("action=label_sizes");
+
+export const addLabelSize = (name: string, w: number, h: number) =>
+  post<{ id: number }>({ action: "label_size_add", name, w, h });
+
+export const deleteLabelSize = (size_id: number) =>
+  post<{ ok: boolean }>({ action: "label_size_del", size_id });

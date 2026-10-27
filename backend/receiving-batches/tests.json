@@ -1,7 +1,49 @@
 {
   "tests": [
-    {"name": "Проверка живости", "method": "GET", "path": "/", "expectedStatus": 200, "expectedBody": {"status": "ok"}, "bodyMatcher": "partial"},
-    {"name": "Список без токена закрыт", "method": "GET", "path": "/?action=list", "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"},
-    {"name": "Пик без токена нельзя", "method": "POST", "path": "/", "body": {"action": "scan", "id": 1, "code": "123"}, "expectedStatus": 401, "expectedBody": {"error": "string"}, "bodyMatcher": "partial"}
+    {
+      "name": "Проверка живости",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "status": "ok"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Список без токена закрыт",
+      "method": "GET",
+      "path": "/?action=list",
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Пик без токена нельзя",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "scan",
+        "id": 1,
+        "code": "123"
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Размеры наклеек без токена закрыты",
+      "method": "GET",
+      "path": "/?action=label_sizes",
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
   ]
 }

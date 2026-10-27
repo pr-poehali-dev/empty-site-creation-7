@@ -96,8 +96,28 @@ def act_delete(cur, actor, batch):
     return {'ok': True, 'freed': freed}
 
 
+def act_sizes(cur):
+    cur.execute("SELECT id, name, w, h FROM label_sizes WHERE active ORDER BY id")
+    return {'sizes': [dict(r) for r in cur.fetchall()]}
+
+
+def act_size_add(cur, actor, body):
+    name = (body.get('name') or '').strip()[:60]
+    w = int(body.get('w') or 0)
+    h = int(body.get('h') or 0)
+    if not name:
+        return {'error': 'Назовите размер'}
+    if not (20 <= w <= 300 and 20 <= h <= 300):
+        return {'error': 'Размер от 20 до 300 мм'}
+    cur.execute(
+        f"INSERT INTO label_sizes (name, w, h, created_by_name) "
+        f"VALUES ('{esc(name)}', {w}, {h}, '{esc(actor['name'])}') RETURNING id"
+    )
+    return {'id': int(cur.fetchone()['id'])}
+
+
 def handler(event: dict, context) -> dict:
-    """Партии складов приёмки: список черновиков и партий, один черновик на сотрудника, добавление товара по наклейке поставщика/заказ-наряду (точно) или по заводскому коду (подставляется свободная единица), выбор склада, смешанная партия, перемещение на склад партии, бронь и подмена единиц, удаление из черновика, контрагент и комментарий, удаление черновика, завершение с номером ГГММДД/N/Склад, «Забрать» из собранной партии (в черновик или на склад), разборка партии, журнал, поиск партии по коду, QR или номеру."""
+    """Партии складов приёмки: список черновиков и партий, один черновик на сотрудника, добавление товара по наклейке поставщика/заказ-наряду (точно) или по заводскому коду (подставляется свободная единица), выбор склада, смешанная партия, перемещение на склад партии, бронь и подмена единиц, удаление из черновика, контрагент и комментарий, удаление черновика, завершение с номером ГГММДД/N/Склад, «Забрать» из собранной партии (в черновик или на склад), разборка партии, журнал, поиск партии по коду, QR или номеру, общий список своих размеров наклеек."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -139,6 +159,21 @@ def handler(event: dict, context) -> dict:
 
         if action == 'list':
             return _resp(200, act_list(cur))
+
+        if action == 'label_sizes':
+            return _resp(200, act_sizes(cur))
+        if action in ('label_size_add', 'label_size_del'):
+            if not can_print:
+                return _resp(403, {'error': 'Нет права печатать наклейки'})
+            if action == 'label_size_add':
+                res = act_size_add(cur, actor, body)
+                if 'error' in res:
+                    return _resp(400, res)
+            else:
+                cur.execute(f"UPDATE label_sizes SET active=false WHERE id={int(body.get('size_id') or 0)}")
+                res = {'ok': True}
+            c.commit()
+            return _resp(200, res)
 
         if action == 'find':
             return _resp(200, L.act_find(cur, params))
