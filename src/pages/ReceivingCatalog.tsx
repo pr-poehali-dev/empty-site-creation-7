@@ -17,6 +17,7 @@ import { useSimilarCodes } from "@/hooks/useSimilarCodes";
 import { permHeaders } from "@/hooks/useReceivingPerms";
 import CatalogItemCard from "@/components/receiving/CatalogItemCard";
 import ResetHistoryDialog from "@/components/receiving/ResetHistoryDialog";
+import FloatingNames from "@/components/receiving/FloatingNames";
 import { SiteCell, TotalCell } from "@/components/receiving/MarketPriceCells";
 import { useMarketPrices } from "@/hooks/useMarketPrices";
 import { SITE_COLUMNS, TOTAL_COLUMNS } from "@/lib/marketPrices";
@@ -62,6 +63,8 @@ const ReceivingCatalog = () => {
   const [notice, setNotice] = useState("");
   const seePrice = Boolean(meta?.visible.includes("price"));
   const timer = useRef<number>();
+  const tableWrap = useRef<HTMLDivElement>(null);
+  const nameHead = useRef<HTMLTableCellElement>(null);
   const market = useMarketPrices(items, Boolean(meta) && mode === "tech");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const siteCols = SITE_COLUMNS.filter((c) => market.sites.includes(c.key));
@@ -328,12 +331,23 @@ const ReceivingCatalog = () => {
         )}
 
         {!loading && mode === "tech" && items.length > 0 && (
-          <div className="rounded-xl border border-white/[0.08] bg-card overflow-auto">
+          <div ref={tableWrap} className="relative rounded-xl border border-white/[0.08] bg-card overflow-auto">
+            {cols.includes("tech_name") && (
+              <FloatingNames
+                wrapRef={tableWrap}
+                anchorRef={nameHead}
+                names={items.map((it) => ({ id: it.id, name: String(it.tech_name ?? "") }))}
+              />
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground border-b border-white/[0.08]">
                   {cols.map((f) => (
-                    <th key={f} className="py-2 px-3 font-normal whitespace-nowrap">
+                    <th
+                      key={f}
+                      ref={f === "tech_name" ? nameHead : undefined}
+                      className="py-2 px-3 font-normal whitespace-nowrap"
+                    >
                       {FIELD_TITLES[f]}
                     </th>
                   ))}
@@ -355,7 +369,7 @@ const ReceivingCatalog = () => {
               </thead>
               <tbody>
                 {items.map((it) => (
-                  <tr key={it.id} className="border-b border-white/[0.04]">
+                  <tr key={it.id} data-row-id={it.id} className="border-b border-white/[0.04]">
                     {cols.map((f) => (
                       <td key={f} className="py-2 px-3 align-top whitespace-nowrap">
                         {cellText(f, it[f])}
