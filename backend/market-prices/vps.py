@@ -62,10 +62,15 @@ def _key_ok(r, key):
 def install_command(code):
     payload = json.dumps({'action': 'vps_install', 'code': code})
     return (
-        f"curl -fsS -X POST {FUNC_URL} -H 'Content-Type: application/json' -d '{payload}' "
+        f"rm -f /root/pricebot-install.pid; curl -fsS -X POST {FUNC_URL} -H 'Content-Type: application/json' -d '{payload}' "
         f"| python3 -c \"import sys,json;d=json.load(sys.stdin);sys.stdout.write(d['content'])\" "
-        f"> /root/pricebot-install.sh && bash /root/pricebot-install.sh"
+        f"> /root/pricebot-install.sh && (setsid nohup bash /root/pricebot-install.sh "
+        f"> /root/pricebot-install.log 2>&1 < /dev/null &) && sleep 2 && "
+        f"tail -n +1 --pid=$(cat /root/pricebot-install.pid) -f /root/pricebot-install.log"
     )
+
+
+WATCH_COMMAND = 'tail -n +1 -f /root/pricebot-install.log'
 
 
 def new_code(cur):

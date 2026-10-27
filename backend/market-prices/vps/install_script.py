@@ -5,32 +5,41 @@ FUNC="__FUNC__"
 CODE="__CODE__"
 PORT=8443
 DIR=/opt/pricebot
+STEP="подготовка"
+
+trap 'echo; echo "ОШИБКА на шаге: $STEP. Пришлите Юре последние строки отсюда."' ERR
 
 if [ "$(id -u)" != "0" ]; then echo "Запустите команду от root"; exit 1; fi
+echo $$ > /root/pricebot-install.pid
 
-echo "== 1/6 Пакеты системы"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -q
-apt-get install -y -q python3 python3-venv python3-pip openssl ufw curl ca-certificates
+export NEEDRESTART_MODE=l
+export NEEDRESTART_SUSPEND=1
+mkdir -p /etc/needrestart/conf.d
+echo "\$nrconf{restart} = 'l';" > /etc/needrestart/conf.d/90-pricebot.conf
+APT="apt-get -y -q -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 
-echo "== 2/6 Пользователь и папка"
+STEP="1/6 Пакеты системы"; echo "== $STEP"
+$APT update
+$APT install python3 python3-venv python3-pip openssl ufw curl ca-certificates iproute2
+
+STEP="2/6 Пользователь и папка"; echo "== $STEP"
 id pricebot >/dev/null 2>&1 || useradd -r -m -d "$DIR" -s /usr/sbin/nologin pricebot
 mkdir -p "$DIR/data" "$DIR/browsers"
 
-echo "== 3/6 Программа"
-curl -fsS -X POST "$FUNC" -H 'Content-Type: application/json' \
+STEP="3/6 Программа"; echo "== $STEP"
+curl -4 -fsS -X POST "$FUNC" -H 'Content-Type: application/json' \
   -d "{\"action\":\"vps_file\",\"code\":\"$CODE\"}" \
   | python3 -c "import sys,json;d=json.load(sys.stdin);c=d.get('content');sys.exit(d.get('error') or 'нет файла') if not c else sys.stdout.write(c)" \
   > "$DIR/server.py"
-
 python3 -m venv "$DIR/venv"
 "$DIR/venv/bin/pip" install -q --upgrade pip
 "$DIR/venv/bin/pip" install -q "aiohttp==3.10.10" "playwright==1.48.0"
 
-echo "== 4/6 Браузер Chromium (самый долгий шаг)"
+STEP="4/6 Браузер Chromium (самый долгий шаг)"; echo "== $STEP"
 PLAYWRIGHT_BROWSERS_PATH="$DIR/browsers" "$DIR/venv/bin/playwright" install --with-deps chromium
 
-echo "== 5/6 Ключ, сертификат, автозапуск"
+STEP="5/6 Ключ, сертификат, автозапуск, порты"; echo "== $STEP"
 if [ ! -f "$DIR/env" ]; then
   KEY=$(openssl rand -hex 32)
   printf 'VPS_KEY=%s\nVPS_PORT=%s\nSITE_FUNC=%s\nPLAYWRIGHT_BROWSERS_PATH=%s/browsers\n' "$KEY" "$PORT" "$FUNC" "$DIR" > "$DIR/env"
@@ -66,19 +75,28 @@ systemctl daemon-reload
 systemctl enable pricebot >/dev/null
 systemctl restart pricebot
 
-ufw --force reset >/dev/null
-ufw default deny incoming >/dev/null
-ufw default allow outgoing >/dev/null
-ufw allow 22/tcp >/dev/null
-ufw allow $PORT/tcp >/dev/null
-ufw --force enable >/dev/null
+SSH_PORTS=$( { sshd -T 2>/dev/null | awk '/^port /{print $2}'; ss -tlnpH 2>/dev/null | grep -w sshd | awk '{print $4}' | sed 's/.*://'; } | sort -u || true)
+[ -z "$SSH_PORTS" ] && SSH_PORTS=22
+SKIP="$PORT|53|$(echo $SSH_PORTS | tr ' ' '|')"
+OTHER=$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -v -E '^(127\.|\[::1\]|::1)' \
+  | sed 's/.*://' | grep -v -E "^($SKIP)$" | sort -u || true)
+for p in $SSH_PORTS; do ufw allow "$p/tcp" >/dev/null; done
+ufw allow "$PORT/tcp" >/dev/null
+if [ -z "$OTHER" ]; then
+  ufw default deny incoming >/dev/null
+  ufw default allow outgoing >/dev/null
+  ufw --force enable >/dev/null
+  echo "Порты: открыты только вход на сервер ($(echo $SSH_PORTS)) и программа ($PORT)"
+else
+  echo "На сервере есть другие службы (порты: $(echo $OTHER)) — лишнее не закрываю, только открыл $PORT"
+fi
 
-echo "== 6/6 Регистрация на сайте"
-for i in $(seq 1 20); do
+STEP="6/6 Регистрация на сайте"; echo "== $STEP"
+for i in $(seq 1 30); do
   curl -fsk -o /dev/null -X POST -H "X-Key: $KEY" "https://127.0.0.1:$PORT/ping" && break
   sleep 2
 done
-RES=$(curl -sS -X POST "$FUNC" -H 'Content-Type: application/json' \
+RES=$(curl -4 -sS -X POST "$FUNC" -H 'Content-Type: application/json' \
   -d "{\"action\":\"vps_register\",\"code\":\"$CODE\",\"key\":\"$KEY\",\"port\":$PORT,\"fingerprint\":\"$FP\"}")
 echo "$RES" | python3 -c "import sys,json;d=json.load(sys.stdin);print('ГОТОВО: сервер на связи с сайтом' if d.get('ok') else 'ОШИБКА: '+str(d.get('error')))"
 '''
