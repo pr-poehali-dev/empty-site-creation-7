@@ -11,7 +11,7 @@ import urllib.request
 from aiohttp import web
 from playwright.async_api import async_playwright
 
-VERSION = '1.0.8'
+VERSION = '1.1.2'
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, 'data')
@@ -234,15 +234,90 @@ def walk_ozon(node, out):
             walk_ozon(v, out)
 
 
+OZ_HOST = {'ru': 'https://www.ozon.ru', 'by': 'https://ozon.by'}
+OZ_VIEW = {'width': 820, 'height': 760}
+oz = {'browser': None, 'ctx': {}, 'page': {}}
+oz_lock = asyncio.Lock()
+
+
+def oz_cookie_file(country):
+    return os.path.join(DATA, f'oz_cookies_{country}.json')
+
+
+async def oz_browser():
+    if oz['browser'] and oz['browser'].is_connected():
+        return oz['browser']
+    await get_browser()
+    start_xvfb()
+    oz['browser'] = await pw.firefox.launch(headless=False, env={**os.environ, 'DISPLAY': ':99'})
+    oz['ctx'].clear()
+    oz['page'].clear()
+    return oz['browser']
+
+
+async def oz_context(country, proxy):
+    async with oz_lock:
+        cur = oz['ctx'].get(country)
+        if cur and cur[0] == proxy and oz['browser'] and oz['browser'].is_connected():
+            return cur[1]
+        if cur:
+            await oz_close_ctx(country)
+        b = await oz_browser()
+        cf = oz_cookie_file(country)
+        ctx = await b.new_context(
+            proxy=split_proxy(proxy), locale='ru-RU',
+            timezone_id='Europe/Minsk' if country == 'by' else 'Europe/Moscow',
+            viewport=OZ_VIEW, storage_state=cf if os.path.exists(cf) else None,
+        )
+        oz['ctx'][country] = (proxy, ctx)
+        return ctx
+
+
+async def oz_save(country):
+    cur = oz['ctx'].get(country)
+    if cur:
+        try:
+            await cur[1].storage_state(path=oz_cookie_file(country))
+        except Exception as e:
+            print(f'oz save {country}: {e}')
+
+
+async def oz_close_ctx(country):
+    await oz_save(country)
+    oz['page'].pop(country, None)
+    cur = oz['ctx'].pop(country, None)
+    if cur:
+        try:
+            await cur[1].close()
+        except Exception:
+            pass
+
+
+async def oz_state(page):
+    try:
+        title = await page.title()
+        text = await page.evaluate('document.body ? document.body.innerText.slice(0, 3000) : ""')
+    except Exception:
+        return 'loading'
+    if 'Antibot' in title or re.search(r'не бот|пазл|ползун', text, re.IGNORECASE):
+        return 'captcha'
+    if re.search(r'нет соединения|доступ ограничен', title + text, re.IGNORECASE):
+        return 'blocked'
+    if not text.strip():
+        return 'loading'
+    return 'ok'
+
+
 async def search_oz(page, host, query):
     path = '/search/?' + urllib.parse.urlencode({'text': query, 'sorting': 'price', 'from_global': 'true'})
     await page.goto(host + path, wait_until='domcontentloaded', timeout=20000)
-    for _ in range(15):
-        head = (await page.title()) + (await page.content())[:4000]
-        if not OZ_CHALLENGE.search(head):
+    st = 'loading'
+    for _ in range(12):
+        st = await oz_state(page)
+        if st != 'loading':
             break
-        await page.wait_for_timeout(1000)
-    else:
+        await page.wait_for_timeout(700)
+    if st in ('captcha', 'blocked'):
         raise Captcha()
     api = '/api/entrypoint-api.bx/page/json/v2?url=' + urllib.parse.quote(path)
     res = await page.evaluate(
@@ -250,13 +325,11 @@ async def search_oz(page, host, query):
         " return {status: r.status, text: await r.text()}; }",
         api,
     )
-    if res['status'] == 403:
-        raise Captcha()
     try:
         data = json.loads(res['text'])
     except ValueError:
         raise Captcha()
-    if 'challengeURL' in data or 'incidentId' in data:
+    if res['status'] == 403 or 'challengeURL' in data or 'incidentId' in data:
         raise Captcha()
     cards = []
     for key, val in (data.get('widgetStates') or {}).items():
@@ -269,13 +342,137 @@ async def search_oz(page, host, query):
     return cards
 
 
+async def run_oz(site, query, proxy):
+    host, country = OZ[site]
+    ctx = await oz_context(country, proxy)
+    page = await ctx.new_page()
+    try:
+        cards = await search_oz(page, host, query)
+    finally:
+        await page.close()
+    await oz_save(country)
+    return cards
+
+
+PUZZLE_JS = """() => {
+  const fits = (r) => r.width >= 240 && r.height >= 200 && r.width < innerWidth * 0.98;
+  const leaf = [...document.querySelectorAll('body *')].find(
+    (e) => e.children.length === 0 && /Сопоставьте|пазл|ползун/i.test(e.textContent || ''));
+  let e = leaf;
+  while (e && e.parentElement) {
+    const r = e.getBoundingClientRect();
+    if (fits(r)) {
+      let p = e;
+      while (p.parentElement && fits(p.parentElement.getBoundingClientRect())) p = p.parentElement;
+      const q = p.getBoundingClientRect();
+      return {x: Math.max(0, q.x - 8), y: Math.max(0, q.y - 8), w: q.width + 16, h: q.height + 16};
+    }
+    e = e.parentElement;
+  }
+  return null;
+}"""
+
+
+async def oz_shot(country, crop=True, fixed=None):
+    import base64
+    page = oz['page'].get(country)
+    if not page or page.is_closed():
+        return {'open': False}
+    state = await oz_state(page)
+    box = fixed if isinstance(fixed, dict) and {'x', 'y', 'w', 'h'} <= set(fixed) else None
+    if not box and crop and state == 'captcha':
+        try:
+            box = await page.evaluate(PUZZLE_JS)
+        except Exception:
+            box = None
+    clip = box or {'x': 0, 'y': 0, 'w': OZ_VIEW['width'], 'h': OZ_VIEW['height']}
+    clip = {
+        'x': max(0, clip['x']), 'y': max(0, clip['y']),
+        'w': min(clip['w'], OZ_VIEW['width'] - max(0, clip['x'])),
+        'h': min(clip['h'], OZ_VIEW['height'] - max(0, clip['y'])),
+    }
+    img = await page.screenshot(
+        type='jpeg', quality=70,
+        clip={'x': clip['x'], 'y': clip['y'], 'width': clip['w'], 'height': clip['h']},
+    )
+    if state == 'ok':
+        await oz_save(country)
+    return {
+        'open': True, 'state': state, 'crop': clip, 'cropped': bool(box), 'view': OZ_VIEW,
+        'image': base64.b64encode(img).decode(), 'url': page.url[:200],
+    }
+
+
+async def h_oz_open(request):
+    b = await request.json()
+    country = b.get('country')
+    if country not in OZ_HOST:
+        return ok({'error': 'Неизвестная страна'}, 400)
+    ctx = await oz_context(country, b.get('proxy'))
+    page = oz['page'].get(country)
+    if not page or page.is_closed():
+        page = await ctx.new_page()
+        oz['page'][country] = page
+    q = urllib.parse.urlencode({'text': b.get('query') or 'Blackton TP536'})
+    for attempt in range(2):
+        try:
+            await page.goto(f'{OZ_HOST[country]}/search/?{q}', wait_until='domcontentloaded', timeout=9000)
+        except Exception as e:
+            print(f'oz open {country}: {e}')
+        await page.wait_for_timeout(2000)
+        if await oz_state(page) != 'blocked':
+            break
+        await page.wait_for_timeout(800)
+    return ok(await oz_shot(country, b.get('crop', True)))
+
+
+async def h_oz_shot(request):
+    b = await request.json()
+    return ok(await oz_shot(b.get('country'), b.get('crop', True)))
+
+
+async def h_oz_input(request):
+    b = await request.json()
+    country = b.get('country')
+    page = oz['page'].get(country)
+    if not page or page.is_closed():
+        return ok({'open': False})
+    phase = b.get('phase') or 'full'
+    path = [p for p in (b.get('path') or [])[:600] if isinstance(p, list) and len(p) >= 3]
+    m = page.mouse
+    if path and phase in ('down', 'full'):
+        await m.move(path[0][0], path[0][1])
+        await m.down()
+        path = path[1:]
+    for x, y, dt in path:
+        if dt > 0:
+            await asyncio.sleep(min(dt, 300) / 1000)
+        await m.move(x, y)
+    if phase in ('up', 'full'):
+        await asyncio.sleep(0.05)
+        await m.up()
+        await page.wait_for_timeout(int(b.get('wait') or 1800))
+    return ok(await oz_shot(country, b.get('crop', True), b.get('clip')))
+
+
+async def h_oz_close(request):
+    b = await request.json()
+    country = b.get('country')
+    page = oz['page'].pop(country, None)
+    state = 'closed'
+    if page and not page.is_closed():
+        state = await oz_state(page)
+        await oz_save(country)
+        await page.close()
+    return ok({'state': state})
+
+
 async def run_task(site, query, proxy):
+    if site in OZ:
+        return await run_oz(site, query, proxy)
     if site in WB:
         host, country = WB[site]
         fn = search_wb
-    elif site in OZ:
-        host, country = OZ[site]
-        fn = search_oz
     else:
         raise ValueError('Неизвестный сайт')
     ctx = await get_context(country, proxy)
@@ -305,6 +502,8 @@ async def h_ping(request):
         'done': stats['done'], 'failed': stats['failed'],
         'running': stats['running'], 'waiting': stats['waiting'],
         'browser': bool(browser and browser.is_connected()),
+        'oz_browser': bool(oz['browser'] and oz['browser'].is_connected()),
+        'oz_pass': {c: int(os.path.getmtime(oz_cookie_file(c))) for c in OZ_HOST if os.path.exists(oz_cookie_file(c))},
     })
 
 
@@ -498,8 +697,25 @@ async def h_diag(request):
     return ok(out)
 
 
+async def save_all_wb():
+    for country, (_, ctx) in list(contexts.items()):
+        await save_cookies(country, ctx)
+
+
+async def close_oz():
+    for country in list(oz['ctx']):
+        await oz_close_ctx(country)
+    if oz['browser']:
+        try:
+            await oz['browser'].close()
+        except Exception:
+            pass
+    oz['browser'] = None
+
+
 async def h_restart(request):
     global browser
+    await close_oz()
     async with ctx_lock:
         await close_contexts()
         if browser:
@@ -539,11 +755,15 @@ async def h_update(request):
     with open(target + '.new', 'w', encoding='utf-8') as f:
         f.write(code)
     os.replace(target + '.new', target)
+    for country in list(oz['ctx']):
+        await oz_save(country)
+    await save_all_wb()
     asyncio.get_running_loop().call_later(1, os._exit, 0)
     return ok({'ok': True, 'old': VERSION, 'version': data.get('version')})
 
 
 async def on_cleanup(app):
+    await close_oz()
     await close_contexts()
     if browser:
         await browser.close()
@@ -560,6 +780,10 @@ def main():
     app.router.add_post('/debug', h_debug)
     app.router.add_post('/diag', h_diag)
     app.router.add_post('/extra', h_extra)
+    app.router.add_post('/oz/open', h_oz_open)
+    app.router.add_post('/oz/shot', h_oz_shot)
+    app.router.add_post('/oz/input', h_oz_input)
+    app.router.add_post('/oz/close', h_oz_close)
     app.router.add_post('/clear_cookies', h_clear)
     app.router.add_post('/update', h_update)
     app.on_cleanup.append(on_cleanup)

@@ -46,7 +46,15 @@ const MarketSettingsDialog = ({ open, onClose }: Props) => {
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => {
+          if ((e.target as HTMLElement | null)?.closest?.("[data-oz-overlay]")) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (document.querySelector("[data-oz-overlay]")) e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Icon name="Settings" size={18} />

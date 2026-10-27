@@ -51,6 +51,7 @@ export const STATUS_TEXT: Record<string, string> = {
   queue_full: "очередь переполнена",
   timeout: "браузер не дождался",
   proxy_error: "прокси не отвечает",
+  oz_check: "нужна проверка Ozon",
 };
 
 export type SiteMethod = "direct" | "proxy" | "browser";
@@ -80,12 +81,32 @@ export interface VpsState {
     running?: number;
     waiting?: number;
     browser?: boolean;
+    oz_pass?: Partial<Record<"ru" | "by", number>>;
   };
   command?: string;
   expires_hours?: number;
 }
 
 export const vpsCall = (action: string) => post({ action }) as Promise<VpsState>;
+
+export interface OzClip {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface OzShot {
+  open: boolean;
+  state: "captcha" | "blocked" | "loading" | "ok";
+  crop: OzClip;
+  cropped: boolean;
+  image: string;
+  url: string;
+}
+
+export const ozCall = (action: string, extra: Record<string, unknown>) =>
+  post({ action, ...extra }) as Promise<OzShot>;
 
 const post = async (body: Record<string, unknown>) => {
   const r = await fetch(MARKET_PRICES_URL, {

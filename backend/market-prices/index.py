@@ -282,6 +282,25 @@ def run_search(cur, site, brand, model):
     return 'ok', price, title, ''
 
 
+def oz_action(cur, body, path):
+    country = body.get('country')
+    if country not in ('ru', 'by'):
+        return None, 'Неизвестная страна'
+    payload = {'country': country, 'crop': body.get('crop', True)}
+    if path == '/oz/open':
+        url, err = proxy_for(cur, f'oz_{country}', need=True)
+        if err:
+            return None, err
+        payload['proxy'] = url
+        r = site_rows(cur).get(f'oz_{country}') or {}
+        payload['query'] = f"{r.get('test_brand') or 'Blackton'} {r.get('test_model') or 'TP536'}"
+    if path == '/oz/input':
+        payload['path'] = body.get('path') or []
+        payload['phase'] = body.get('phase') or 'full'
+        payload['clip'] = body.get('clip')
+    return vps.oz_call(cur, path, payload, timeout=28)
+
+
 def test_site(cur, body):
     site = body.get('site')
     if site not in SITES:
@@ -440,6 +459,10 @@ def handler(event: dict, context) -> dict:
             'vps_restart': lambda: vps.command(cur, '/restart'),
             'vps_clear': lambda: vps.command(cur, '/clear_cookies'),
             'vps_update': lambda: vps.command(cur, '/update'),
+            'oz_open': lambda: oz_action(cur, body, '/oz/open'),
+            'oz_shot': lambda: oz_action(cur, body, '/oz/shot'),
+            'oz_input': lambda: oz_action(cur, body, '/oz/input'),
+            'oz_close': lambda: oz_action(cur, body, '/oz/close'),
         }
         if action in handlers:
             if not owner:

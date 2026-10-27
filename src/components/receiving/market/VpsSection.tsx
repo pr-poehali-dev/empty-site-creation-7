@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { vpsCall, type VpsState } from "@/lib/marketPrices";
+import OzonCheckDialog from "./OzonCheckDialog";
 
 const when = (v: string | null) => {
   if (!v) return "—";
@@ -44,6 +45,7 @@ const VpsSection = () => {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
+  const [ozCountry, setOzCountry] = useState<"ru" | "by" | null>(null);
 
   const run = async (action: string) => {
     setBusy(action);
@@ -167,6 +169,37 @@ const VpsSection = () => {
           )}
         </div>
       )}
+
+      {st?.registered && (
+        <div className="rounded-xl border border-white/[0.08] bg-background/40 p-3 space-y-2">
+          <div className="text-sm font-medium">Проверка Ozon</div>
+          <p className="text-xs text-muted-foreground">
+            Ozon просит один раз сдвинуть пазл. После этого пропуск запоминается и цены ищутся сами. Если в таблице
+            появится «нужна проверка Ozon» — пройдите пазл снова.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {(["ru", "by"] as const).map((c) => (
+              <Button key={c} variant="outline" className="h-auto flex-col py-2" onClick={() => setOzCountry(c)}>
+                <span className="flex items-center">
+                  <Icon name="Puzzle" size={16} className="mr-1" />
+                  Ozon {c === "ru" ? "РФ" : "РБ"}
+                </span>
+                <span className="text-[11px] font-normal text-muted-foreground">
+                  {st.info.oz_pass?.[c] ? `пропуск от ${when(new Date(st.info.oz_pass[c]! * 1000).toISOString())}` : "не пройдена"}
+                </span>
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <OzonCheckDialog
+        country={ozCountry}
+        onClose={() => {
+          setOzCountry(null);
+          run("vps_ping");
+        }}
+      />
 
       {st && (
         <div className="rounded-xl border border-white/[0.08] bg-background/40 p-3 space-y-2">

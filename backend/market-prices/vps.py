@@ -185,6 +185,16 @@ def command(cur, path):
     return {**ping(cur), 'result': res}, None
 
 
+def oz_call(cur, path, payload, timeout=25):
+    try:
+        res = _send(cur, path, payload, timeout=timeout)
+    except VPSError as e:
+        return None, str(e)
+    if res.get('error'):
+        return None, res['error']
+    return res, None
+
+
 def search(cur, site, query, proxy, timeout=28):
     """Поиск через браузер. Возвращает (status, cards, message)."""
     try:
@@ -192,6 +202,8 @@ def search(cur, site, query, proxy, timeout=28):
     except VPSError as e:
         return 'vps_offline', [], str(e)
     st = res.get('status')
+    if st == 'captcha' and site.startswith('oz_'):
+        return 'oz_check', [], 'Нужна проверка Ozon — пройдите пазл в Настройках → Браузерный сервер'
     if st == 'ok':
         return 'ok', [(c[0], c[1]) for c in res.get('cards') or []], ''
     messages = {
