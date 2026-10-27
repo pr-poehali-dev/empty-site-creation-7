@@ -23,6 +23,15 @@ def _resp(status, body):
     }
 
 
+def act_counts(cur):
+    cur.execute(
+        "SELECT COUNT(*) FILTER (WHERE status='done') AS done, "
+        "COUNT(*) FILTER (WHERE status='draft') AS drafts FROM receiving_batches"
+    )
+    r = cur.fetchone()
+    return {'done': int(r['done']), 'drafts': int(r['drafts'])}
+
+
 def act_list(cur):
     cur.execute(
         "SELECT b.id, b.number, b.status, b.warehouse, b.mixed, b.created_by_name, "
@@ -38,6 +47,7 @@ def act_list(cur):
     return {
         'drafts': [r for r in rows if r['status'] == 'draft'],
         'batches': [r for r in rows if r['status'] != 'draft'],
+        'counts': act_counts(cur),
     }
 
 
@@ -117,7 +127,7 @@ def act_size_add(cur, actor, body):
 
 
 def handler(event: dict, context) -> dict:
-    """Партии складов приёмки: список черновиков и партий, один черновик на сотрудника, добавление товара по наклейке поставщика/заказ-наряду (точно) или по заводскому коду (подставляется свободная единица), выбор склада, смешанная партия, перемещение на склад партии, бронь и подмена единиц, удаление из черновика, контрагент и комментарий, удаление черновика, завершение с номером ГГММДД/N/Склад, «Забрать» из собранной партии (в черновик или на склад), разборка партии, журнал, поиск партии по коду, QR или номеру, общий список своих размеров наклеек."""
+    """Партии складов приёмки: список черновиков и партий, один черновик на сотрудника, добавление товара по наклейке поставщика/заказ-наряду (точно) или по заводскому коду (подставляется свободная единица), выбор склада, смешанная партия, перемещение на склад партии, бронь и подмена единиц, удаление из черновика, контрагент и комментарий, удаление черновика, завершение с номером ГГММДД/N/Склад, «Забрать» из собранной партии (в черновик или на склад), разборка партии, журнал, поиск партии по коду, QR или номеру, общий список своих размеров наклеек, число собранных партий и черновиков."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -159,6 +169,9 @@ def handler(event: dict, context) -> dict:
 
         if action == 'list':
             return _resp(200, act_list(cur))
+
+        if action == 'counts':
+            return _resp(200, act_counts(cur))
 
         if action == 'label_sizes':
             return _resp(200, act_sizes(cur))

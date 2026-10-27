@@ -171,8 +171,15 @@ async function post<T>(body: Record<string, unknown>): Promise<T> {
 
 export const loadBatchMeta = () => get<BatchMeta>("action=meta");
 
+export interface BatchCounts {
+  done: number;
+  drafts: number;
+}
+
 export const loadBatches = () =>
-  get<{ drafts: BatchRow[]; batches: BatchRow[] }>("action=list");
+  get<{ drafts: BatchRow[]; batches: BatchRow[]; counts: BatchCounts }>("action=list");
+
+export const loadBatchCounts = () => get<BatchCounts>("action=counts");
 
 export const newBatch = () => post<{ id: number; created: boolean }>({ action: "new" });
 

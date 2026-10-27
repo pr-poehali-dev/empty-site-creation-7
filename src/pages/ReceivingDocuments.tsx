@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
 import { useReceivingPerms } from "@/hooks/useReceivingPerms";
+import { loadBatchCounts, type BatchCounts } from "@/lib/batches";
 
 interface DocTile {
   key: string;
@@ -60,6 +62,15 @@ const DOCS: DocTile[] = [
 const ReceivingDocuments = () => {
   const navigate = useNavigate();
   const { can, loading } = useReceivingPerms();
+  const [counts, setCounts] = useState<BatchCounts | null>(null);
+  const seeBatches = !loading && (can("docs_batches_see") || can("docs_batches_build"));
+
+  useEffect(() => {
+    if (!seeBatches) return;
+    loadBatchCounts()
+      .then(setCounts)
+      .catch(() => setCounts(null));
+  }, [seeBatches]);
 
   const back = () => navigate("/admin/receiving-stock");
 
@@ -122,7 +133,15 @@ const ReceivingDocuments = () => {
             <div className="flex-1 min-w-0">
               <div className="font-medium">{d.title}</div>
               <div className="text-xs text-muted-foreground">{d.hint}</div>
+              {d.key === "batches" && counts && counts.drafts > 0 && (
+                <div className="text-xs text-amber-300/90 mt-0.5">черновиков: {counts.drafts}</div>
+              )}
             </div>
+            {d.key === "batches" && counts && (
+              <span className="min-w-[28px] h-6 px-2 rounded-full bg-violet-500/20 text-violet-100 text-xs font-semibold flex items-center justify-center shrink-0">
+                {counts.done}
+              </span>
+            )}
             {!d.ready && (
               <span className="text-[11px] text-muted-foreground shrink-0">скоро</span>
             )}

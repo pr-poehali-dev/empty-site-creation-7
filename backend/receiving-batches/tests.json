@@ -44,6 +44,16 @@
         "error": "string"
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Счётчик партий без токена закрыт",
+      "method": "GET",
+      "path": "/?action=counts",
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }

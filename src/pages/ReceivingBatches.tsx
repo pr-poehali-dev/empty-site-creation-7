@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { toast } from "@/hooks/use-toast";
-import { STATUS_TITLE, loadBatchMeta, loadBatches, newBatch, type BatchRow } from "@/lib/batches";
+import { STATUS_TITLE, loadBatchMeta, loadBatches, newBatch, type BatchCounts, type BatchRow } from "@/lib/batches";
 
 const when = (s: string) =>
   new Date(s).toLocaleString("ru-RU", {
@@ -23,6 +23,7 @@ const ReceivingBatches = () => {
   );
   const [drafts, setDrafts] = useState<BatchRow[]>([]);
   const [batches, setBatches] = useState<BatchRow[]>([]);
+  const [counts, setCounts] = useState<BatchCounts | null>(null);
   const [busy, setBusy] = useState(true);
   const [creating, setCreating] = useState(false);
 
@@ -34,6 +35,7 @@ const ReceivingBatches = () => {
         return loadBatches().then((d) => {
           setDrafts(d.drafts);
           setBatches(d.batches);
+          setCounts(d.counts);
         });
       })
       .catch((e) => {
@@ -115,7 +117,14 @@ const ReceivingBatches = () => {
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={back}>
             <Icon name="ArrowLeft" size={18} />
           </Button>
-          <h1 className="flex-1 text-base font-semibold">Партии</h1>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold leading-tight">Партии</h1>
+            {counts && (
+              <p className="text-xs text-muted-foreground truncate">
+                Собрано: {counts.done} · Черновиков: {counts.drafts}
+              </p>
+            )}
+          </div>
           {meta.can_build && (
             <Button size="sm" className="h-9" disabled={creating} onClick={create}>
               <Icon name={creating ? "Loader2" : "Plus"} size={16} className={`mr-1 ${creating ? "animate-spin" : ""}`} />
@@ -127,12 +136,16 @@ const ReceivingBatches = () => {
 
       <main className="max-w-2xl mx-auto w-full px-4 py-4 space-y-4">
         <section className="space-y-2">
-          <h2 className="text-sm text-muted-foreground">Черновики</h2>
+          <h2 className="text-sm text-muted-foreground">
+            Черновики{counts && counts.drafts > 0 ? ` · ${counts.drafts}` : ""}
+          </h2>
           {drafts.length === 0 && <p className="text-sm text-muted-foreground">Черновиков нет</p>}
           {drafts.map((r) => row(r, true))}
         </section>
         <section className="space-y-2">
-          <h2 className="text-sm text-muted-foreground">Собранные партии</h2>
+          <h2 className="text-sm text-muted-foreground">
+            Собранные партии{counts ? ` · ${counts.done}` : ""}
+          </h2>
           {batches.length === 0 && (
             <p className="text-sm text-muted-foreground">Собранных партий пока нет</p>
           )}
