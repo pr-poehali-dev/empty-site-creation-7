@@ -11,7 +11,7 @@ import urllib.request
 from aiohttp import web
 from playwright.async_api import async_playwright
 
-VERSION = '1.0.7'
+VERSION = '1.0.8'
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, 'data')
@@ -358,21 +358,30 @@ async def debug_inner(request):
     b = await request.json()
     country = b.get('country') or 'ru'
     own = None
-    if b.get('headed'):
-        start_xvfb()
+    engine = b.get('engine') or 'chromium'
+    if b.get('headed') or engine != 'chromium':
         await get_browser()
-        own = await pw.chromium.launch(
-            headless=False, channel=b.get('channel') or None,
-            args=['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage',
-                  '--lang=ru-RU', '--window-size=1366,800'],
-            ignore_default_args=['--enable-automation'],
-            env={**os.environ, 'DISPLAY': ':99'},
-        )
+        env = dict(os.environ)
+        if b.get('headed'):
+            start_xvfb()
+            env['DISPLAY'] = ':99'
+        if engine == 'firefox':
+            own = await pw.firefox.launch(headless=not b.get('headed'), env=env)
+        else:
+            args = ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage',
+                    '--lang=ru-RU', '--window-size=1366,800']
+            if not b.get('headed'):
+                args.insert(0, '--headless=new')
+            own = await pw.chromium.launch(
+                headless=False, executable_path=chrome_path() if engine == 'chrome' else None,
+                args=args, ignore_default_args=['--enable-automation'], env=env,
+            )
     if b.get('fresh') or own:
         br = own or await get_browser()
+        ua = b.get('ua') or (None if engine == 'firefox' else user_agent(br))
         ctx = await br.new_context(
             proxy=split_proxy(b.get('proxy')), locale='ru-RU', timezone_id='Europe/Moscow',
-            viewport={'width': 1366, 'height': 800}, user_agent=b.get('ua') or user_agent(br),
+            viewport={'width': 1366, 'height': 800}, user_agent=ua,
         )
         if b.get('stealth'):
             await ctx.add_init_script(STEALTH)
@@ -427,6 +436,51 @@ async def debug_inner(request):
         'url': url, 'title': title, 'error': err, 'text': text[:1500], 'html': html[:int(b.get('html') or 0)],
         'responses': seen[-40:], 'cookies': cookies, 'fp': fp,
     })
+
+
+EXTRA = os.path.join(BASE, 'extra')
+extra_job = {'proc': None, 'log': os.path.join(DATA, 'extra.log')}
+
+EXTRA_SCRIPT = r'''
+set -x
+mkdir -p "$EXTRA"
+cd "$EXTRA"
+if [ "$WHAT" = "firefox" ]; then
+  "$PY" -m playwright install firefox
+fi
+if [ "$WHAT" = "chrome" ]; then
+  rm -rf chrome && mkdir chrome
+  curl -fsSL -o chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+  dpkg-deb -x chrome.deb chrome
+  rm -f chrome.deb
+  ldd chrome/opt/google/chrome/chrome | grep "not found" || echo "all libs ok"
+  chrome/opt/google/chrome/chrome --version
+fi
+echo EXTRA_DONE
+'''
+
+
+def chrome_path():
+    p = os.path.join(EXTRA, 'chrome', 'opt', 'google', 'chrome', 'chrome')
+    return p if os.path.exists(p) else None
+
+
+async def h_extra(request):
+    import subprocess
+    import sys
+    b = await request.json()
+    job = extra_job
+    running = job['proc'] is not None and job['proc'].poll() is None
+    if b.get('what') in ('firefox', 'chrome') and not running:
+        env = {**os.environ, 'EXTRA': EXTRA, 'WHAT': b['what'], 'PY': sys.executable}
+        log = open(job['log'], 'w')
+        job['proc'] = subprocess.Popen(['bash', '-c', EXTRA_SCRIPT], env=env, stdout=log, stderr=subprocess.STDOUT)
+        running = True
+    tail = ''
+    if os.path.exists(job['log']):
+        with open(job['log'], encoding='utf-8', errors='replace') as f:
+            tail = f.read()[-3000:]
+    return ok({'running': running, 'log': tail, 'chrome': chrome_path()})
 
 
 async def h_diag(request):
@@ -505,6 +559,7 @@ def main():
     app.router.add_post('/restart', h_restart)
     app.router.add_post('/debug', h_debug)
     app.router.add_post('/diag', h_diag)
+    app.router.add_post('/extra', h_extra)
     app.router.add_post('/clear_cookies', h_clear)
     app.router.add_post('/update', h_update)
     app.on_cleanup.append(on_cleanup)
