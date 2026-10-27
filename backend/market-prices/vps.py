@@ -81,7 +81,7 @@ def new_code(cur):
         f"UPDATE market_vps SET install_code_hash='{h}', install_code_expires=NOW() + INTERVAL '1 day', "
         f"updated_at=NOW() WHERE id=1"
     )
-    return {'command': install_command(code), 'expires_hours': 24}, None
+    return {**_public_state(row(cur)), 'command': install_command(code), 'expires_hours': 24}, None
 
 
 # ---------- запросы от самого VPS (без входа на сайт) ----------
@@ -180,6 +180,8 @@ def command(cur, path):
         return None, str(e)
     if res.get('error'):
         return None, res['error']
+    if path == '/update':
+        return {**_public_state(row(cur)), 'result': res}, None
     return {**ping(cur), 'result': res}, None
 
 

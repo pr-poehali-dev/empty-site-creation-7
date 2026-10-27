@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 
 import proxymarket as pm
 import vps
-from sources import SITES, Blocked, NoTraffic, clean_model, search
+from sources import SITES, Blocked, NoTraffic, clean_model, pick_min, search
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -28,6 +28,8 @@ COLS = (
 )
 
 PROVIDER = 'proxy_market'
+METHODS = ('direct', 'proxy', 'browser')
+BROWSER_SITES = ('wb_ru', 'wb_by', 'oz_ru', 'oz_by')
 
 
 def _resp(status, body):
@@ -154,6 +156,7 @@ def settings(cur, live=True):
         sites.append({
             'site': key, **meta,
             'enabled': r.get('enabled', True), 'via_proxy': r.get('via_proxy', True),
+            'method': r.get('method') or 'proxy',
             'test_brand': r.get('test_brand') or 'Blackton', 'test_model': r.get('test_model') or 'TP536',
             'last_status': r.get('last_status'), 'last_message': r.get('last_message'),
             'last_price': r.get('last_price'), 'last_title': r.get('last_title'), 'last_at': r.get('last_at'),
@@ -214,6 +217,8 @@ def save_site(cur, body):
     for f in ('enabled', 'via_proxy'):
         if f in body:
             sets.append(f"{f}={'TRUE' if body[f] else 'FALSE'}")
+    if body.get('method') in METHODS:
+        sets.append(f"method='{body['method']}', via_proxy={'FALSE' if body['method'] == 'direct' else 'TRUE'}")
     for f in ('test_brand', 'test_model'):
         if f in body and str(body[f]).strip():
             sets.append(f"{f}={_lit(str(body[f]).strip())}")
@@ -227,9 +232,16 @@ def save_site(cur, body):
 
 # ---------- поиск ----------
 
-def proxy_for(cur, site):
+def site_method(cur, site):
     r = site_rows(cur).get(site) or {}
-    if not r.get('via_proxy', True):
+    m = r.get('method') or ('proxy' if r.get('via_proxy', True) else 'direct')
+    if m == 'browser' and site not in BROWSER_SITES:
+        m = 'proxy'
+    return m
+
+
+def proxy_for(cur, site, need=False):
+    if not need and site_method(cur, site) == 'direct':
         return None, None
     row = proxy_row(cur)
     country = SITES[site]['country']
@@ -242,9 +254,19 @@ def proxy_for(cur, site):
 
 def run_search(cur, site, brand, model):
     """Возвращает (status, price, title, message)."""
-    proxy, err = proxy_for(cur, site)
+    method = site_method(cur, site)
+    proxy, err = proxy_for(cur, site, need=method == 'browser')
     if err:
         return 'no_proxy', None, None, err
+    if method == 'browser':
+        m = clean_model(brand, model)
+        status, cards, msg = vps.search(cur, site, f'{brand} {m}'.strip(), proxy)
+        if status != 'ok':
+            return status, None, None, msg
+        found = pick_min(cards, m)
+        if not found:
+            return 'not_found', None, None, 'Точной модели не найдено'
+        return 'ok', found[1], found[0], ''
     try:
         found = search(site, brand, model, proxy)
     except NoTraffic as e:

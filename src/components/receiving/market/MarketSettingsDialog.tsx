@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Icon from "@/components/ui/icon";
 import ProxySection from "./ProxySection";
 import SiteRow from "./SiteRow";
+import VpsSection from "./VpsSection";
 import { settingsCall, type MarketSettings, type SiteSetting } from "@/lib/marketPrices";
 
 interface Props {
@@ -75,7 +76,14 @@ const MarketSettingsDialog = ({ open, onClose }: Props) => {
               <TabsTrigger value="sites" className="flex-1">
                 Маркетплейсы
               </TabsTrigger>
+              <TabsTrigger value="vps" className="flex-1">
+                Браузерный сервер
+              </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="vps" className="mt-3">
+              <VpsSection />
+            </TabsContent>
 
             <TabsContent value="proxy" className="space-y-3 mt-3">
               <p className="text-xs text-muted-foreground">
@@ -94,8 +102,9 @@ const MarketSettingsDialog = ({ open, onClose }: Props) => {
 
             <TabsContent value="sites" className="space-y-2 mt-3">
               <p className="text-xs text-muted-foreground">
-                Выключенный сайт не ищется и его колонка скрыта. «Проверить» ищет тестовую модель и
-                показывает, пустил ли сайт.
+                Выключенный сайт не ищется и его колонка скрыта. Способ: напрямую, через прокси или через
+                браузер на своём сервере (для WB и Ozon). «Проверить» ищет тестовую модель и показывает, пустил ли
+                сайт. Через браузер поиск идёт 5–25 секунд.
               </p>
               {data.sites.map((s) => (
                 <SiteRow

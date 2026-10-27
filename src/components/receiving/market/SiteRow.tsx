@@ -4,7 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import Icon from "@/components/ui/icon";
 import { money } from "@/lib/receivingCatalog";
-import { STATUS_TEXT, type SiteSetting } from "@/lib/marketPrices";
+import {
+  BROWSER_SITES,
+  METHOD_TITLES,
+  STATUS_TEXT,
+  type SiteMethod,
+  type SiteSetting,
+} from "@/lib/marketPrices";
 
 interface Props {
   s: SiteSetting;
@@ -43,6 +49,9 @@ const Result = ({ s }: { s: SiteSetting }) => {
 const SiteRow = ({ s, testing, onSave, onTest }: Props) => {
   const [brand, setBrand] = useState(s.test_brand);
   const [model, setModel] = useState(s.test_model);
+  const methods: SiteMethod[] = BROWSER_SITES.includes(s.site)
+    ? ["direct", "proxy", "browser"]
+    : ["direct", "proxy"];
 
   useEffect(() => {
     setBrand(s.test_brand);
@@ -62,10 +71,20 @@ const SiteRow = ({ s, testing, onSave, onTest }: Props) => {
         <span className="font-medium flex-1 min-w-[120px]">
           {s.title} <span className="text-xs text-muted-foreground">{s.cur}</span>
         </span>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          через прокси
-          <Switch checked={s.via_proxy} onCheckedChange={(v) => onSave({ via_proxy: v })} />
-        </label>
+        <div className="flex rounded-lg border border-white/[0.08] p-0.5 text-xs">
+          {methods.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => m !== s.method && onSave({ method: m })}
+              className={`rounded-md px-2 py-1 transition-colors ${
+                s.method === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {METHOD_TITLES[m]}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="flex gap-2 flex-wrap">
         <Input

@@ -11,7 +11,7 @@ import urllib.request
 from aiohttp import web
 from playwright.async_api import async_playwright
 
-VERSION = '1.0.0'
+VERSION = '1.0.7'
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, 'data')
@@ -25,8 +25,13 @@ TASK_TIMEOUT = 25
 
 UA = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    '(KHTML, like Gecko) Chrome/{v}.0.0.0 Safari/537.36'
 )
+
+
+def user_agent(b):
+    major = (b.version or '130').split('.')[0]
+    return UA.format(v=major)
 BLOCK = {'image', 'media', 'font'}
 STEALTH = (
     "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
@@ -67,6 +72,21 @@ def cookie_file(country):
     return os.path.join(DATA, f'cookies_{country}.json')
 
 
+xvfb = None
+
+
+def start_xvfb():
+    global xvfb
+    import subprocess
+    if xvfb and xvfb.poll() is None:
+        return
+    xvfb = subprocess.Popen(
+        ['Xvfb', ':99', '-screen', '0', '1366x800x24', '-nolisten', 'tcp'],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    time.sleep(1)
+
+
 async def get_browser():
     global pw, browser
     if browser and browser.is_connected():
@@ -74,8 +94,12 @@ async def get_browser():
     if not pw:
         pw = await async_playwright().start()
     browser = await pw.chromium.launch(
-        headless=True,
-        args=['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage'],
+        headless=False,
+        args=[
+            '--headless=new', '--disable-blink-features=AutomationControlled', '--no-sandbox',
+            '--disable-dev-shm-usage', '--lang=ru-RU', '--window-size=1366,800',
+        ],
+        ignore_default_args=['--enable-automation'],
     )
     contexts.clear()
     return browser
@@ -121,7 +145,7 @@ async def get_context(country, proxy):
         cf = cookie_file(country)
         ctx = await b.new_context(
             proxy=split_proxy(proxy),
-            user_agent=UA,
+            user_agent=user_agent(b),
             locale='ru-RU',
             timezone_id='Europe/Minsk' if country == 'by' else 'Europe/Moscow',
             viewport={'width': 1366, 'height': 800},
@@ -323,6 +347,103 @@ async def h_search(request):
             stats['waiting'] -= 1
 
 
+async def h_debug(request):
+    try:
+        return await debug_inner(request)
+    except Exception as e:
+        return ok({'fatal': str(e)[:1000]})
+
+
+async def debug_inner(request):
+    b = await request.json()
+    country = b.get('country') or 'ru'
+    own = None
+    if b.get('headed'):
+        start_xvfb()
+        await get_browser()
+        own = await pw.chromium.launch(
+            headless=False, channel=b.get('channel') or None,
+            args=['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-dev-shm-usage',
+                  '--lang=ru-RU', '--window-size=1366,800'],
+            ignore_default_args=['--enable-automation'],
+            env={**os.environ, 'DISPLAY': ':99'},
+        )
+    if b.get('fresh') or own:
+        br = own or await get_browser()
+        ctx = await br.new_context(
+            proxy=split_proxy(b.get('proxy')), locale='ru-RU', timezone_id='Europe/Moscow',
+            viewport={'width': 1366, 'height': 800}, user_agent=b.get('ua') or user_agent(br),
+        )
+        if b.get('stealth'):
+            await ctx.add_init_script(STEALTH)
+        if b.get('block'):
+            await ctx.route('**/*', block_heavy)
+    else:
+        ctx = await get_context(country, b.get('proxy'))
+    page = await ctx.new_page()
+    seen = []
+
+    def on_response(resp):
+        t = resp.request.resource_type
+        if t in ('document', 'xhr', 'fetch'):
+            seen.append([resp.status, t, resp.url[:200]])
+
+    page.on('response', on_response)
+    err = ''
+    try:
+        await page.goto(b['url'], wait_until='domcontentloaded', timeout=20000)
+        await page.wait_for_timeout(int(b.get('wait') or 8000))
+    except Exception as e:
+        err = str(e)[:300]
+    try:
+        title = await page.title()
+        text = await page.evaluate('document.body ? document.body.innerText : ""')
+        html = await page.content()
+        url = page.url
+    except Exception as e:
+        title, text, html, url = '', '', '', str(e)[:200]
+    cookies = [c['name'] for c in await ctx.cookies()]
+    fp = {}
+    try:
+        fp = await page.evaluate(
+            "() => { const c = document.createElement('canvas'); const g = c.getContext('webgl');"
+            " const d = g && g.getExtension('WEBGL_debug_renderer_info');"
+            " return {ua: navigator.userAgent, wd: navigator.webdriver, plugins: navigator.plugins.length,"
+            " langs: navigator.languages, hw: navigator.hardwareConcurrency, mem: navigator.deviceMemory,"
+            " gl: d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : (g ? 'no-ext' : 'no-webgl'),"
+            " chrome: typeof window.chrome, screen: [screen.width, screen.height]}; }"
+        )
+    except Exception as e:
+        fp = {'err': str(e)[:200]}
+    await page.close()
+    if own:
+        await ctx.close()
+        await own.close()
+    elif b.get('fresh'):
+        await ctx.close()
+    else:
+        await save_cookies(country, ctx)
+    return ok({
+        'url': url, 'title': title, 'error': err, 'text': text[:1500], 'html': html[:int(b.get('html') or 0)],
+        'responses': seen[-40:], 'cookies': cookies, 'fp': fp,
+    })
+
+
+async def h_diag(request):
+    import shutil
+    import subprocess
+    out = {'xvfb': shutil.which('Xvfb'), 'display': os.environ.get('DISPLAY')}
+    bp = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '')
+    out['browsers'] = sorted(os.listdir(bp)) if bp and os.path.isdir(bp) else []
+    for name in ('google-chrome', 'chromium'):
+        out[name] = shutil.which(name)
+    try:
+        out['mem'] = subprocess.run(['free', '-m'], capture_output=True, text=True, timeout=5).stdout
+    except Exception as e:
+        out['mem'] = str(e)
+    return ok(out)
+
+
 async def h_restart(request):
     global browser
     async with ctx_lock:
@@ -382,6 +503,8 @@ def main():
     app.router.add_route('*', '/ping', h_ping)
     app.router.add_post('/search', h_search)
     app.router.add_post('/restart', h_restart)
+    app.router.add_post('/debug', h_debug)
+    app.router.add_post('/diag', h_diag)
     app.router.add_post('/clear_cookies', h_clear)
     app.router.add_post('/update', h_update)
     app.on_cleanup.append(on_cleanup)

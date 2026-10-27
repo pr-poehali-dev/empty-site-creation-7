@@ -46,7 +46,46 @@ export const STATUS_TEXT: Record<string, string> = {
   error: "ошибка сайта",
   no_proxy: "нет прокси",
   no_traffic: "нет трафика",
+  vps_offline: "сервер не на связи",
+  captcha: "капча даже браузеру",
+  queue_full: "очередь переполнена",
+  timeout: "браузер не дождался",
+  proxy_error: "прокси не отвечает",
 };
+
+export type SiteMethod = "direct" | "proxy" | "browser";
+
+export const METHOD_TITLES: Record<SiteMethod, string> = {
+  direct: "напрямую",
+  proxy: "через прокси",
+  browser: "через браузер",
+};
+
+export const BROWSER_SITES: SiteKey[] = ["wb_ru", "wb_by", "oz_ru", "oz_by"];
+
+export interface VpsState {
+  registered: boolean;
+  host: string | null;
+  port: number | null;
+  version: string | null;
+  latest_version: string;
+  registered_at: string | null;
+  last_ok_at: string | null;
+  last_status: string | null;
+  last_message: string | null;
+  info: {
+    uptime?: number;
+    done?: number;
+    failed?: number;
+    running?: number;
+    waiting?: number;
+    browser?: boolean;
+  };
+  command?: string;
+  expires_hours?: number;
+}
+
+export const vpsCall = (action: string) => post({ action }) as Promise<VpsState>;
 
 const post = async (body: Record<string, unknown>) => {
   const r = await fetch(MARKET_PRICES_URL, {
@@ -94,6 +133,7 @@ export interface SiteSetting {
   cur: string;
   enabled: boolean;
   via_proxy: boolean;
+  method: SiteMethod;
   test_brand: string;
   test_model: string;
   last_status: string | null;
