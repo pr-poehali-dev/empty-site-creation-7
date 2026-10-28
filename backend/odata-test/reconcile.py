@@ -163,27 +163,38 @@ def _table(d):
     return []
 
 
-def _group(rows, vat_included=True):
+def _lines(rows, vat_included=True):
+    """Строки документа по товарам — без объединения, с номерами строк."""
     out = {}
-    for r in rows:
-        k = _item(r)
-        g = out.setdefault(k, {'qty': 0.0, 'amount': 0.0, 'vat': 0.0, 'total': 0.0, 'prices': set(), 'lines': 0})
+    for i, r in enumerate(rows):
         qty = _num(r.get('Количество'))
         amount = _num(r.get('Сумма'))
         vat = _num(r.get('СуммаНДС'))
         total = _num(r.get('Всего')) if 'Всего' in r else (amount if vat_included else amount + vat)
-        g['qty'] += qty
-        g['amount'] += amount
-        g['vat'] += vat
-        g['total'] += total
-        g['prices'].add(round(_num(r.get('Цена')), 2))
-        g['lines'] += 1
-    for g in out.values():
-        prices = g.pop('prices')
-        g['price'] = prices.pop() if len(prices) == 1 else (round(g['amount'] / g['qty'], 2) if g['qty'] else 0)
-        for f in ('qty', 'amount', 'vat', 'total'):
-            g[f] = round(g[f], 3 if f == 'qty' else 2)
+        out.setdefault(_item(r), []).append({
+            'line': int(_num(r.get('LineNumber')) or i + 1),
+            'qty': round(qty, 3), 'price': round(_num(r.get('Цена')), 2),
+            'amount': round(amount, 2), 'vat': round(vat, 2), 'total': round(total, 2),
+        })
     return out
+
+
+def _pair(xs, ys):
+    """Сначала точные совпадения кол-во+цена, потом по сумме, остальное — по порядку строк."""
+    xs, ys = list(xs), list(ys)
+    pairs = []
+    for keyf in (lambda r: (r['qty'], r['price'], r['amount']), lambda r: (r['qty'], r['price']), lambda r: r['amount']):
+        for x in list(xs):
+            y = next((y for y in ys if keyf(y) == keyf(x)), None)
+            if y:
+                pairs.append((x, y))
+                xs.remove(x)
+                ys.remove(y)
+    n = min(len(xs), len(ys))
+    pairs += list(zip(xs[:n], ys[:n]))
+    pairs += [(x, None) for x in xs[n:]] + [(None, y) for y in ys[n:]]
+    pairs.sort(key=lambda p: (p[0] or p[1])['line'])
+    return pairs
 
 
 FIELDS = ('qty', 'price', 'amount', 'vat', 'total')
@@ -211,27 +222,29 @@ def compare(call, body):
         inv, ierr = _load_doc(call, mode['invoice'], ikey)
     if ierr:
         return None, f'Счёт: {ierr}'
-    a = _group(_table(inv), inv.get('СуммаВключаетНДС', True) is not False)
-    b = _group(_table(w), w.get('СуммаВключаетНДС', True) is not False)
+    a = _lines(_table(inv), inv.get('СуммаВключаетНДС', True) is not False)
+    b = _lines(_table(w), w.get('СуммаВключаетНДС', True) is not False)
     with ThreadPoolExecutor(max_workers=2) as ex:
         fn = ex.submit(_names, call, 'Catalog_Номенклатура', list(a) + list(b))
         fc = ex.submit(_names, call, 'Catalog_Контрагенты', [w.get('Контрагент_Key'), inv.get('Контрагент_Key')])
         names, cps = fn.result(), fc.result()
     rows = []
     for k in list(dict.fromkeys(list(a) + list(b))):
-        x, y = a.get(k), b.get(k)
-        if x and y:
-            diff = [f for f in FIELDS if abs(x[f] - y[f]) > EPS]
-            status = 'diff' if diff else 'ok'
-        else:
-            diff, status = [], 'only_invoice' if x else 'only_waybill'
-        rows.append({'key': k, 'name': names.get(k) or ('(без номенклатуры)' if k == EMPTY else k),
-                     'invoice': x, 'waybill': y, 'status': status, 'diff': diff})
+        name = names.get(k) or ('(без номенклатуры)' if k == EMPTY else k)
+        for x, y in _pair(a.get(k, []), b.get(k, [])):
+            if x and y:
+                diff = [f for f in FIELDS if abs(x[f] - y[f]) > EPS]
+                status = 'diff' if diff else 'ok'
+            else:
+                diff, status = [], 'only_invoice' if x else 'only_waybill'
+            rows.append({'key': f"{k}:{x['line'] if x else '-'}:{y['line'] if y else '-'}", 'name': name,
+                         'invoice': x, 'waybill': y, 'status': status, 'diff': diff})
     order = {'only_invoice': 0, 'only_waybill': 1, 'diff': 2, 'ok': 3}
-    rows.sort(key=lambda r: (order[r['status']], r['name'].lower()))
+    rows.sort(key=lambda r: (order[r['status']], (r['invoice'] or r['waybill'])['line']))
 
     def totals(g):
-        return {f: round(sum(v[f] for v in g.values()), 3 if f == 'qty' else 2) for f in ('qty', 'amount', 'vat', 'total')}
+        flat = [r for v in g.values() for r in v]
+        return {f: round(sum(r[f] for r in flat), 3 if f == 'qty' else 2) for f in ('qty', 'amount', 'vat', 'total')}
 
     ih, wh = _head_view(inv, cps), _head_view(w, cps)
     return {

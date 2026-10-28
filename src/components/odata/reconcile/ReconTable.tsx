@@ -40,7 +40,10 @@ const Row = ({ r, invoiceTitle, waybillTitle }: { r: ReconRow; invoiceTitle: str
             [waybillTitle, r.waybill],
           ] as const).map(([label, g]) => (
             <tr key={label}>
-              <td className="pr-2 text-muted-foreground whitespace-nowrap">{label}</td>
+              <td className="pr-2 text-muted-foreground whitespace-nowrap">
+                {label}
+                {g && <span className="text-[10px] ml-1 opacity-70">стр. {g.line}</span>}
+              </td>
               {FIELDS.map((f) => (
                 <td
                   key={f.key}

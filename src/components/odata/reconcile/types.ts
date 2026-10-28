@@ -13,12 +13,12 @@ export interface DocHead {
 }
 
 export interface Group {
+  line: number;
   qty: number;
   price: number;
   amount: number;
   vat: number;
   total: number;
-  lines: number;
 }
 
 export type RowStatus = "ok" | "diff" | "only_invoice" | "only_waybill";
@@ -84,7 +84,7 @@ export const docTitle = (d: DocHead) => `№ ${d.number} от ${docDate(d.date)}
 
 export const exportRecon = (r: ReconResult, mode: Mode) => {
   const t = MODE_TEXT[mode];
-  const head = ["Товар", "Статус"];
+  const head = ["Стр. счёта", "Стр. накл.", "Товар", "Статус"];
   FIELDS.forEach((f) => head.push(`${f.title} (счёт)`, `${f.title} (накл.)`, `${f.title} разница`));
   const rows: (string | number | null)[][] = [
     [`${t.invoice} ${docTitle(r.invoice)}`, r.invoice.counterparty],
@@ -93,7 +93,12 @@ export const exportRecon = (r: ReconResult, mode: Mode) => {
     head,
   ];
   r.rows.forEach((x) => {
-    const line: (string | number | null)[] = [x.name, STATUS_TEXT[x.status]];
+    const line: (string | number | null)[] = [
+      x.invoice?.line ?? null,
+      x.waybill?.line ?? null,
+      x.name,
+      STATUS_TEXT[x.status],
+    ];
     FIELDS.forEach((f) => {
       const a = x.invoice?.[f.key] ?? null;
       const b = x.waybill?.[f.key] ?? null;
@@ -102,10 +107,10 @@ export const exportRecon = (r: ReconResult, mode: Mode) => {
     rows.push(line);
   });
   rows.push([]);
-  rows.push(["Итого счёт", "", r.totals.invoice.qty, "", "", "", "", "", r.totals.invoice.amount, "", "", r.totals.invoice.vat, "", "", r.totals.invoice.total]);
-  rows.push(["Итого накладная", "", r.totals.waybill.qty, "", "", "", "", "", r.totals.waybill.amount, "", "", r.totals.waybill.vat, "", "", r.totals.waybill.total]);
+  rows.push(["", "", "Итого счёт", "", r.totals.invoice.qty, "", "", "", "", "", r.totals.invoice.amount, "", "", r.totals.invoice.vat, "", "", r.totals.invoice.total]);
+  rows.push(["", "", "Итого накладная", "", r.totals.waybill.qty, "", "", "", "", "", r.totals.waybill.amount, "", "", r.totals.waybill.vat, "", "", r.totals.waybill.total]);
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 50 }, { wch: 18 }, ...Array(15).fill({ wch: 12 })];
+  ws["!cols"] = [{ wch: 10 }, { wch: 10 }, { wch: 50 }, { wch: 18 }, ...Array(15).fill({ wch: 12 })];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Сверка");
   XLSX.writeFile(wb, `Сверка ${t.waybill} ${r.waybill.number}.xlsx`);
