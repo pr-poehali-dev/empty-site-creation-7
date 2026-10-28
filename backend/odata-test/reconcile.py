@@ -29,7 +29,20 @@ def _modes(call):
     return out
 TABLES = ['Запасы', 'Товары', 'ТоварыУслуги', 'ТоварыИУслуги', 'Услуги']
 HEAD = ['Ref_Key', 'Number', 'Date', 'Posted', 'DeletionMark', 'Контрагент_Key', 'СуммаДокумента',
-        'ДокументОснование', 'ДокументОснование_Type', 'СчетНаОплату_Key', 'Комментарий']
+        'ДокументОснование', 'ДокументОснование_Type', 'Комментарий']
+ITEM = ('Номенклатура_Key', 'Номенклатура')
+
+
+def _item(row):
+    for f in ITEM:
+        v = row.get(f)
+        if v:
+            return v
+    return EMPTY
+
+
+def _has_item(row):
+    return isinstance(row, dict) and any(f in row for f in ITEM)
 EPS = 0.005
 
 
@@ -61,9 +74,9 @@ def _names(call, entity, keys, field='Description'):
         r = call(f"{entity}?$format=json&$select=Ref_Key,{field}&$filter={flt}")
         return r['data'].get('value') or [] if r['ok'] else []
 
-    chunks = [keys[i:i + 15] for i in range(0, len(keys), 15)]
+    chunks = [keys[i:i + 40] for i in range(0, len(keys), 40)]
     if chunks:
-        with ThreadPoolExecutor(max_workers=6) as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             for rows in ex.map(load, chunks):
                 for x in rows:
                     out[x['Ref_Key']] = x.get(field) or ''
@@ -87,9 +100,9 @@ def _base_invoice(d, invoice_entity):
     k = d.get('ДокументОснование')
     if k and k != EMPTY and (not t or invoice_entity in t):
         return k
-    k = d.get('СчетНаОплату_Key')
-    if k and k != EMPTY:
-        return k
+    for f, v in d.items():
+        if f.startswith('СчетНаОплату') and f.endswith('_Key') and v and v != EMPTY:
+            return v
     for name in TABLES:
         for row in d.get(name) or []:
             for f, v in row.items():
@@ -107,7 +120,8 @@ def list_docs(call, body):
     avail, err = _fields(call, entity)
     if err:
         return None, err
-    sel = ','.join(f for f in HEAD if f in avail)
+    sel = ','.join([f for f in HEAD if f in avail] +
+                   [f for f in avail if f.startswith('СчетНаОплату') and f.endswith('_Key')])
     flt = ['DeletionMark eq false']
     q = str(body.get('q') or '').strip()
     if q:
@@ -141,23 +155,23 @@ def _load_doc(call, entity, key):
 def _table(d):
     for name in TABLES:
         rows = d.get(name)
-        if isinstance(rows, list) and rows and 'Номенклатура_Key' in rows[0]:
+        if isinstance(rows, list) and rows and _has_item(rows[0]):
             return rows
     for v in d.values():
-        if isinstance(v, list) and v and isinstance(v[0], dict) and 'Номенклатура_Key' in v[0]:
+        if isinstance(v, list) and v and _has_item(v[0]):
             return v
     return []
 
 
-def _group(rows):
+def _group(rows, vat_included=True):
     out = {}
     for r in rows:
-        k = r.get('Номенклатура_Key') or EMPTY
+        k = _item(r)
         g = out.setdefault(k, {'qty': 0.0, 'amount': 0.0, 'vat': 0.0, 'total': 0.0, 'prices': set(), 'lines': 0})
         qty = _num(r.get('Количество'))
         amount = _num(r.get('Сумма'))
         vat = _num(r.get('СуммаНДС'))
-        total = _num(r.get('Всего')) if 'Всего' in r else amount
+        total = _num(r.get('Всего')) if 'Всего' in r else (amount if vat_included else amount + vat)
         g['qty'] += qty
         g['amount'] += amount
         g['vat'] += vat
@@ -182,18 +196,27 @@ def compare(call, body):
     wkey = body.get('waybill_key')
     if not wkey:
         return None, 'Выберите накладную'
-    w, err = _load_doc(call, mode['waybill'], wkey)
+    ikey = body.get('invoice_key')
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fw = ex.submit(_load_doc, call, mode['waybill'], wkey)
+        fi = ex.submit(_load_doc, call, mode['invoice'], ikey) if ikey else None
+        w, err = fw.result()
+        inv, ierr = fi.result() if fi else (None, None)
     if err:
         return None, f'Накладная: {err}'
-    ikey = body.get('invoice_key') or _base_invoice(w, mode['invoice'])
     if not ikey:
-        return {'need_invoice': True, 'waybill': _head_view(w, _names(call, 'Catalog_Контрагенты', [w.get('Контрагент_Key')]))}, None
-    inv, err = _load_doc(call, mode['invoice'], ikey)
-    if err:
-        return None, f'Счёт: {err}'
-    a, b = _group(_table(inv)), _group(_table(w))
-    names = _names(call, 'Catalog_Номенклатура', list(a) + list(b))
-    cps = _names(call, 'Catalog_Контрагенты', [w.get('Контрагент_Key'), inv.get('Контрагент_Key')])
+        ikey = _base_invoice(w, mode['invoice'])
+        if not ikey:
+            return {'need_invoice': True, 'waybill': _head_view(w, _names(call, 'Catalog_Контрагенты', [w.get('Контрагент_Key')]))}, None
+        inv, ierr = _load_doc(call, mode['invoice'], ikey)
+    if ierr:
+        return None, f'Счёт: {ierr}'
+    a = _group(_table(inv), inv.get('СуммаВключаетНДС', True) is not False)
+    b = _group(_table(w), w.get('СуммаВключаетНДС', True) is not False)
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fn = ex.submit(_names, call, 'Catalog_Номенклатура', list(a) + list(b))
+        fc = ex.submit(_names, call, 'Catalog_Контрагенты', [w.get('Контрагент_Key'), inv.get('Контрагент_Key')])
+        names, cps = fn.result(), fc.result()
     rows = []
     for k in list(dict.fromkeys(list(a) + list(b))):
         x, y = a.get(k), b.get(k)
