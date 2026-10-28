@@ -72,17 +72,21 @@ def list_row(it):
 
 
 def existing_barcodes(cur, codes):
-    """Возвращает множество уже занятых штрихкодов."""
+    """Возвращает карту занятых штрихкодов: штрихкод -> карточка каталога."""
     codes = [c for c in codes if c]
     if not codes:
-        return set()
-    out = set()
+        return {}
+    out = {}
     chunk = 2000
     for i in range(0, len(codes), chunk):
         part = codes[i:i + chunk]
         vals = ','.join("'" + str(c).replace("'", "''") + "'" for c in part)
-        cur.execute("SELECT barcode FROM product_barcodes WHERE barcode IN (" + vals + ")")
-        out.update(r[0] for r in cur.fetchall())
+        cur.execute(
+            "SELECT b.barcode, p.id, p.article, p.name FROM product_barcodes b "
+            "LEFT JOIN products p ON p.id = b.product_id WHERE b.barcode IN (" + vals + ")"
+        )
+        for r in cur.fetchall():
+            out.setdefault(r[0], {'id': r[1], 'article': r[2] or '', 'name': r[3] or ''})
     return out
 
 
@@ -117,10 +121,24 @@ def build_report(cur, items):
     file_codes = {}
     for it in items:
         for bc in item_codes(it):
-            file_codes.setdefault(bc, 0)
-            file_codes[bc] += 1
-    dup_in_file = sum(1 for v in file_codes.values() if v > 1)
+            file_codes.setdefault(bc, []).append(it)
+    dup_in_file = sum(1 for v in file_codes.values() if len(v) > 1)
     taken = existing_barcodes(cur, list(file_codes.keys()))
+
+    bc_add, bc_taken, bc_all = [], [], []
+    for bc, owners in file_codes.items():
+        it = owners[0]
+        row = {'barcode': bc, 'article': it.get('article') or '', 'name': it.get('name') or '',
+               'dup_count': len(owners)}
+        p = taken.get(bc)
+        if p:
+            mine = row_map.get(it['row'])
+            row.update(match=p['name'], match_article=p['article'],
+                       foreign=not mine or mine.get('id') != p['id'])
+            bc_taken.append(row)
+        else:
+            bc_add.append(row)
+        bc_all.append(dict(row, taken=bool(p)))
 
     return {
         'total': len(items),
@@ -134,7 +152,9 @@ def build_report(cur, items):
         'barcodes': {
             'total': len(file_codes),
             'dup_in_file': dup_in_file,
-            'already_taken': len(taken),
-            'to_add': len(file_codes) - len(taken),
+            'already_taken': len(bc_taken),
+            'to_add': len(bc_add),
+            'foreign': sum(1 for r in bc_taken if r['foreign']),
         },
+        'barcode_items': {'all': bc_all, 'taken': bc_taken, 'add': bc_add},
     }, row_map

@@ -8,6 +8,7 @@ import PickList from "@/components/search-dicts/PickList";
 import NewFolderButton from "@/components/invoices/NewFolderButton";
 import UploadBanner, { UploadProgress } from "@/components/catalog/UploadBanner";
 import ReportItemsSheet, { ReportGroup, ReportItem } from "@/components/catalog/ReportItemsSheet";
+import BarcodeItemsSheet, { BarcodeGroup, BarcodeItem } from "@/components/catalog/BarcodeItemsSheet";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -109,7 +110,9 @@ interface Report {
     dup_in_file: number;
     already_taken: number;
     to_add: number;
+    foreign?: number;
   };
+  barcode_items?: Record<BarcodeGroup, BarcodeItem[]>;
 }
 
 const CatalogUpload = () => {
@@ -144,6 +147,7 @@ const CatalogUpload = () => {
 
   const [report, setReport] = useState<Report | null>(null);
   const [openGroup, setOpenGroup] = useState<ReportGroup | null>(null);
+  const [openBc, setOpenBc] = useState<BarcodeGroup | null>(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
@@ -738,12 +742,51 @@ const CatalogUpload = () => {
               </div>
             )}
 
-            <div className="text-xs text-muted-foreground">
-              Штрихкодов в файле {report.barcodes.total}, уже заняты{" "}
-              {report.barcodes.already_taken}, добавится {report.barcodes.to_add}
-              {report.barcodes.dup_in_file > 0 &&
-                `, повторов внутри файла ${report.barcodes.dup_in_file}`}
+            <div className="text-sm font-medium text-muted-foreground pt-1">Штрихкоды</div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {(
+                [
+                  ["all", report.barcodes.total, "в файле", ""],
+                  ["taken", report.barcodes.already_taken, "уже заняты", ""],
+                  ["add", report.barcodes.to_add, "добавится", "text-primary"],
+                ] as [BarcodeGroup, number, string, string][]
+              ).map(([g, n, label, cls]) => {
+                const can = n > 0 && !!report.barcode_items?.[g]?.length;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    disabled={!can}
+                    onClick={() => setOpenBc(g)}
+                    className={`rounded-xl bg-secondary p-3 transition-colors ${
+                      can ? "hover:bg-secondary/70 active:scale-[0.98] cursor-pointer" : "cursor-default"
+                    }`}
+                  >
+                    <div className={`text-lg font-semibold ${cls}`}>{n}</div>
+                    <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                      {label}
+                      {can && <Icon name="ChevronRight" size={12} />}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+            {((report.barcodes.foreign ?? 0) > 0 || report.barcodes.dup_in_file > 0) && (
+              <div className="text-xs text-muted-foreground">
+                {(report.barcodes.foreign ?? 0) > 0 && (
+                  <span className="text-destructive">
+                    Заняты другим товаром: {report.barcodes.foreign}.{" "}
+                  </span>
+                )}
+                {report.barcodes.dup_in_file > 0 &&
+                  `Повторов внутри файла: ${report.barcodes.dup_in_file}`}
+              </div>
+            )}
+            <BarcodeItemsSheet
+              group={openBc}
+              items={openBc ? report.barcode_items?.[openBc] || [] : []}
+              onClose={() => setOpenBc(null)}
+            />
 
             {report.fill.length > 0 && (
               <div className="space-y-2 pt-2 border-t border-white/[0.06]">
