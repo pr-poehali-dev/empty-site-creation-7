@@ -8,7 +8,6 @@ export interface UploadProgress {
   total: number;
   created: number;
   updated: number;
-  barcodes: number;
   error: string;
 }
 
@@ -21,7 +20,7 @@ interface Props {
 
 const UploadBanner = ({ p, canRetry, onRetry, onClose }: Props) => {
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
-  const counts = `Создано ${p.created}, обновлено ${p.updated}, штрихкодов ${p.barcodes}`;
+  const counts = `Создано ${p.created}, обновлено ${p.updated}`;
 
   const tone =
     p.status === "error"
@@ -43,8 +42,8 @@ const UploadBanner = ({ p, canRetry, onRetry, onClose }: Props) => {
             />
             <div className="flex-1 min-w-0 text-sm">
               <div className="font-medium">
-                {p.status === "running" && `Загружаю в каталог: ${p.done} из ${p.total}`}
-                {p.status === "done" && "Готово, каталог загружен"}
+                {p.status === "running" && `Загружаю товары: ${p.done} из ${p.total}`}
+                {p.status === "done" && "Товары загружены, дальше — штрихкоды"}
                 {p.status === "error" && `Загрузка остановилась на ${p.done} из ${p.total}`}
               </div>
               <div className="text-xs text-muted-foreground">{counts}</div>

@@ -8,7 +8,8 @@ import PickList from "@/components/search-dicts/PickList";
 import NewFolderButton from "@/components/invoices/NewFolderButton";
 import UploadBanner, { UploadProgress } from "@/components/catalog/UploadBanner";
 import ReportItemsSheet, { ReportGroup, ReportItem } from "@/components/catalog/ReportItemsSheet";
-import BarcodeItemsSheet, { BarcodeGroup, BarcodeItem } from "@/components/catalog/BarcodeItemsSheet";
+import BarcodeStep from "@/components/catalog/BarcodeStep";
+import UploadSteps, { UploadStep } from "@/components/catalog/UploadSteps";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -105,14 +106,15 @@ interface Report {
   excluded_count: number;
   excluded_existing?: number;
   fill: FillStat[];
-  barcodes: {
-    total: number;
-    dup_in_file: number;
-    already_taken: number;
-    to_add: number;
-    foreign?: number;
-  };
-  barcode_items?: Record<BarcodeGroup, BarcodeItem[]>;
+}
+
+interface PendingDraft {
+  id: number;
+  file_name: string;
+  rows_count: number;
+  stage: string;
+  created_at: string;
+  supplier_name: string | null;
 }
 
 const CatalogUpload = () => {
@@ -143,24 +145,37 @@ const CatalogUpload = () => {
   const [folders, setFolders] = useState<{ name: string; products: number }[]>([]);
   const [fillMode, setFillMode] = useState("empty_only");
   const [fillFields, setFillFields] = useState<Set<string>>(new Set());
-  const [addBarcodes, setAddBarcodes] = useState(true);
+  const [step, setStep] = useState<UploadStep>(1);
+  const [bcDraft, setBcDraft] = useState<number | null>(null);
+  const [productsDone, setProductsDone] = useState<{ draftId: number; created: number; updated: number } | null>(null);
+  const [pending, setPending] = useState<PendingDraft[]>([]);
+  const [bcBusy, setBcBusy] = useState(false);
 
   const [report, setReport] = useState<Report | null>(null);
   const [openGroup, setOpenGroup] = useState<ReportGroup | null>(null);
-  const [openBc, setOpenBc] = useState<BarcodeGroup | null>(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
 
   useEffect(() => {
-    if (!saving) return;
+    if (!saving && !bcBusy) return;
     const h = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
-  }, [saving]);
+  }, [saving, bcBusy]);
+
+  const loadPending = useCallback(async () => {
+    try {
+      const r = await fetch(`${CATALOG_URL}?action=drafts`, { headers: authHeaders });
+      const d = await r.json();
+      if (r.ok) setPending((d.drafts || []).filter((x: PendingDraft) => x.stage === "products_done"));
+    } catch {
+      setPending([]);
+    }
+  }, []);
 
   const loadSuppliers = useCallback(async () => {
     try {
@@ -178,6 +193,7 @@ const CatalogUpload = () => {
       return;
     }
     loadSuppliers();
+    loadPending();
     fetch(`${CATALOG_URL}?action=folders`, { headers: authHeaders })
       .then((r) => r.json())
       .then((d) => setFolders(d.folders || []))
@@ -325,7 +341,7 @@ const CatalogUpload = () => {
     let st: UploadProgress = prev
       ? { ...prev, status: "running", error: "" }
       : { draftId: result.draft_id, status: "running", done: 0, total: report?.total || 0,
-          created: 0, updated: 0, barcodes: 0, error: "" };
+          created: 0, updated: 0, error: "" };
     setProgress(st);
     try {
       while (true) {
@@ -344,7 +360,6 @@ const CatalogUpload = () => {
             product_group: productGroup || null,
             fill_mode: fillMode,
             fill_fields: Array.from(fillFields),
-            add_barcodes: addBarcodes,
             header_signature: result.header_signature,
           }),
         });
@@ -357,14 +372,11 @@ const CatalogUpload = () => {
           total: res.total,
           created: st.created + res.created,
           updated: st.updated + res.updated,
-          barcodes: st.barcodes + res.barcodes_added,
         };
         if (res.finished) {
           st = { ...st, status: "done" };
           setProgress(st);
-          setResult(null);
-          setReport(null);
-          setFileData(null);
+          setProductsDone({ draftId: result.draft_id, created: st.created, updated: st.updated });
           break;
         }
         setProgress(st);
@@ -374,6 +386,33 @@ const CatalogUpload = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const resetAll = () => {
+    setResult(null);
+    setReport(null);
+    setFileData(null);
+    setProductsDone(null);
+    setBcDraft(null);
+    setProgress(null);
+    setStep(1);
+    loadPending();
+  };
+
+  const goBarcodes = (draftId: number) => {
+    setBcDraft(draftId);
+    setProgress(null);
+    setStep(3);
+    window.scrollTo({ top: 0 });
+  };
+
+  const dropPending = async (id: number) => {
+    await fetch(CATALOG_URL, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ action: "drop_draft", draft_id: id }),
+    }).catch(() => null);
+    loadPending();
   };
 
   const alpha = result?.alphabet;
@@ -405,6 +444,52 @@ const CatalogUpload = () => {
           </Button>
           <h1 className="text-xl font-semibold">Загрузка каталога поставщика</h1>
         </div>
+
+        <UploadSteps step={step} />
+
+        {step === 3 && bcDraft && (
+          <BarcodeStep
+            url={CATALOG_URL}
+            headers={authHeaders}
+            draftId={bcDraft}
+            onBusy={setBcBusy}
+            onFinish={resetAll}
+          />
+        )}
+
+        {step === 1 && pending.length > 0 && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
+            <div className="text-sm font-medium">Штрихкоды не записаны</div>
+            <div className="text-xs text-muted-foreground">
+              Товары из этих файлов загружены, осталось сверить и записать штрихкоды
+            </div>
+            {pending.map((pd) => (
+              <div key={pd.id} className="flex items-center gap-2 rounded-xl bg-secondary p-2">
+                <div className="flex-1 min-w-0 text-sm">
+                  <div className="truncate">{pd.file_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {pd.supplier_name ? `${pd.supplier_name} · ` : ""}
+                    {pd.rows_count} строк
+                  </div>
+                </div>
+                <Button size="sm" className="rounded-xl" onClick={() => goBarcodes(pd.id)}>
+                  Штрихкоды
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-xl h-8 w-8"
+                  onClick={() => dropPending(pd.id)}
+                >
+                  <Icon name="X" size={16} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {step === 1 && (
+          <>
 
         <div className="rounded-2xl border border-white/[0.08] bg-card p-4 space-y-3">
           <div className="text-sm font-medium text-muted-foreground">Поставщик</div>
@@ -533,6 +618,30 @@ const CatalogUpload = () => {
                   </select>
                 </div>
               ))}
+            </div>
+
+            <Button onClick={() => setStep(2)} className="rounded-xl w-full">
+              Дальше: товары
+              <Icon name="ArrowRight" size={18} className="ml-2" />
+            </Button>
+          </>
+        )}
+          </>
+        )}
+
+        {step === 2 && result && (
+          <>
+            <div className="rounded-2xl border border-white/[0.08] bg-card p-4 flex items-center gap-2">
+              <div className="flex-1 min-w-0 text-sm">
+                <div className="truncate">{supplier?.name ? `${supplier.name} · ` : ""}{fileData?.name}</div>
+                <div className="text-xs text-muted-foreground">товаров в файле {result.stats.total}</div>
+              </div>
+              {!productsDone && (
+                <Button variant="ghost" size="sm" className="rounded-xl" disabled={saving} onClick={() => setStep(1)}>
+                  <Icon name="ArrowLeft" size={16} className="mr-1" />
+                  Файл
+                </Button>
+              )}
             </div>
 
             {alpha && (
@@ -669,20 +778,11 @@ const CatalogUpload = () => {
                 </div>
                 <p className="text-[11px] text-muted-foreground">Только для новых товаров</p>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={addBarcodes}
-                  onChange={(e) => setAddBarcodes(e.target.checked)}
-                  className="w-4 h-4 rounded"
-                />
-                <span className="text-sm">Добавлять штрихкоды</span>
-              </label>
             </div>
 
             <Button
               onClick={runCheck}
-              disabled={checking}
+              disabled={checking || !!productsDone}
               className="rounded-xl w-full"
               variant="secondary"
             >
@@ -691,7 +791,7 @@ const CatalogUpload = () => {
           </>
         )}
 
-        {report && (
+        {step === 2 && report && (
           <div className="rounded-2xl border border-white/[0.08] bg-card p-4 space-y-3">
             <div className="text-sm font-medium text-muted-foreground">Итоги сверки</div>
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -741,52 +841,6 @@ const CatalogUpload = () => {
                 Из отсеянных уже есть в каталоге: {report.excluded_existing}
               </div>
             )}
-
-            <div className="text-sm font-medium text-muted-foreground pt-1">Штрихкоды</div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              {(
-                [
-                  ["all", report.barcodes.total, "в файле", ""],
-                  ["taken", report.barcodes.already_taken, "уже заняты", ""],
-                  ["add", report.barcodes.to_add, "добавится", "text-primary"],
-                ] as [BarcodeGroup, number, string, string][]
-              ).map(([g, n, label, cls]) => {
-                const can = n > 0 && !!report.barcode_items?.[g]?.length;
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    disabled={!can}
-                    onClick={() => setOpenBc(g)}
-                    className={`rounded-xl bg-secondary p-3 transition-colors ${
-                      can ? "hover:bg-secondary/70 active:scale-[0.98] cursor-pointer" : "cursor-default"
-                    }`}
-                  >
-                    <div className={`text-lg font-semibold ${cls}`}>{n}</div>
-                    <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                      {label}
-                      {can && <Icon name="ChevronRight" size={12} />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {((report.barcodes.foreign ?? 0) > 0 || report.barcodes.dup_in_file > 0) && (
-              <div className="text-xs text-muted-foreground">
-                {(report.barcodes.foreign ?? 0) > 0 && (
-                  <span className="text-destructive">
-                    Заняты другим товаром: {report.barcodes.foreign}.{" "}
-                  </span>
-                )}
-                {report.barcodes.dup_in_file > 0 &&
-                  `Повторов внутри файла: ${report.barcodes.dup_in_file}`}
-              </div>
-            )}
-            <BarcodeItemsSheet
-              group={openBc}
-              items={openBc ? report.barcode_items?.[openBc] || [] : []}
-              onClose={() => setOpenBc(null)}
-            />
 
             {report.fill.length > 0 && (
               <div className="space-y-2 pt-2 border-t border-white/[0.06]">
@@ -839,13 +893,29 @@ const CatalogUpload = () => {
               </div>
             )}
 
-            <Button onClick={runCommit} disabled={saving} className="rounded-xl w-full">
-              {saving
-                ? `Загружаю… ${progress?.done ?? 0} из ${progress?.total ?? report.total}`
-                : progress?.status === "error"
-                  ? "Продолжить загрузку"
-                  : "Загрузить в каталог"}
-            </Button>
+            {productsDone ? (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
+                <div className="text-sm flex items-center gap-2">
+                  <Icon name="CircleCheck" size={16} className="text-emerald-400" />
+                  Товары загружены: создано {productsDone.created}, обновлено {productsDone.updated}
+                </div>
+                <Button className="rounded-xl w-full" onClick={() => goBarcodes(productsDone.draftId)}>
+                  Дальше: штрихкоды
+                  <Icon name="ArrowRight" size={18} className="ml-2" />
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={runCommit} disabled={saving} className="rounded-xl w-full">
+                {saving
+                  ? `Загружаю… ${progress?.done ?? 0} из ${progress?.total ?? report.total}`
+                  : progress?.status === "error"
+                    ? "Продолжить загрузку"
+                    : "Загрузить товары"}
+              </Button>
+            )}
+            <div className="text-xs text-muted-foreground text-center">
+              Штрихкоды записываются на следующем шаге
+            </div>
           </div>
         )}
       </div>

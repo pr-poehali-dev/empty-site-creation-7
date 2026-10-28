@@ -8,18 +8,22 @@ export interface BarcodeItem {
   article: string;
   name: string;
   dup_count: number;
+  dup_articles?: string[];
   taken?: boolean;
+  no_product?: boolean;
   match?: string;
   match_article?: string;
   foreign?: boolean;
 }
 
-export type BarcodeGroup = "all" | "taken" | "add";
+export type BarcodeGroup = "all" | "own" | "add" | "foreign" | "dups";
 
-const TITLES: Record<BarcodeGroup, string> = {
+export const BARCODE_TITLES: Record<BarcodeGroup, string> = {
   all: "Штрихкоды в файле",
-  taken: "Штрихкоды уже заняты",
-  add: "Штрихкоды добавятся",
+  own: "Уже у этого товара",
+  add: "Добавятся",
+  foreign: "Заняты другим товаром",
+  dups: "Повторы в файле",
 };
 
 const LIMIT = 300;
@@ -32,23 +36,19 @@ interface Props {
 
 const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
   const [q, setQ] = useState("");
-  const [onlyForeign, setOnlyForeign] = useState(false);
-
-  const foreignCount = useMemo(() => items.filter((i) => i.foreign).length, [items]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return items.filter((it) => {
-      if (onlyForeign && !it.foreign) return false;
-      if (!s) return true;
-      return (
+    if (!s) return items;
+    return items.filter(
+      (it) =>
         it.barcode.includes(s) ||
         it.article.toLowerCase().includes(s) ||
         it.name.toLowerCase().includes(s) ||
-        (it.match || "").toLowerCase().includes(s)
-      );
-    });
-  }, [items, q, onlyForeign]);
+        (it.match || "").toLowerCase().includes(s) ||
+        (it.match_article || "").toLowerCase().includes(s),
+    );
+  }, [items, q]);
 
   return (
     <Sheet
@@ -56,7 +56,6 @@ const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
       onOpenChange={(o) => {
         if (!o) {
           setQ("");
-          setOnlyForeign(false);
           onClose();
         }
       }}
@@ -64,7 +63,7 @@ const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
       <SheetContent side="bottom" className="h-[85vh] flex flex-col p-4 rounded-t-2xl">
         <SheetHeader className="text-left">
           <SheetTitle>
-            {group ? TITLES[group] : ""}: {items.length}
+            {group ? BARCODE_TITLES[group] : ""}: {items.length}
           </SheetTitle>
         </SheetHeader>
         <div className="relative mt-3">
@@ -80,17 +79,7 @@ const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
             className="pl-9 rounded-xl"
           />
         </div>
-        {foreignCount > 0 && (
-          <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={onlyForeign}
-              onChange={(e) => setOnlyForeign(e.target.checked)}
-            />
-            Только занятые другим товаром: {foreignCount}
-          </label>
-        )}
-        {(q.trim() || onlyForeign) && (
+        {q.trim() && (
           <div className="text-xs text-muted-foreground mt-2">Найдено: {filtered.length}</div>
         )}
         <div className="flex-1 overflow-y-auto mt-3 space-y-2">
@@ -103,9 +92,9 @@ const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
             >
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono font-medium text-primary">{it.barcode}</span>
-                {group === "all" && (
+                {(group === "all" || group === "dups") && (
                   <span className="text-xs text-muted-foreground">
-                    {it.taken ? "уже занят" : "добавится"}
+                    {it.foreign ? "занят другим товаром" : it.taken ? "уже у этого товара" : "добавится"}
                   </span>
                 )}
                 {it.dup_count > 1 && (
@@ -118,7 +107,15 @@ const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
                 <span className="text-muted-foreground">{it.article || "без артикула"} · </span>
                 {it.name}
               </div>
-              {it.taken !== false && it.match !== undefined && (
+              {it.dup_count > 1 && (it.dup_articles?.length ?? 0) > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Также в файле у: {(it.dup_articles || []).join(", ")}
+                </div>
+              )}
+              {it.no_product && (
+                <div className="text-xs text-amber-500">Товара нет в каталоге — штрихкод не запишется</div>
+              )}
+              {it.taken && (
                 <div
                   className={`text-xs flex gap-1 ${
                     it.foreign ? "text-destructive" : "text-muted-foreground"
@@ -126,7 +123,7 @@ const BarcodeItemsSheet = ({ group, items, onClose }: Props) => {
                 >
                   <Icon name={it.foreign ? "TriangleAlert" : "Link"} size={12} className="mt-0.5 shrink-0" />
                   <span>
-                    {it.foreign ? "Занят другим товаром: " : "Уже у карточки: "}
+                    {it.foreign ? "Занят товаром: " : "Уже у карточки: "}
                     {it.match_article ? `${it.match_article} · ` : ""}
                     {it.match || "карточка не найдена"}
                   </span>

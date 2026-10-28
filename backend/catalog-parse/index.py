@@ -7,7 +7,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
-from matcher import build_report, norm_article, match_items, item_codes, list_row
+from matcher import build_report, barcode_report, norm_article, match_items, item_codes, list_row
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -250,7 +250,6 @@ def commit(draft_id, opts):
     product_group_id = None
     fill_mode = opts.get('fill_mode') or 'empty_only'
     fill_fields = set(opts.get('fill_fields') or [])
-    add_barcodes = opts.get('add_barcodes', True)
     offset = max(int(opts.get('offset') or 0), 0)
     limit = min(max(int(opts.get('limit') or COMMIT_CHUNK), 1), 300)
 
@@ -258,7 +257,7 @@ def commit(draft_id, opts):
     total = len(all_items)
     items = all_items[offset:offset + limit]
 
-    created = updated = bc_added = 0
+    created = updated = 0
     with _conn() as c, c.cursor() as cur:
         row_map, _ = match_items(cur, items)
         if product_group:
@@ -349,23 +348,6 @@ def commit(draft_id, opts):
                             + ', '.join('(' + _sql_val(b) + ')' for b in brands)
                             + " ON CONFLICT (name) DO NOTHING")
 
-        if add_barcodes:
-            seen = set()
-            pairs = []
-            for idx, it in enumerate(items):
-                if idx not in item_pid:
-                    continue
-                for bc in item_codes(it):
-                    if bc not in seen:
-                        seen.add(bc)
-                        pairs.append('(' + str(int(item_pid[idx])) + ', ' + _sql_val(bc[:100]) + ')')
-            if pairs:
-                cur.execute(
-                    "INSERT INTO product_barcodes (product_id, barcode) "
-                    "SELECT v.pid, v.bc FROM (VALUES " + ', '.join(pairs) + ") AS v(pid, bc) "
-                    "WHERE NOT EXISTS (SELECT 1 FROM product_barcodes b WHERE b.barcode = v.bc)"
-                )
-                bc_added = cur.rowcount
 
     done = min(offset + limit, total)
     finished = done >= total
@@ -373,10 +355,73 @@ def commit(draft_id, opts):
         sig = opts.get('header_signature') or d.get('header_signature')
         if sig:
             save_layout(d['supplier_id'], sig, d['mapping'], price_mapping, excluded, article_case)
-        drop_draft(draft_id)
-    return {'created': created, 'updated': updated, 'barcodes_added': bc_added,
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                "UPDATE catalog_drafts SET stage = 'products_done', excluded_categories = %s, "
+                "article_case = %s, expires_at = NOW() + INTERVAL '7 days' WHERE id = %s",
+                (json.dumps(list(excluded)), article_case, draft_id)
+            )
+    return {'created': created, 'updated': updated,
             'done': done, 'total': total, 'finished': finished,
             'excluded': len(d['rows_data'] or []) - total}, None
+
+
+def _draft_items(d):
+    return apply_filters(d['rows_data'] or [], d.get('excluded_categories') or [],
+                         d.get('article_case') or 'as_is')
+
+
+def barcodes_preview(draft_id):
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    with _conn() as c, c.cursor() as cur:
+        rep = barcode_report(cur, _draft_items(d))
+    rep['file_name'] = d.get('file_name')
+    rep['supplier_name'] = d.get('supplier_name')
+    return rep, None
+
+
+def barcodes_commit(draft_id, opts):
+    """Записывает свободные штрихкоды одной порции товаров. Занятые не трогает."""
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    offset = max(int(opts.get('offset') or 0), 0)
+    limit = min(max(int(opts.get('limit') or 300), 1), 500)
+    all_items = _draft_items(d)
+    total = len(all_items)
+    items = all_items[offset:offset + limit]
+    added = tried = 0
+    with _conn() as c, c.cursor() as cur:
+        row_map, _ = match_items(cur, items)
+        earlier = set()
+        for it in all_items[:offset]:
+            earlier.update(item_codes(it))
+        seen = set(earlier)
+        pairs = []
+        for it in items:
+            p = row_map.get(it['row'])
+            if not p:
+                continue
+            for bc in item_codes(it):
+                if bc not in seen:
+                    seen.add(bc)
+                    pairs.append('(' + str(int(p['id'])) + ', ' + _sql_val(bc[:100]) + ')')
+        tried = len(pairs)
+        if pairs:
+            cur.execute(
+                "INSERT INTO product_barcodes (product_id, barcode) "
+                "SELECT v.pid, v.bc FROM (VALUES " + ', '.join(pairs) + ") AS v(pid, bc) "
+                "WHERE NOT EXISTS (SELECT 1 FROM product_barcodes b WHERE b.barcode = v.bc)"
+            )
+            added = cur.rowcount
+    done = min(offset + limit, total)
+    finished = done >= total
+    if finished:
+        drop_draft(draft_id)
+    return {'added': added, 'skipped': tried - added, 'done': done, 'total': total,
+            'finished': finished}, None
 
 
 def handler(event, context):
@@ -463,6 +508,18 @@ def handler(event, context):
 
     if action == 'commit':
         res, err = commit(body.get('draft_id'), body)
+        if err:
+            return _resp(404, {'error': err})
+        return _resp(200, {'result': res})
+
+    if action == 'barcodes_preview':
+        rep, err = barcodes_preview(body.get('draft_id'))
+        if err:
+            return _resp(404, {'error': err})
+        return _resp(200, {'report': rep})
+
+    if action == 'barcodes_commit':
+        res, err = barcodes_commit(body.get('draft_id'), body)
         if err:
             return _resp(404, {'error': err})
         return _resp(200, {'result': res})
