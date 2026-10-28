@@ -7,7 +7,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
-from matcher import build_report, norm_article, match_items
+from matcher import build_report, norm_article, match_items, item_codes
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -352,10 +352,12 @@ def commit(draft_id, opts):
             seen = set()
             pairs = []
             for idx, it in enumerate(items):
-                bc = str(it.get('barcode') or '').strip()
-                if bc and bc not in seen and idx in item_pid:
-                    seen.add(bc)
-                    pairs.append('(' + str(int(item_pid[idx])) + ', ' + _sql_val(bc) + ')')
+                if idx not in item_pid:
+                    continue
+                for bc in item_codes(it):
+                    if bc not in seen:
+                        seen.add(bc)
+                        pairs.append('(' + str(int(item_pid[idx])) + ', ' + _sql_val(bc[:100]) + ')')
             if pairs:
                 cur.execute(
                     "INSERT INTO product_barcodes (product_id, barcode) "

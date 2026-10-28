@@ -58,6 +58,14 @@ def match_items(cur, items):
     return row_map, found
 
 
+def item_codes(it):
+    codes = it.get('barcodes')
+    if codes is None:
+        bc = str(it.get('barcode') or '').strip()
+        codes = [bc] if bc else []
+    return [str(c).strip() for c in codes if str(c).strip()]
+
+
 def existing_barcodes(cur, codes):
     """Возвращает множество уже занятых штрихкодов."""
     codes = [c for c in codes if c]
@@ -103,8 +111,7 @@ def build_report(cur, items):
 
     file_codes = {}
     for it in items:
-        bc = it.get('barcode')
-        if bc:
+        for bc in item_codes(it):
             file_codes.setdefault(bc, 0)
             file_codes[bc] += 1
     dup_in_file = sum(1 for v in file_codes.values() if v > 1)

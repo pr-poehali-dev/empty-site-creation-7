@@ -113,6 +113,56 @@ def clean_code(v):
     return s
 
 
+CODE_SPLIT = re.compile(r'[,;\r\n]+')
+
+
+def split_codes(v):
+    if v is None:
+        return []
+    if isinstance(v, (int, float)):
+        c = clean_code(v)
+        return [c] if c else []
+    out = []
+    for part in CODE_SPLIT.split(str(v)):
+        c = clean_code(part).replace(' ', '')
+        if c and c not in out:
+            out.append(c)
+    return out
+
+
+def merge_key(it):
+    a = (it.get('article') or '').upper().translate(
+        str.maketrans('АВЕКМНОРСТУХ№', 'ABEKMHOPCTYX ')).replace(' ', '')
+    if a:
+        return 'a:' + a
+    return 'n:' + norm(it.get('name')).lower()
+
+
+def merge_same(items):
+    """Склеивает строки одного товара (тот же артикул, без артикула — то же наименование)."""
+    by_key = {}
+    out = []
+    for it in items:
+        k = merge_key(it)
+        base = by_key.get(k)
+        if base is None:
+            by_key[k] = it
+            out.append(it)
+            continue
+        for c in it['barcodes']:
+            if c not in base['barcodes']:
+                base['barcodes'].append(c)
+        for f, v in it.items():
+            if f in ('row', 'barcodes', 'barcode'):
+                continue
+            if base.get(f) in (None, '') and v not in (None, ''):
+                base[f] = v
+    for i, it in enumerate(out):
+        it['row'] = i
+        it['barcode'] = it['barcodes'][0] if it['barcodes'] else ''
+    return out, len(items) - len(out)
+
+
 ART_RX = [
     re.compile(r'\b([А-ЯA-Z]{2,4}-\d{2,6}(?:-{1,2}[\dA-Za-zА-Яа-я]{1,6})?)\b'),
     re.compile(r'\b([A-ZА-Я]{2,}\d{3,})\b'),
@@ -185,7 +235,7 @@ def parse_rows(rows, hdr_idx, mp, limit=100000):
             'article': article,
             'article_guessed': guessed,
             'alphabet': article_alphabet(article),
-            'barcode': clean_code(cell('barcode')),
+            'barcodes': split_codes(cell('barcode')),
             'category': norm(cell('category')),
             'brand': norm(cell('brand')),
             'tnved': clean_code(cell('tnved')),
@@ -264,7 +314,10 @@ def parse_catalog(data, filename, forced_mapping=None):
         mapping = {k: int(v) for k, v in forced_mapping.items() if v is not None}
 
     header_row = [norm(c) for c in rows[hdr_idx]]
-    items = parse_rows(rows, hdr_idx, mapping)
+    raw_items = parse_rows(rows, hdr_idx, mapping)
+    rows_read = len(raw_items)
+    items, merged = merge_same(raw_items)
+    all_codes = {c for i in items for c in i['barcodes']}
 
     columns = []
     for idx, title in enumerate(header_row):
@@ -282,6 +335,10 @@ def parse_catalog(data, filename, forced_mapping=None):
         'alphabet': alphabet_stats(items),
         'stats': {
             'total': len(items),
+            'rows_read': rows_read,
+            'merged_rows': merged,
+            'barcodes_total': len(all_codes),
+            'multi_barcode': sum(1 for i in items if len(i['barcodes']) > 1),
             'guessed_article': sum(1 for i in items if i['article_guessed']),
             'no_article': sum(1 for i in items if not i['article']),
             'with_barcode': sum(1 for i in items if i['barcode']),

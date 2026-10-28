@@ -73,6 +73,10 @@ interface ParseResult {
   article_case?: string;
   stats: {
     total: number;
+    rows_read?: number;
+    merged_rows?: number;
+    barcodes_total?: number;
+    multi_barcode?: number;
     guessed_article: number;
     no_article: number;
     with_barcode: number;
@@ -453,8 +457,13 @@ const CatalogUpload = () => {
           </Button>
           {result && (
             <div className="text-sm text-muted-foreground">
-              Прочитано {result.stats.total} строк. Штрихкодов {result.stats.with_barcode},
-              ТНВЭД {result.stats.with_tnved}, весов {result.stats.with_weight_gross}
+              Прочитано {result.stats.rows_read ?? result.stats.total} строк, товаров {result.stats.total}
+              {(result.stats.merged_rows ?? 0) > 0 &&
+                ` (склеено строк одного товара: ${result.stats.merged_rows})`}
+              . Штрихкодов {result.stats.barcodes_total ?? result.stats.with_barcode}
+              {(result.stats.multi_barcode ?? 0) > 0 &&
+                `, у ${result.stats.multi_barcode} товаров их несколько`}
+              , ТНВЭД {result.stats.with_tnved}, весов {result.stats.with_weight_gross}
             </div>
           )}
         </div>
