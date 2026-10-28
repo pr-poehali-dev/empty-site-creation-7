@@ -65,6 +65,8 @@ const ReceivingCatalog = () => {
   const timer = useRef<number>();
   const tableWrap = useRef<HTMLDivElement>(null);
   const nameHead = useRef<HTMLTableCellElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerH, setHeaderH] = useState(0);
   const market = useMarketPrices(items, Boolean(meta) && mode === "tech");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const siteCols = SITE_COLUMNS.filter((c) => market.sites.includes(c.key));
@@ -136,6 +138,15 @@ const ReceivingCatalog = () => {
     load(0);
   }, [meta, load]);
 
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeaderH(el.offsetHeight));
+    ro.observe(el);
+    setHeaderH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [denied]);
+
   const shown = mode === "beauty" ? groups.length : items.length;
 
   const rememberScreen = () =>
@@ -158,7 +169,7 @@ const ReceivingCatalog = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
+      <header ref={headerRef} className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 space-y-3">
           <div className="flex items-center gap-2">
             <Button
@@ -331,7 +342,11 @@ const ReceivingCatalog = () => {
         )}
 
         {!loading && mode === "tech" && items.length > 0 && (
-          <div ref={tableWrap} className="relative rounded-xl border border-white/[0.08] bg-card overflow-auto">
+          <div
+            ref={tableWrap}
+            className="relative rounded-xl border border-white/[0.08] bg-card overflow-auto overscroll-contain"
+            style={{ maxHeight: `calc(100dvh - ${headerH + 24}px)` }}
+          >
             {cols.includes("tech_name") && (
               <FloatingNames
                 wrapRef={tableWrap}
@@ -340,8 +355,8 @@ const ReceivingCatalog = () => {
               />
             )}
             <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-white/[0.08]">
+              <thead className="sticky top-0 z-[2] bg-card shadow-[0_1px_0_rgba(255,255,255,0.08)]">
+                <tr className="text-left text-xs text-muted-foreground">
                   {cols.map((f) => (
                     <th
                       key={f}
