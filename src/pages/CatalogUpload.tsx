@@ -7,6 +7,7 @@ import Icon from "@/components/ui/icon";
 import PickList from "@/components/search-dicts/PickList";
 import NewFolderButton from "@/components/invoices/NewFolderButton";
 import UploadBanner, { UploadProgress } from "@/components/catalog/UploadBanner";
+import ReportItemsSheet, { ReportGroup, ReportItem } from "@/components/catalog/ReportItemsSheet";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -97,6 +98,9 @@ interface Report {
   total: number;
   new_count: number;
   exist_count: number;
+  new_items?: ReportItem[];
+  exist_items?: ReportItem[];
+  excluded_items?: ReportItem[];
   excluded_count: number;
   excluded_existing?: number;
   fill: FillStat[];
@@ -139,6 +143,7 @@ const CatalogUpload = () => {
   const [addBarcodes, setAddBarcodes] = useState(true);
 
   const [report, setReport] = useState<Report | null>(null);
+  const [openGroup, setOpenGroup] = useState<ReportGroup | null>(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
@@ -686,19 +691,46 @@ const CatalogUpload = () => {
           <div className="rounded-2xl border border-white/[0.08] bg-card p-4 space-y-3">
             <div className="text-sm font-medium text-muted-foreground">Итоги сверки</div>
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-xl bg-secondary p-3">
-                <div className="text-lg font-semibold text-primary">{report.new_count}</div>
-                <div className="text-xs text-muted-foreground">новых</div>
-              </div>
-              <div className="rounded-xl bg-secondary p-3">
-                <div className="text-lg font-semibold">{report.exist_count}</div>
-                <div className="text-xs text-muted-foreground">уже есть</div>
-              </div>
-              <div className="rounded-xl bg-secondary p-3">
-                <div className="text-lg font-semibold">{report.excluded_count}</div>
-                <div className="text-xs text-muted-foreground">отсеяно</div>
-              </div>
+              {(
+                [
+                  ["new", report.new_count, "новых", "text-primary", report.new_items],
+                  ["exist", report.exist_count, "уже есть", "", report.exist_items],
+                  ["excluded", report.excluded_count, "отсеяно", "", report.excluded_items],
+                ] as [ReportGroup, number, string, string, ReportItem[] | undefined][]
+              ).map(([g, n, label, cls, list]) => {
+                const can = n > 0 && !!list?.length;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    disabled={!can}
+                    onClick={() => setOpenGroup(g)}
+                    className={`rounded-xl bg-secondary p-3 transition-colors ${
+                      can ? "hover:bg-secondary/70 active:scale-[0.98] cursor-pointer" : "cursor-default"
+                    }`}
+                  >
+                    <div className={`text-lg font-semibold ${cls}`}>{n}</div>
+                    <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                      {label}
+                      {can && <Icon name="ChevronRight" size={12} />}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+            <ReportItemsSheet
+              group={openGroup}
+              items={
+                openGroup === "new"
+                  ? report.new_items || []
+                  : openGroup === "exist"
+                    ? report.exist_items || []
+                    : openGroup === "excluded"
+                      ? report.excluded_items || []
+                      : []
+              }
+              onClose={() => setOpenGroup(null)}
+            />
 
             {(report.excluded_existing ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">

@@ -40,13 +40,13 @@ def match_items(cur, items):
         vals = ','.join("'" + k.replace("'", "''") + "'" for k in part)
         cur.execute(
             "SELECT id, article, tnved_code, weight_gross, weight_net, "
-            + NORM_SQL.format(col='article') + " AS na "
+            + NORM_SQL.format(col='article') + " AS na, name "
             "FROM products WHERE " + NORM_SQL.format(col='article') + " IN (" + vals + ")"
         )
         for r in cur.fetchall():
             found.setdefault(r[5], {
                 'id': r[0], 'article': r[1], 'tnved_code': r[2],
-                'weight_gross': r[3], 'weight_net': r[4],
+                'weight_gross': r[3], 'weight_net': r[4], 'name': r[6],
             })
 
     row_map = {}
@@ -64,6 +64,11 @@ def item_codes(it):
         bc = str(it.get('barcode') or '').strip()
         codes = [bc] if bc else []
     return [str(c).strip() for c in codes if str(c).strip()]
+
+
+def list_row(it):
+    return {'article': it.get('article') or '', 'name': it.get('name') or '',
+            'barcodes': item_codes(it), 'category': it.get('category') or ''}
 
 
 def existing_barcodes(cur, codes):
@@ -119,6 +124,10 @@ def build_report(cur, items):
 
     return {
         'total': len(items),
+        'new_items': [list_row(it) for it in new_rows],
+        'exist_items': [dict(list_row(it), match=row_map[it['row']].get('name') or '',
+                             match_article=row_map[it['row']].get('article') or '')
+                        for it in exist_rows],
         'new_count': len(new_rows),
         'exist_count': len(exist_rows),
         'fill': fill,

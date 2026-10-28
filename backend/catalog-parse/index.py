@@ -7,7 +7,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
-from matcher import build_report, norm_article, match_items, item_codes
+from matcher import build_report, norm_article, match_items, item_codes, list_row
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -210,6 +210,7 @@ def preview(draft_id, excluded, article_case):
         dropped = [dict(it, article=convert_article(it.get('article'), article_case or 'as_is'))
                    for it in (d['rows_data'] or []) if it['row'] not in kept]
         drop_map, _ = match_items(cur, dropped)
+    report['excluded_items'] = [dict(list_row(it), in_catalog=it['row'] in drop_map) for it in dropped]
     report['excluded_count'] = len(d['rows_data'] or []) - len(items)
     report['excluded_existing'] = len(drop_map)
     return report, None
