@@ -98,6 +98,11 @@ const call = async (
   return data;
 };
 
+export const reconApi = {
+  list: (base: string, payload: object) => call("recon_list", "POST", payload, undefined, base),
+  compare: (base: string, payload: object) => call("recon_compare", "POST", payload, undefined, base),
+};
+
 export const odataApi = {
   bases: () => call("bases"),
   ping: (base: string) => call("ping", "GET", undefined, undefined, base),

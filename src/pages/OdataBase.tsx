@@ -29,6 +29,12 @@ const SECTIONS = [
     hint: "Проверить счёт и завести новые товары",
     icon: "PackageSearch",
   },
+  {
+    path: "reconcile",
+    title: "Сверка счёта с накладной",
+    hint: "Реализация или поступление против счёта на оплату",
+    icon: "GitCompareArrows",
+  },
 ];
 
 const OdataBase = () => {

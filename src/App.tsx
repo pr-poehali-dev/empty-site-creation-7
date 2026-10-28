@@ -69,6 +69,7 @@ import OdataBase from "./pages/OdataBase";
 import OdataTests from "./pages/OdataTests";
 import OdataSupplierInvoice from "./pages/OdataSupplierInvoice";
 import OdataNomenclature from "./pages/OdataNomenclature";
+import OdataReconcile from "./pages/OdataReconcile";
 import OwnerScheduler from "./pages/OwnerScheduler";
 import OwnerMessageServer from "./pages/OwnerMessageServer";
 import { NotForWholesaler, OnlyWholesaler, WholesalerRoute } from "./components/WholesalerRoute";
@@ -160,6 +161,7 @@ const App = () => (
           <Route path="/admin/odata/:base/tests" element={<NotForWholesaler><OdataTests /></NotForWholesaler>} />
           <Route path="/admin/odata/:base/supplier-invoice" element={<NotForWholesaler><OdataSupplierInvoice /></NotForWholesaler>} />
           <Route path="/admin/odata/:base/goods-receipt" element={<NotForWholesaler><OdataSupplierInvoice mode="receipt" /></NotForWholesaler>} />
+          <Route path="/admin/odata/:base/reconcile" element={<NotForWholesaler><OdataReconcile /></NotForWholesaler>} />
           <Route path="/admin/odata/:base/nomenclature" element={<NotForWholesaler><OdataNomenclature /></NotForWholesaler>} />
           <Route path="/admin/scheduler" element={<NotForWholesaler><OwnerScheduler /></NotForWholesaler>} />
           <Route path="/admin/message-server" element={<NotForWholesaler><OwnerMessageServer /></NotForWholesaler>} />
