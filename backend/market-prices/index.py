@@ -393,6 +393,8 @@ def recalc(cur, b, m):
         vals = [vals_all[s] for s in sites if s in vals_all and not row[f'{s}_suspect']]
         if vals:
             sets.append(f"{total}={round(sum(vals) / len(vals), 2)}, {total}_manual=FALSE")
+        elif row[total] is not None and not row[f'{total}_manual']:
+            sets.append(f"{total}=NULL")
     if sets:
         cur.execute(
             f"UPDATE model_market_prices SET {', '.join(sets)}, updated_at=NOW() "
