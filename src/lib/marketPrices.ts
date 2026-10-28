@@ -187,6 +187,25 @@ export const fetchSitePrice = (site: SiteKey, brand: string, model: string) =>
 export const saveTotal = (field: TotalKey, brand: string, model: string, value: string) =>
   post({ action: "set_total", field, brand, model, value }) as Promise<{ row: PriceRow }>;
 
+const SEARCH_URL: Record<SiteKey, (q: string) => string> = {
+  wb_ru: (q) => `https://www.wildberries.ru/catalog/0/search.aspx?search=${q}&sort=priceup`,
+  wb_by: (q) => `https://www.wildberries.by/catalog/0/search.aspx?search=${q}&sort=priceup`,
+  oz_ru: (q) => `https://www.ozon.ru/search/?text=${q}&sorting=price&from_global=true`,
+  oz_by: (q) => `https://ozon.by/search/?text=${q}&sorting=price&from_global=true`,
+  ym_ru: (q) => `https://market.yandex.ru/search?text=${q}&how=aprice`,
+  mv_ru: (q) => `https://www.mvideo.ru/product-list-page?q=${q}`,
+};
+
+/** Куда вести по нажатию «Открыть на сайте»: карточка найденного товара или поиск модели. */
+export const sourceUrl = (site: SiteKey, row?: PriceRow): { url: string; exact: boolean } | null => {
+  if (!row) return null;
+  const direct = row[`${site}_url`];
+  if (typeof direct === "string" && direct.startsWith("http")) return { url: direct, exact: true };
+  const q = `${row.brand ?? ""} ${row.model ?? ""}`.trim();
+  if (!q) return null;
+  return { url: SEARCH_URL[site](encodeURIComponent(q)), exact: false };
+};
+
 export const shortDate = (v: unknown) => {
   if (!v) return "";
   const d = new Date(String(v).replace(" ", "T"));

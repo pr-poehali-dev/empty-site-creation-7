@@ -18,6 +18,7 @@ import {
   STATUS_TEXT,
   TOTAL_COLUMNS,
   shortDate,
+  sourceUrl,
   type PriceRow,
   type SiteKey,
   type TotalKey,
@@ -38,6 +39,10 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
   const status = row?.[`${site}_status`] as string | null | undefined;
   const title = row?.[`${site}_title`] as string | null | undefined;
   const at = shortDate(row?.[`${site}_at`]);
+  const src = sourceUrl(site, row);
+  const openSource = () => {
+    if (src) window.open(src.url, "_blank", "noopener,noreferrer");
+  };
 
   if (busy) {
     return (
@@ -68,7 +73,7 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
     <>
       <button
         type="button"
-        disabled={!canEdit}
+        disabled={!canEdit && !src}
         onClick={() => setAsk(true)}
         title={title || undefined}
         className="text-left rounded px-1 -mx-1 hover:bg-white/[0.06] disabled:hover:bg-transparent"
@@ -87,14 +92,37 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
       <AlertDialog open={ask} onOpenChange={setAsk}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Перепарсить цену?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle>{SITE_COLUMNS.find((s) => s.key === site)?.title}</AlertDialogTitle>
+            <AlertDialogDescription className="break-words">
               {title ? `Сейчас: ${title}` : "Цена будет заново взята с сайта"}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {src && (
+            <Button
+              variant="outline"
+              className="h-11 w-full border-sky-500/40 text-sky-200"
+              onClick={() => {
+                openSource();
+                setAsk(false);
+              }}
+            >
+              <Icon name="ExternalLink" size={16} className="mr-1.5" />
+              {src.exact ? "Открыть товар на сайте" : "Открыть поиск на сайте"}
+            </Button>
+          )}
+          {src && !src.exact && hasPrice && (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Точной ссылки ещё нет — появится после перепарсинга
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Нет</AlertDialogCancel>
-            <AlertDialogAction onClick={onFetch}>Да</AlertDialogAction>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            {canEdit && (
+              <AlertDialogAction onClick={onFetch}>
+                <Icon name="RefreshCw" size={15} className="mr-1.5" />
+                Перепарсить
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 
 import proxymarket as pm
 import vps
-from sources import SITES, Blocked, NoTraffic, clean_model, pick_min, search
+from sources import SITES, Blocked, NoTraffic, clean_model, pick_min, product_url, search
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -23,7 +23,7 @@ TOTALS = {
 
 COLS = (
     'brand_key, model_key, brand, model, '
-    + ', '.join(f'{s}, {s}_status, {s}_at, {s}_title' for s in SITES)
+    + ', '.join(f'{s}, {s}_status, {s}_at, {s}_title, {s}_url' for s in SITES)
     + ', total_ru, total_ru_manual, total_by, total_by_manual, updated_at'
 )
 
@@ -288,33 +288,31 @@ def proxy_for(cur, site, need=False):
 
 
 def run_search(cur, site, brand, model):
-    """Возвращает (status, price, title, message)."""
+    """Возвращает (status, price, title, message, url)."""
     method = site_method(cur, site)
     proxy, err = proxy_for(cur, site, need=method == 'browser')
     if err:
-        return 'no_proxy', None, None, err
+        return 'no_proxy', None, None, err, None
     if method == 'browser':
         m = clean_model(brand, model)
         status, cards, msg = vps.search(cur, site, f'{brand} {m}'.strip(), proxy)
         if status != 'ok':
-            return status, None, None, msg
+            return status, None, None, msg, None
         found = pick_min(cards, m)
-        if not found:
-            return 'not_found', None, None, 'Точной модели не найдено'
-        return 'ok', found[1], found[0], ''
-    try:
-        found = search(site, brand, model, proxy)
-    except NoTraffic as e:
-        return 'no_traffic', None, None, str(e)
-    except Blocked as e:
-        return 'blocked', None, None, str(e)
-    except Exception as e:
-        print(f'{site} {brand} {model}: {e}')
-        return 'error', None, None, 'Сайт ответил ошибкой или не успел ответить'
+    else:
+        try:
+            found = search(site, brand, model, proxy)
+        except NoTraffic as e:
+            return 'no_traffic', None, None, str(e), None
+        except Blocked as e:
+            return 'blocked', None, None, str(e), None
+        except Exception as e:
+            print(f'{site} {brand} {model}: {e}')
+            return 'error', None, None, 'Сайт ответил ошибкой или не успел ответить', None
     if not found:
-        return 'not_found', None, None, 'Точной модели не найдено'
-    title, price = found
-    return 'ok', price, title, ''
+        return 'not_found', None, None, 'Точной модели не найдено', None
+    title, price, ref = found
+    return 'ok', price, title, '', product_url(site, ref)
 
 
 def test_site(cur, body):
@@ -324,7 +322,7 @@ def test_site(cur, body):
     r = site_rows(cur).get(site) or {}
     brand = r.get('test_brand') or 'Blackton'
     model = r.get('test_model') or 'TP536'
-    status, price, title, msg = run_search(cur, site, brand, model)
+    status, price, title, msg, _url = run_search(cur, site, brand, model)
     cur.execute(
         f"UPDATE market_site_settings SET last_status='{status}', last_message={_lit(msg)}, "
         f"last_price={_lit(price)}, last_title={_lit(title)}, last_at=NOW() WHERE site='{site}'"
@@ -370,11 +368,11 @@ def fetch_price(cur, body):
     if site not in SITES or not clean_model(brand, model):
         return None, 'Нужны сайт, бренд и модель'
     b, m = ensure_row(cur, brand, model)
-    status, price, title, msg = run_search(cur, site, brand, model)
+    status, price, title, msg, url = run_search(cur, site, brand, model)
     if status in ('ok', 'not_found'):
         cur.execute(
             f"UPDATE model_market_prices SET {site}={_lit(price)}, {site}_status='{status}', "
-            f"{site}_at=NOW(), {site}_title={_lit(title)}, updated_at=NOW() "
+            f"{site}_at=NOW(), {site}_title={_lit(title)}, {site}_url={_lit(url)}, updated_at=NOW() "
             f"WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
         )
     else:

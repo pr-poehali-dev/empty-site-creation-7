@@ -89,11 +89,38 @@ def _is_own(title, pat):
 
 
 def pick_min(cards, model):
-    """cards: [(title, price)]. Минимальная цена среди карточек с точной моделью."""
+    """cards: [(title, price, ref?)]. Минимальная цена среди карточек с точной моделью.
+    Возвращает (title, price, ref) — ref это номер товара на сайте или None."""
     for pat in patterns_for(model):
-        ok = [(t, p) for t, p in cards if p and p > 0 and _is_own(t, pat)]
+        ok = [
+            (c[0], c[1], c[2] if len(c) > 2 else None)
+            for c in cards
+            if c[1] and c[1] > 0 and _is_own(c[0], pat)
+        ]
         if ok:
             return min(ok, key=lambda x: x[1])
+    return None
+
+
+def product_url(site, ref):
+    """Прямая ссылка на карточку товара по его номеру на сайте."""
+    if not ref:
+        return None
+    r = str(ref).strip()
+    if not r:
+        return None
+    if site == 'wb_ru':
+        return f'https://www.wildberries.ru/catalog/{r}/detail.aspx'
+    if site == 'wb_by':
+        return f'https://www.wildberries.by/catalog/{r}/detail.aspx'
+    if site == 'oz_ru':
+        return f'https://www.ozon.ru/product/{r}/'
+    if site == 'oz_by':
+        return f'https://ozon.by/product/{r}/'
+    if site == 'mv_ru':
+        return f'https://www.mvideo.ru/products/{r}'
+    if site == 'ym_ru':
+        return r if r.startswith('http') else None
     return None
 
 
@@ -153,7 +180,7 @@ def _wb(s, query, curr, dest):
                 break
         if price is None and p.get('salePriceU'):
             price = p['salePriceU'] / 100
-        cards.append((title, price))
+        cards.append((title, price, p.get('id')))
     return cards
 
 
@@ -187,8 +214,18 @@ def _mv(s, query):
         pid = str(m.get('productId'))
         price = (m.get('price') or {}).get('salePrice')
         if pid in names and price:
-            cards.append((names[pid], float(price)))
+            cards.append((names[pid], float(price), pid))
     return cards
+
+
+def _ym_link(item, p):
+    for src in (p, item or {}):
+        pid = src.get('productId') or src.get('modelId')
+        sku = src.get('skuId') or src.get('marketSku') or src.get('sku')
+        if pid:
+            tail = f'?sku={sku}' if sku else ''
+            return f'https://market.yandex.ru/product/{pid}{tail}'
+    return None
 
 
 def _ym(s, query):
@@ -209,7 +246,7 @@ def _ym(s, query):
             p = (item or {}).get('pendingCartItem') or {}
             price = _price_num(((p.get('price') or {}).get('valueFmt')) or '')
             if p.get('name') and price:
-                cards.append((p['name'], price))
+                cards.append((p['name'], price, _ym_link(item, p)))
     return cards
 
 
@@ -227,7 +264,7 @@ def _walk_ozon(node, out):
                 for m in re.finditer(r'"text":\s*"([^"]{8,})"', a):
                     texts.append(m.group(1))
             title = max(texts, key=len) if texts else ''
-            out.append((title, price))
+            out.append((title, price, node.get('sku')))
         for v in node.values():
             _walk_ozon(v, out)
     elif isinstance(node, list):
