@@ -413,6 +413,8 @@ const ReceivingCatalog = () => {
                             busy={market.isBusy(it, c.key)}
                             canEdit={market.canEdit}
                             onFetch={() => market.fetchPrice(it, c.key)}
+                            onExclude={() => market.excludePrice(it, c.key)}
+                            onConfirm={() => market.confirm(it, c.key)}
                           />
                         </td>
                       ))}

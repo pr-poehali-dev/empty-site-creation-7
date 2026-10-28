@@ -11,7 +11,7 @@ import urllib.request
 from aiohttp import web
 from playwright.async_api import async_playwright
 
-VERSION = '1.3.1'
+VERSION = '1.4.0'
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, 'data')
@@ -252,11 +252,19 @@ def oz_tile(state):
     return title, price
 
 
+USED_MARK = re.compile(
+    r'уцен[её]н|уценк|б/у|бывш[а-я]* в употреб|ресейл|resale|восстановлен|'
+    r'отличное состояние|хорошее состояние|удовлетворительное состояние|витринн',
+    re.IGNORECASE,
+)
+
+
 def walk_ozon(node, out):
     if isinstance(node, dict):
         if isinstance(node.get('mainState'), list):
             title, price = oz_tile(node['mainState'])
-            out.append([title, price, node.get('sku')])
+            used = bool(USED_MARK.search(json.dumps(node['mainState'], ensure_ascii=False)))
+            out.append([title, price, node.get('sku'), used])
             return
         for v in node.values():
             walk_ozon(v, out)

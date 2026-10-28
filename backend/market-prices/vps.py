@@ -193,7 +193,7 @@ def search(cur, site, query, proxy, timeout=28):
         return 'vps_offline', [], str(e)
     st = res.get('status')
     if st == 'ok':
-        return 'ok', [(c[0], c[1], c[2] if len(c) > 2 else None) for c in res.get('cards') or []], ''
+        return 'ok', [tuple(c) for c in res.get('cards') or []], ''
     messages = {
         'captcha': 'Сайт показал капчу даже браузеру',
         'queue_full': 'Очередь браузерного сервера переполнена — повторите позже',

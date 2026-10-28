@@ -1,0 +1,31 @@
+CREATE TABLE market_filters (
+  key VARCHAR(40) PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE market_excluded (
+  id SERIAL PRIMARY KEY,
+  brand_key TEXT NOT NULL,
+  model_key TEXT NOT NULL,
+  site VARCHAR(10) NOT NULL,
+  url TEXT,
+  title TEXT,
+  price NUMERIC(12,2),
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX market_excluded_model_idx ON market_excluded (brand_key, model_key, site);
+
+ALTER TABLE model_market_prices
+  ADD COLUMN wb_ru_suspect BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN oz_ru_suspect BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN ym_ru_suspect BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN mv_ru_suspect BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN wb_by_suspect BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN oz_by_suspect BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN wb_ru_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN oz_ru_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN ym_ru_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN mv_ru_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN wb_by_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN oz_by_confirmed BOOLEAN NOT NULL DEFAULT FALSE;

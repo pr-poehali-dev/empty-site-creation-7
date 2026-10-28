@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  confirmPrice,
+  excludeCard,
   fetchSitePrice,
   lookupPrices,
   modelKey,
@@ -58,6 +60,30 @@ export const useMarketPrices = (items: Item[], enabled: boolean) => {
     }
   };
 
+  const excludePrice = async (it: Item, site: SiteKey) => {
+    const k = `${modelKey(it.brand, it.model)}#${site}`;
+    setBusy((b) => ({ ...b, [k]: true }));
+    setError("");
+    try {
+      const d = await excludeCard(site, String(it.brand ?? ""), String(it.model ?? ""));
+      put(d.row);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setBusy((b) => ({ ...b, [k]: false }));
+    }
+  };
+
+  const confirm = async (it: Item, site: SiteKey) => {
+    setError("");
+    try {
+      const d = await confirmPrice(site, String(it.brand ?? ""), String(it.model ?? ""));
+      put(d.row);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка");
+    }
+  };
+
   const setTotal = async (it: Item, field: TotalKey, value: string) => {
     setError("");
     try {
@@ -80,5 +106,5 @@ export const useMarketPrices = (items: Item[], enabled: boolean) => {
     fetchAll,
     refresh: () => setReload((n) => n + 1),
     allowed,
-    canEdit, rowOf, fetchPrice, setTotal, isBusy, error, clearError: () => setError("") };
+    canEdit, rowOf, fetchPrice, excludePrice, confirm, setTotal, isBusy, error, clearError: () => setError("") };
 };

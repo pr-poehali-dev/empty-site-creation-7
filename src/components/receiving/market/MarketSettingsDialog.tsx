@@ -5,6 +5,7 @@ import Icon from "@/components/ui/icon";
 import ProxySection from "./ProxySection";
 import SiteRow from "./SiteRow";
 import VpsSection from "./VpsSection";
+import FiltersSection from "./FiltersSection";
 import { settingsCall, type MarketSettings, type SiteSetting } from "@/lib/marketPrices";
 
 interface Props {
@@ -77,7 +78,7 @@ const MarketSettingsDialog = ({ open, onClose }: Props) => {
 
         {data && (
           <Tabs defaultValue="proxy">
-            <TabsList className="w-full">
+            <TabsList className="w-full h-auto flex-wrap">
               <TabsTrigger value="proxy" className="flex-1">
                 Настройка прокси
               </TabsTrigger>
@@ -87,7 +88,14 @@ const MarketSettingsDialog = ({ open, onClose }: Props) => {
               <TabsTrigger value="vps" className="flex-1">
                 Браузерный сервер
               </TabsTrigger>
+              <TabsTrigger value="filters" className="flex-1">
+                Фильтры поиска
+              </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="filters" className="mt-3">
+              <FiltersSection />
+            </TabsContent>
 
             <TabsContent value="vps" className="mt-3">
               <VpsSection />

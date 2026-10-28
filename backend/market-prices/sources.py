@@ -82,23 +82,56 @@ ACCESSORY = re.compile(
 )
 
 
+USED_MARK = re.compile(
+    r'уцен[её]н|уценк|б/у|бывш[а-я]* в употреб|ресейл|resale|восстановлен|'
+    r'отличное состояние|хорошее состояние|удовлетворительное состояние|витринн',
+    re.IGNORECASE,
+)
+
+
 def _is_own(title, pat):
     """Модель есть в названии, товар новый и это не аксессуар для этой модели."""
     t = title or ''
     return bool(pat.search(t)) and not BAD_WORDS.search(t) and not ACCESSORY.search(t)
 
 
-def pick_min(cards, model):
-    """cards: [(title, price, ref?)]. Минимальная цена среди карточек с точной моделью.
-    Возвращает (title, price, ref) — ref это номер товара на сайте или None."""
+def _card(c):
+    return (c[0] or '', c[1], c[2] if len(c) > 2 else None, bool(c[3]) if len(c) > 3 else False)
+
+
+def pick_min(cards, model, rules=None, skip=None):
+    """cards: [(title, price, ref?, used?)]. Минимальная цена среди карточек с точной моделью.
+    rules — фильтры из настроек (предлоги, запчасти, типы, правдоподобие); skip(ref, title) —
+    карточки, отмеченные «Не тот товар». Возвращает (title, price, ref) или None."""
+    items = [_card(c) for c in cards]
     for pat in patterns_for(model):
-        ok = [
-            (c[0], c[1], c[2] if len(c) > 2 else None)
-            for c in cards
-            if c[1] and c[1] > 0 and _is_own(c[0], pat)
-        ]
-        if ok:
-            return min(ok, key=lambda x: x[1])
+        ok = []
+        for title, price, ref, used in items:
+            if not price or price <= 0 or used:
+                continue
+            m = pat.search(title)
+            if not m or BAD_WORDS.search(title):
+                continue
+            before = title[:m.start()]
+            if rules is None:
+                if ACCESSORY.search(title):
+                    continue
+            elif rules.is_part(title) or rules.prep_before(before):
+                continue
+            if skip and skip(ref, title):
+                continue
+            typed = rules.own_type(before) if rules else None
+            ok.append((title, price, ref, typed))
+        if not ok:
+            continue
+        pool = [c for c in ok if c[3]] or ok
+        pool.sort(key=lambda x: x[1])
+        plaus = rules.plaus if rules else None
+        if plaus and plaus.get('site_on'):
+            ratio = float(plaus.get('site_ratio') or 2)
+            while len(pool) >= 2 and pool[0][1] * ratio < pool[1][1]:
+                pool.pop(0)
+        return pool[0][0], pool[0][1], pool[0][2]
     return None
 
 
@@ -204,9 +237,12 @@ def _mv(s, query):
               'propertiesConfig': {'propertiesPortionSize': 5}, 'multioffer': False},
     )
     r.raise_for_status()
-    names = {}
+    names, used = {}, set()
     for p in (r.json().get('body') or {}).get('products') or []:
-        names[str(p.get('productId'))] = f"{p.get('name', '')} {p.get('modelName') or ''}"
+        pid = str(p.get('productId'))
+        names[pid] = f"{p.get('name', '')} {p.get('modelName') or ''}"
+        if USED_MARK.search(json.dumps(p.get('status') or p.get('labels') or '', ensure_ascii=False)):
+            used.add(pid)
     r = _get(s, 'https://www.mvideo.ru/bff/products/prices', 'mv', headers=h,
              params={'productIds': ','.join(ids), 'addBonusRubles': 'true', 'isPromoApplied': 'true'})
     cards = []
@@ -246,7 +282,8 @@ def _ym(s, query):
             p = (item or {}).get('pendingCartItem') or {}
             price = _price_num(((p.get('price') or {}).get('valueFmt')) or '')
             if p.get('name') and price:
-                cards.append((p['name'], price, _ym_link(item, p)))
+                used = bool(USED_MARK.search(json.dumps(item, ensure_ascii=False)))
+                cards.append((p['name'], price, _ym_link(item, p), used))
     return cards
 
 
@@ -264,7 +301,8 @@ def _walk_ozon(node, out):
                 for m in re.finditer(r'"text":\s*"([^"]{8,})"', a):
                     texts.append(m.group(1))
             title = max(texts, key=len) if texts else ''
-            out.append((title, price, node.get('sku')))
+            used = bool(USED_MARK.search(json.dumps(node['mainState'], ensure_ascii=False)))
+            out.append((title, price, node.get('sku'), used))
         for v in node.values():
             _walk_ozon(v, out)
     elif isinstance(node, list):
@@ -296,7 +334,7 @@ def _ozon(s, host, query):
     return cards
 
 
-def search(site, brand, model, proxy=None):
+def search(site, brand, model, proxy=None, rules=None, skip=None):
     """Возвращает (найденное название, цена) или None, если точной модели нет."""
     m = clean_model(brand, model)
     query = f'{brand} {m}'.strip()
@@ -315,4 +353,4 @@ def search(site, brand, model, proxy=None):
         cards = _ozon(s, 'ozon.by', query)
     else:
         raise ValueError('Неизвестный сайт')
-    return pick_min(cards, m)
+    return pick_min(cards, m, rules, skip)

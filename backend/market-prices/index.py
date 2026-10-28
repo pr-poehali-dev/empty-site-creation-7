@@ -5,6 +5,7 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+import filters as F
 import proxymarket as pm
 import vps
 from sources import SITES, Blocked, NoTraffic, clean_model, pick_min, product_url, search
@@ -23,7 +24,7 @@ TOTALS = {
 
 COLS = (
     'brand_key, model_key, brand, model, '
-    + ', '.join(f'{s}, {s}_status, {s}_at, {s}_title, {s}_url' for s in SITES)
+    + ', '.join(f'{s}, {s}_status, {s}_at, {s}_title, {s}_url, {s}_suspect, {s}_confirmed' for s in SITES)
     + ', total_ru, total_ru_manual, total_by, total_by_manual, updated_at'
 )
 
@@ -287,21 +288,45 @@ def proxy_for(cur, site, need=False):
     return url, None
 
 
-def run_search(cur, site, brand, model):
+def _skipper(cur, site, brand, model):
+    if not brand and not model:
+        return None
+    b, m = keys(brand, model)
+    cur.execute(
+        f"SELECT url, title FROM market_excluded WHERE brand_key={_lit(b)} AND model_key={_lit(m)} "
+        f"AND site='{site}'"
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return None
+    urls = {r['url'] for r in rows if r['url']}
+    titles = {(r['title'] or '').strip().lower() for r in rows if not r['url'] and r['title']}
+
+    def skip(ref, title):
+        u = product_url(site, ref)
+        if u and u in urls:
+            return True
+        return (title or '').strip().lower() in titles
+    return skip
+
+
+def run_search(cur, site, brand, model, group=''):
     """Возвращает (status, price, title, message, url)."""
     method = site_method(cur, site)
     proxy, err = proxy_for(cur, site, need=method == 'browser')
     if err:
         return 'no_proxy', None, None, err, None
+    rules = F.Rules(F.load(cur), group)
+    skip = _skipper(cur, site, brand, model)
     if method == 'browser':
         m = clean_model(brand, model)
         status, cards, msg = vps.search(cur, site, f'{brand} {m}'.strip(), proxy)
         if status != 'ok':
             return status, None, None, msg, None
-        found = pick_min(cards, m)
+        found = pick_min(cards, m, rules, skip)
     else:
         try:
-            found = search(site, brand, model, proxy)
+            found = search(site, brand, model, proxy, rules, skip)
         except NoTraffic as e:
             return 'no_traffic', None, None, str(e), None
         except Blocked as e:
@@ -348,11 +373,24 @@ def ensure_row(cur, brand, model):
 
 
 def recalc(cur, b, m):
-    """Итог страны всегда пересчитывается в среднюю найденных цен этой страны."""
+    """Подозрительные цены (сильно ниже средней остальных сайтов) помечаются и не идут в итог,
+    пока их не подтвердят. Итог страны — средняя остальных найденных цен этой страны."""
     row = get_row(cur, b, m)
+    plaus = F.load(cur)['plaus']
     sets = []
+    vals_all = {s: float(row[s]) for s in SITES if row[s] is not None}
+    for s in SITES:
+        susp = False
+        if s in vals_all and plaus.get('cross_on') and not row[f'{s}_confirmed']:
+            same = [v for k, v in vals_all.items() if k != s and SITES[k]['country'] == SITES[s]['country']]
+            if same:
+                avg = sum(same) / len(same)
+                susp = vals_all[s] * float(plaus.get('cross_ratio') or 2) < avg
+        if bool(row[f'{s}_suspect']) != susp:
+            sets.append(f"{s}_suspect={'TRUE' if susp else 'FALSE'}")
+            row[f'{s}_suspect'] = susp
     for total, sites in TOTALS.items():
-        vals = [float(row[s]) for s in sites if row[s] is not None]
+        vals = [vals_all[s] for s in sites if s in vals_all and not row[f'{s}_suspect']]
         if vals:
             sets.append(f"{total}={round(sum(vals) / len(vals), 2)}, {total}_manual=FALSE")
     if sets:
@@ -362,17 +400,30 @@ def recalc(cur, b, m):
         )
 
 
+def group_of(cur, brand, model):
+    """Товарная группа позиции из каталога приёмки — для сверки типа товара."""
+    cur.execute(
+        f"SELECT btrim(product_group) AS g, COUNT(*) AS n FROM receiving_items "
+        f"WHERE lower(btrim(COALESCE(brand,'')))=lower({_lit((brand or '').strip())}) "
+        f"AND lower(btrim(COALESCE(model,'')))=lower({_lit((model or '').strip())}) "
+        f"AND btrim(COALESCE(product_group,''))<>'' GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+    )
+    r = cur.fetchone()
+    return r['g'] if r else ''
+
+
 def fetch_price(cur, body):
     site = body.get('site')
     brand, model = body.get('brand') or '', body.get('model') or ''
     if site not in SITES or not clean_model(brand, model):
         return None, 'Нужны сайт, бренд и модель'
     b, m = ensure_row(cur, brand, model)
-    status, price, title, msg, url = run_search(cur, site, brand, model)
+    status, price, title, msg, url = run_search(cur, site, brand, model, body.get('group') or group_of(cur, brand, model))
     if status in ('ok', 'not_found'):
         cur.execute(
             f"UPDATE model_market_prices SET {site}={_lit(price)}, {site}_status='{status}', "
-            f"{site}_at=NOW(), {site}_title={_lit(title)}, {site}_url={_lit(url)}, updated_at=NOW() "
+            f"{site}_at=NOW(), {site}_title={_lit(title)}, {site}_url={_lit(url)}, "
+            f"{site}_confirmed=FALSE, updated_at=NOW() "
             f"WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
         )
     else:
@@ -383,6 +434,61 @@ def fetch_price(cur, body):
         )
     recalc(cur, b, m)
     return {'row': get_row(cur, b, m), 'status': status, 'message': msg}, None
+
+
+def exclude(cur, body):
+    """«Не тот товар»: запомнить карточку как неподходящую для модели и перепарсить."""
+    site = body.get('site')
+    brand, model = body.get('brand') or '', body.get('model') or ''
+    if site not in SITES:
+        return None, 'Неизвестный сайт'
+    b, m = keys(brand, model)
+    row = get_row(cur, b, m)
+    if not row or row[site] is None:
+        return None, 'Цены для исключения нет'
+    cur.execute(
+        f"INSERT INTO market_excluded (brand_key, model_key, site, url, title, price) VALUES "
+        f"({_lit(b)}, {_lit(m)}, '{site}', {_lit(row[f'{site}_url'])}, {_lit(row[f'{site}_title'])}, "
+        f"{_lit(row[site])})"
+    )
+    return fetch_price(cur, body)
+
+
+def confirm(cur, body):
+    site = body.get('site')
+    if site not in SITES:
+        return None, 'Неизвестный сайт'
+    b, m = keys(body.get('brand') or '', body.get('model') or '')
+    cur.execute(
+        f"UPDATE model_market_prices SET {site}_confirmed=TRUE, {site}_suspect=FALSE, updated_at=NOW() "
+        f"WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
+    )
+    recalc(cur, b, m)
+    return {'row': get_row(cur, b, m)}, None
+
+
+def filters_state(cur):
+    cur.execute(
+        "SELECT e.id, e.site, e.url, e.title, e.price, e.created_at, p.brand, p.model "
+        "FROM market_excluded e LEFT JOIN model_market_prices p "
+        "ON p.brand_key=e.brand_key AND p.model_key=e.model_key ORDER BY e.id DESC LIMIT 300"
+    )
+    return {'filters': F.load(cur), 'defaults': F.DEFAULTS, 'excluded': cur.fetchall()}, None
+
+
+def filters_save(cur, body):
+    err = F.save(cur, body.get('key'), body.get('value'))
+    return (None, err) if err else filters_state(cur)
+
+
+def filters_reset(cur, body):
+    err = F.reset(cur, body.get('key'))
+    return (None, err) if err else filters_state(cur)
+
+
+def unexclude(cur, body):
+    cur.execute(f"DELETE FROM market_excluded WHERE id={int(body.get('id') or 0)}")
+    return filters_state(cur)
 
 
 def set_total(cur, body):
@@ -417,7 +523,7 @@ def lookup(cur, body):
 
 
 def handler(event: dict, context) -> dict:
-    """Цены маркетплейсов по модели (WB РФ/РБ, Ozon РФ/РБ, Яндекс Маркет, М.Видео): поиск минимальной цены, средняя по стране, ручной ввод, настройки прокси Proxy.Market и проверка каждого сайта."""
+    """Цены маркетплейсов по модели (WB РФ/РБ, Ozon РФ/РБ, Яндекс Маркет, М.Видео): поиск минимальной цены, средняя по стране, ручной ввод, настройки прокси Proxy.Market и проверка каждого сайта, фильтры поиска (предлоги, запчасти, синонимы типов, правдоподобие цены), «Не тот товар» и подтверждение подозрительной цены."""
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
@@ -452,10 +558,13 @@ def handler(event: dict, context) -> dict:
 
         if action == 'lookup':
             return _resp(200, {**lookup(cur, body), 'can_edit': bool(can_edit), 'is_owner': owner})
-        if action in ('fetch', 'set_total') and not can_edit:
+        if action in ('fetch', 'set_total', 'exclude', 'confirm') and not can_edit:
             return _resp(403, {'error': 'Нет права получать и править цены'})
         if action == 'fetch':
             data, err = fetch_price(cur, body)
+            return _resp(400, {'error': err}) if err else _resp(200, data)
+        if action in ('exclude', 'confirm'):
+            data, err = (exclude if action == 'exclude' else confirm)(cur, body)
             return _resp(400, {'error': err}) if err else _resp(200, data)
         if action == 'set_total':
             data, err = set_total(cur, body)
@@ -467,6 +576,10 @@ def handler(event: dict, context) -> dict:
             'create_proxies': lambda: create_proxies(cur, body),
             'save_site': lambda: save_site(cur, body),
             'test_site': lambda: test_site(cur, body),
+            'filters': lambda: filters_state(cur),
+            'filters_save': lambda: filters_save(cur, body),
+            'filters_reset': lambda: filters_reset(cur, body),
+            'unexclude': lambda: unexclude(cur, body),
             'vps_state': lambda: vps.state(cur),
             'vps_ping': lambda: (vps.ping(cur), None),
             'vps_new_code': lambda: vps.new_code(cur),

@@ -30,9 +30,11 @@ interface SiteProps {
   busy: boolean;
   canEdit: boolean;
   onFetch: () => void;
+  onExclude: () => void;
+  onConfirm: () => void;
 }
 
-export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
+export const SiteCell = ({ site, row, busy, canEdit, onFetch, onExclude, onConfirm }: SiteProps) => {
   const [ask, setAsk] = useState(false);
   const cur = SITE_COLUMNS.find((s) => s.key === site)?.cur;
   const price = row?.[site];
@@ -69,6 +71,7 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
   }
 
   const hasPrice = price != null && price !== "";
+  const suspect = hasPrice && Boolean(row?.[`${site}_suspect`]);
   return (
     <>
       <button
@@ -79,8 +82,9 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
         className="text-left rounded px-1 -mx-1 hover:bg-white/[0.06] disabled:hover:bg-transparent"
       >
         {hasPrice ? (
-          <span className="tabular-nums text-foreground">
+          <span className={`tabular-nums ${suspect ? "text-amber-300" : "text-foreground"}`}>
             {money(price)} {cur}
+            {suspect && <span className="block text-[10px] font-medium text-amber-300">проверить</span>}
           </span>
         ) : (
           <span className={status === "not_found" ? "text-muted-foreground" : "text-amber-300"}>
@@ -109,6 +113,40 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch }: SiteProps) => {
               <Icon name="ExternalLink" size={16} className="mr-1.5" />
               {src.exact ? "Открыть товар на сайте" : "Открыть поиск на сайте"}
             </Button>
+          )}
+          {suspect && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              Цена намного ниже, чем на других сайтах, и пока не входит в итог страны. Откройте товар: если
+              он тот — подтвердите, если нет — нажмите «Не тот товар».
+            </div>
+          )}
+          {canEdit && hasPrice && (
+            <div className={`grid gap-2 ${suspect ? "grid-cols-2" : "grid-cols-1"}`}>
+              <Button
+                variant="outline"
+                className="h-11 border-red-500/40 text-red-200"
+                onClick={() => {
+                  onExclude();
+                  setAsk(false);
+                }}
+              >
+                <Icon name="Ban" size={16} className="mr-1.5" />
+                Не тот товар
+              </Button>
+              {suspect && (
+                <Button
+                  variant="outline"
+                  className="h-11 border-emerald-500/40 text-emerald-200"
+                  onClick={() => {
+                    onConfirm();
+                    setAsk(false);
+                  }}
+                >
+                  <Icon name="Check" size={16} className="mr-1.5" />
+                  Цена верная
+                </Button>
+              )}
+            </div>
           )}
           {src && !src.exact && hasPrice && (
             <p className="text-xs text-muted-foreground -mt-2">

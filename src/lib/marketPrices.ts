@@ -184,6 +184,48 @@ export const mb = (bytes?: number) =>
 export const fetchSitePrice = (site: SiteKey, brand: string, model: string) =>
   post({ action: "fetch", site, brand, model }) as Promise<{ row: PriceRow; status: string }>;
 
+export const excludeCard = (site: SiteKey, brand: string, model: string) =>
+  post({ action: "exclude", site, brand, model }) as Promise<{ row: PriceRow; status: string }>;
+
+export const confirmPrice = (site: SiteKey, brand: string, model: string) =>
+  post({ action: "confirm", site, brand, model }) as Promise<{ row: PriceRow }>;
+
+export type FilterKey = "preps" | "parts" | "synonyms";
+
+export interface Plaus {
+  site_on: boolean;
+  site_ratio: number | string;
+  cross_on: boolean;
+  cross_ratio: number | string;
+}
+
+export interface FilterSet {
+  preps: string[];
+  parts: string[];
+  synonyms: string[];
+  plaus: Plaus;
+}
+
+export interface ExcludedCard {
+  id: number;
+  site: SiteKey;
+  url: string | null;
+  title: string | null;
+  price: number | null;
+  created_at: string;
+  brand: string | null;
+  model: string | null;
+}
+
+export interface FiltersState {
+  filters: FilterSet;
+  defaults: FilterSet;
+  excluded: ExcludedCard[];
+}
+
+export const filtersCall = (action: string, extra: Record<string, unknown> = {}) =>
+  post({ action, ...extra }) as Promise<FiltersState>;
+
 export const saveTotal = (field: TotalKey, brand: string, model: string, value: string) =>
   post({ action: "set_total", field, brand, model, value }) as Promise<{ row: PriceRow }>;
 
