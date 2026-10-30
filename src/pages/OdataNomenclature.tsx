@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import NomenRequisites, { COMMON_REQUISITES } from "@/components/odata/NomenRequisites";
+import NomenRequisites, { COMMON_REQUISITES, UNF_REQUISITES } from "@/components/odata/NomenRequisites";
+import NomenFieldsPicker from "@/components/odata/NomenFieldsPicker";
+import NomenPriceKind from "@/components/odata/NomenPriceKind";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
@@ -40,6 +42,8 @@ import {
   countryByName,
   checkTnvedCodes,
   loadCountries,
+  PriceKind,
+  loadPriceKinds,
 } from "./odata/nomenApi";
 import NomenTraceColumns, { EMPTY_TRACE_COLS, TraceCols, cellOf } from "@/components/odata/NomenTraceColumns";
 import NomenCategories, { guessCategoryColumn, suggestExcluded } from "@/components/odata/NomenCategories";
@@ -71,6 +75,14 @@ const OdataNomenclature = () => {
   const { toast } = useToast();
   const { base = "trade-resurs" } = useParams();
   const baseInfo = findBase(base);
+  const isUnf = baseInfo?.kind === "unf";
+  const priceKindStore = `nomen_price_kind_${base}`;
+  const [priceKinds, setPriceKinds] = useState<PriceKind[]>([]);
+  const [priceKind, setPriceKindState] = useState(() => localStorage.getItem(`nomen_price_kind_${base}`) || "");
+  const setPriceKind = (k: string) => {
+    setPriceKindState(k);
+    localStorage.setItem(priceKindStore, k);
+  };
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
   const fileRef = useRef<HTMLInputElement>(null);
   const stopRef = useRef(false);
@@ -82,6 +94,7 @@ const OdataNomenclature = () => {
     by: "article",
     exact: true,
     checkBarcodes: false,
+    fields: findBase(base)?.kind === "unf" ? ["article", "name"] : undefined,
   });
   const [usedOpts, setUsedOpts] = useState<MatchOptions | null>(null);
   const [matches, setMatches] = useState<(MatchItem | null)[]>([]);
@@ -118,6 +131,16 @@ const OdataNomenclature = () => {
     if (user.role !== "owner") navigate("/admin/dashboard");
   }, []);
 
+  useEffect(() => {
+    if (!isUnf) return;
+    loadPriceKinds(base)
+      .then((k) => {
+        setPriceKinds(k);
+        setPriceKindState((cur) => (k.some((x) => x.key === cur) ? cur : ""));
+      })
+      .catch((e) => toast({ title: "Не загрузил виды цен", description: (e as Error).message, variant: "destructive" }));
+  }, [base, isUnf]);
+
   const [catCol, setCatCol] = useState<number | null>(null);
   const [traceCols, setTraceCols] = useState<TraceCols>(EMPTY_TRACE_COLS);
   const [similarCountry, setSimilarCountryState] = useState(() => localStorage.getItem("nomen_similar_country") === "1");
@@ -134,6 +157,7 @@ const OdataNomenclature = () => {
     () => ({
       article: items.filter((x) => x.article).length,
       name: items.filter((x) => x.name).length,
+      barcode: items.filter((x) => x.barcode).length,
     }),
     [items],
   );
@@ -152,7 +176,7 @@ const OdataNomenclature = () => {
     return c;
   }, [matches]);
 
-  const portion = opts.mode === "all" || opts.checkBarcodes ? 10 : 20;
+  const portion = opts.mode === "all" || opts.checkBarcodes || (opts.fields?.length || 0) > 1 ? 10 : 20;
 
   const onFile = (f: File) => {
     const reader = new FileReader();
@@ -174,7 +198,7 @@ const OdataNomenclature = () => {
         const best = (["article", "name"] as SearchBy[]).find((k) =>
           d.items.every((x) => x[k]),
         );
-        setOpts((o) => ({ ...o, by: best || "article" }));
+        if (!isUnf) setOpts((o) => ({ ...o, by: best || "article" }));
       } catch (e) {
         setInvoice(null);
         toast({ title: (e as Error).message, variant: "destructive" });
@@ -282,7 +306,7 @@ const OdataNomenclature = () => {
     try {
       const [g, cs] = await Promise.all([
         loadGroups(base),
-        countries.length ? Promise.resolve(countries) : loadCountries(base).catch(() => [] as Country1C[]),
+        countries.length || isUnf ? Promise.resolve(countries) : loadCountries(base).catch(() => [] as Country1C[]),
       ]);
       const brands = g.map((x) => x.name);
       setGroups(g);
@@ -405,7 +429,7 @@ const OdataNomenclature = () => {
       ),
     );
 
-  const similarTargets = newItems.filter((x) => !x.skip && x.kind && (!x.fileTnved || !x.fileWeight));
+  const similarTargets = newItems.filter((x) => !x.skip && x.kind && (!x.fileTnved || (!isUnf && !x.fileWeight)));
   const similarKinds = Array.from(new Set(similarTargets.map((x) => x.kind))).sort();
 
   const applySimilar = (t: TnvedResult) =>
@@ -524,7 +548,12 @@ const OdataNomenclature = () => {
     const rows = unpricedList(results, decs, done);
     if (!rows.length) return;
     setPricing(true);
-    const doc = await setBasePrices(base, rows, `Создано сайтом по счёту ${invoice?.file_name || ""}`.trim());
+    const doc = await setBasePrices(
+      base,
+      rows,
+      `Создано сайтом по счёту ${invoice?.file_name || ""}`.trim(),
+      isUnf ? priceKind : undefined,
+    );
     setPriceDocs((p) => [...p, doc]);
     if (doc.ok) {
       setPricedKeys((p) => [...p, ...rows.map((r) => r.key)]);
@@ -724,7 +753,7 @@ const OdataNomenclature = () => {
           )}
         </section>
 
-        {invoice && (
+        {invoice && !isUnf && (
           <NomenTraceColumns
             columns={invoice.columns || []}
             items={allItems}
@@ -766,13 +795,17 @@ const OdataNomenclature = () => {
               <Icon name="Search" size={18} className="text-primary" />
               2. Как искать в 1С
             </div>
-            <NomenSearchOptions
-              opts={opts}
-              onChange={setOpts}
-              filled={filled}
-              total={items.length}
-              disabled={busy}
-            />
+            {isUnf ? (
+              <NomenFieldsPicker opts={opts} onChange={setOpts} filled={filled} total={items.length} disabled={busy} />
+            ) : (
+              <NomenSearchOptions
+                opts={opts}
+                onChange={setOpts}
+                filled={filled}
+                total={items.length}
+                disabled={busy}
+              />
+            )}
             {items.length < allItems.length && (
               <div className="text-sm text-muted-foreground">
                 К проверке {items.length} из {allItems.length}, отсеяно {allItems.length - items.length}
@@ -792,7 +825,7 @@ const OdataNomenclature = () => {
                     Продолжить с {resumeFrom + 1}
                   </Button>
                 )}
-                <Button variant={resumeFrom !== null ? "outline" : "default"} onClick={runCheck} disabled={writing || !items.length}>
+                <Button variant={resumeFrom !== null ? "outline" : "default"} onClick={runCheck} disabled={writing || !items.length || (isUnf && !opts.fields?.length)}>
                   <Icon name="Search" size={16} />
                   {hasResults ? "Проверить заново" : "Проверить в 1С"}
                 </Button>
@@ -871,6 +904,7 @@ const OdataNomenclature = () => {
             tnvedMissing={tnvedMissing}
             similarCountry={similarCountry}
             onSimilarCountry={setSimilarCountry}
+            unf={isUnf}
             base={base}
             onGroupAdded={(g) =>
               setGroups((prev) =>
@@ -893,6 +927,22 @@ const OdataNomenclature = () => {
             progress={createProgress}
             onCreate={createIn1C}
             onPriceNow={() => priceNow()}
+            priceReady={!isUnf || !!priceKind}
+            note={
+              isUnf
+                ? "Перед созданием сайт сверяет артикул и наименование с 1С. Совпали оба — карточка уже есть, не создаётся. Совпал только один — позиция уходит в «Нужно решение». Штрихкод записывается, только если его нет в 1С. Цены — одним документом «Установка цен номенклатуры» на все созданные, с выбранным видом цены."
+                : undefined
+            }
+            priceSlot={
+              isUnf ? (
+                <NomenPriceKind
+                  kinds={priceKinds}
+                  value={priceKind}
+                  onChange={setPriceKind}
+                  disabled={creating || pricing || pricedKeys.length > 0}
+                />
+              ) : null
+            }
           />
         )}
 
@@ -910,7 +960,7 @@ const OdataNomenclature = () => {
           />
         )}
 
-        {checked && rowsForExcel(newItems, createResults, decisions).length > 0 && (
+        {!isUnf && checked && rowsForExcel(newItems, createResults, decisions).length > 0 && (
           <NomenExcelPanel
             rows={rowsForExcel(newItems, createResults, decisions)}
             groups={groups}
@@ -955,14 +1005,15 @@ const OdataNomenclature = () => {
             {newItems.length > 0 && (
               <div className="text-[11px] text-muted-foreground rounded-lg border border-white/[0.08] px-3 py-2 space-y-0.5">
                 <div>{newSummary}</div>
-                <div>Для всех новых: {COMMON_REQUISITES}</div>
+                <div>Для всех новых: {isUnf ? UNF_REQUISITES : COMMON_REQUISITES}</div>
               </div>
             )}
             <NomenMatchTable
               items={items}
               matches={matches}
               filter={filter}
-              showHits={usedOpts?.mode === "all"}
+              showHits={usedOpts?.mode === "all" || (usedOpts?.fields?.length || 0) > 1}
+              fields={usedOpts?.fields}
               renderExtra={(i) => {
                 const x = newItems.find((n) => n.idx === i);
                 if (!x) return null;
@@ -989,7 +1040,7 @@ const OdataNomenclature = () => {
           </section>
         )}
 
-        {!(checked && rowsForExcel(newItems, createResults, decisions).length > 0) && (
+        {!isUnf && !(checked && rowsForExcel(newItems, createResults, decisions).length > 0) && (
         <div className="space-y-2 pt-2">
           {NEXT_STEPS.map((s, i) => (
             <div

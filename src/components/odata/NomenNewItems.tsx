@@ -47,11 +47,12 @@ interface Props {
   tnvedMissing: string[];
   similarCountry: boolean;
   onSimilarCountry: (on: boolean) => void;
+  unf?: boolean;
 }
 
 type TnFilter = "all" | "has" | "none" | "missing" | "skip";
 
-const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing, similarCountry, onSimilarCountry }: Props) => {
+const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing, similarCountry, onSimilarCountry, unf }: Props) => {
   const [tf, setTfState] = useState<TnFilter>("all");
   const [notReady, setNotReady] = useState<Set<number> | null>(null);
   const setTf = (k: TnFilter) => {
@@ -153,8 +154,9 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Автоматически: ставка НДС 22%, единица «шт», вид номенклатуры «Товары». Коды ТН ВЭД и подбор по
-          похожим — в блоке «Коды ТН ВЭД» выше.
+          {unf
+            ? "Автоматически: «шт», «Запас», «Без НДС», «Основной склад». Вес — из файла или вручную. Коды ТН ВЭД и подбор по похожим — в блоке «Коды ТН ВЭД» выше."
+            : "Автоматически: ставка НДС 22%, единица «шт», вид номенклатуры «Товары». Коды ТН ВЭД и подбор по похожим — в блоке «Коды ТН ВЭД» выше."}
         </p>
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1">
@@ -186,7 +188,7 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             Проставить всем
           </Button>
         </div>
-        <label className="flex items-start gap-3 cursor-pointer">
+        {!unf && <label className="flex items-start gap-3 cursor-pointer">
           <Switch checked={similarCountry} onCheckedChange={onSimilarCountry} className="mt-0.5" />
           <span className="space-y-0.5">
             <span className="block text-sm">Страна по похожим</span>
@@ -196,7 +198,7 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
                 : "Выключено: страна только из файла или вручную, иначе карточка без страны"}
             </span>
           </span>
-        </label>
+        </label>}
         <div className="flex items-end gap-2 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1">
             <span className="text-xs text-muted-foreground">Где искать цену и вес</span>
@@ -268,6 +270,7 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
             lookup={lookup}
             base={base}
             onGroupAdded={onGroupAdded}
+            unf={unf}
           />
         ))}
       </div>

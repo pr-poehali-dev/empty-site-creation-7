@@ -40,6 +40,7 @@ interface Props {
   lookup: (article: string) => Promise<SiteProduct>;
   base: string;
   onGroupAdded: (g: Group1C) => void;
+  unf?: boolean;
 }
 
 const Field = ({ label, children, bad }: { label: string; children: React.ReactNode; bad?: boolean }) => (
@@ -51,7 +52,7 @@ const Field = ({ label, children, bad }: { label: string; children: React.ReactN
 
 const T = "text-sm md:text-sm";
 
-const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry, onChange, site, lookup, base, onGroupAdded }: Props) => {
+const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry, onChange, site, lookup, base, onGroupAdded, unf }: Props) => {
   const tnved: TnvedKind | undefined = item.found
     ? { ...item.found, country: auto?.country ? item.found.country : undefined }
     : auto;
@@ -137,7 +138,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
             />
           </div>
         </Field>
-        <Field label="Базовая цена, ₽" bad={bad("цена")}>
+        <Field label={unf ? "Цена, ₽" : "Базовая цена, ₽"} bad={bad("цена")}>
           <NomenSiteField
             value={item.price}
             inputMode="decimal"
@@ -156,7 +157,18 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
             </span>
           )}
         </Field>
-        <Field label="Вес из сертификата, кг" bad={bad("вес")}>
+        <Field label={unf ? "Вес, кг" : "Вес из сертификата, кг"} bad={bad("вес")}>
+          {unf ? (
+            <Input
+              className={T}
+              value={item.weight}
+              inputMode="decimal"
+              placeholder="например 12,5"
+              onChange={(e) =>
+                onChange({ weight: e.target.value.replace(/[^\d.,]/g, "").replace(".", ","), weightAuto: false, weightSrc: undefined })
+              }
+            />
+          ) : (
           <NomenSiteField
             value={item.weight}
             inputMode="decimal"
@@ -175,8 +187,9 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
               onChange({ weight: fmtWeight(v), weightAuto: false, weightSrc: "site", siteUrl: p.url })
             }
           />
+          )}
           <span className="block text-[11px] leading-tight text-muted-foreground">
-            {item.weightSrc === "file" && item.weight.trim()
+            {unf ? (item.weight.trim() ? (item.weightSrc === "file" ? "из файла" : "введено вручную") : "нет в файле — введите") : item.weightSrc === "file" && item.weight.trim()
               ? "из файла"
               : item.weightSrc === "site" && item.weight.trim()
               ? "с сайта"
@@ -254,7 +267,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
             </button>
           )}
         </Field>
-        {(tnved?.country || item.fileCountry || item.countryKey || item.fileGtd || item.fileRnpt) && (
+        {!unf && (tnved?.country || item.fileCountry || item.countryKey || item.fileGtd || item.fileRnpt) && (
           <NomenCountryField
             value={item.countryKey}
             info={tnved?.country || { basis: "", similar: 0, options: [] }}
@@ -294,14 +307,14 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
           const manual = item.weight.trim() && !item.weightAuto;
           const patch: Partial<NewItem> = { found: r };
           if (best && item.tnvedSrc !== "file") Object.assign(patch, { tnved: best.code, tnvedKey: best.key });
-          if (!manual && item.weightSrc !== "file") Object.assign(patch, avgW > 0 ? { weight: fmtWeight(avgW), weightAuto: true, weightSrc: undefined } : {});
+          if (!unf && !manual && item.weightSrc !== "file") Object.assign(patch, avgW > 0 ? { weight: fmtWeight(avgW), weightAuto: true, weightSrc: undefined } : {});
           if (similarCountry && auto?.country && !item.countryTouched) patch.countryKey = r.country?.options?.[0]?.key || "";
           onChange(patch);
         }}
         onPick={(f) => {
           const patch: Partial<NewItem> = {};
           if (f.tnved) Object.assign(patch, { tnved: f.tnved, tnvedKey: f.tnved_key, tnvedSrc: undefined });
-          if (f.w) Object.assign(patch, { weight: fmtWeight(f.w), weightAuto: false, weightSrc: undefined });
+          if (f.w && !unf) Object.assign(patch, { weight: fmtWeight(f.w), weightAuto: false, weightSrc: undefined });
           onChange(patch);
         }}
       />
@@ -326,7 +339,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
                 found: undefined,
                 tnved: best?.code || "",
                 tnvedKey: best?.key || "",
-                ...(manual ? {} : { weight: avgW > 0 ? fmtWeight(avgW) : "", weightAuto: avgW > 0 }),
+                ...(manual || unf ? {} : { weight: avgW > 0 ? fmtWeight(avgW) : "", weightAuto: avgW > 0 }),
                 ...(similarCountry && auto?.country && !item.countryTouched ? { countryKey: auto.country.options?.[0]?.key || "" } : {}),
               });
             }}>

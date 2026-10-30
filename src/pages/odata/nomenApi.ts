@@ -14,6 +14,20 @@ export const SEARCH_BY_SHORT: Record<SearchBy, string> = {
   name: "Н",
 };
 
+export type MatchField = SearchBy | "barcode";
+
+export const FIELD_TITLES: Record<MatchField, string> = {
+  article: "Артикул",
+  name: "Наименование",
+  barcode: "Штрихкод",
+};
+
+export const FIELD_SHORT: Record<MatchField, string> = {
+  article: "А",
+  name: "Н",
+  barcode: "Ш",
+};
+
 export interface InvoiceItem {
   num: string;
   article: string;
@@ -41,7 +55,7 @@ export interface Card1C {
   name: string;
   article: string;
   deleted: boolean;
-  matched?: SearchBy[];
+  matched?: MatchField[];
   full?: boolean;
 }
 
@@ -59,7 +73,7 @@ export interface MatchItem {
   value: string;
   status: MatchStatus;
   cards: Card1C[];
-  hits?: Partial<Record<SearchBy, boolean | null>>;
+  hits?: Partial<Record<MatchField, boolean | null>>;
   error?: string | null;
   card_key?: string;
   bc?: BarcodeCheck;
@@ -70,6 +84,7 @@ export interface MatchOptions {
   by: SearchBy;
   exact: boolean;
   checkBarcodes: boolean;
+  fields?: MatchField[];
 }
 
 export interface BarcodeWriteResult {
@@ -166,6 +181,7 @@ const matchOnce = async (base: string, opts: MatchOptions, rows: InvoiceItem[]) 
       by: opts.by,
       exact: opts.exact,
       check_barcodes: opts.checkBarcodes,
+      fields: opts.fields,
       rows: rows.map((x) => ({ article: x.article, barcode: x.barcode, name: x.name })),
     }, MATCH_TIMEOUT);
     return res.items as MatchItem[];
@@ -480,7 +496,16 @@ export interface PriceDocResult {
   posted?: boolean;
   post_error?: string | null;
   error?: string;
+  price_kind?: string;
 }
+
+export interface PriceKind {
+  key: string;
+  name: string;
+}
+
+export const loadPriceKinds = async (base: string): Promise<PriceKind[]> =>
+  (await withRetry(() => odataPost("price_kinds", base, {}))).kinds || [];
 
 export const createPortion = async (base: string, list: NewItem[], force = false): Promise<CreateResult[]> =>
   (
@@ -505,9 +530,10 @@ export const setBasePrices = async (
   base: string,
   rows: { key: string; price: number }[],
   comment: string,
+  priceKind?: string,
 ): Promise<PriceDocResult> => {
   try {
-    return await odataPost("nomen_set_prices", base, { rows, comment });
+    return await odataPost("nomen_set_prices", base, { rows, comment, price_kind: priceKind });
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

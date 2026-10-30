@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Icon from "@/components/ui/icon";
 import { CreateResult, NewItem, PriceDocResult } from "@/pages/odata/nomenApi";
@@ -15,6 +15,9 @@ interface Props {
   progress: { done: number; total: number; stage: string };
   onCreate: () => void;
   onPriceNow: () => void;
+  priceSlot?: ReactNode;
+  priceReady?: boolean;
+  note?: string;
 }
 
 const NomenCreatePanel = ({
@@ -29,6 +32,9 @@ const NomenCreatePanel = ({
   progress,
   onCreate,
   onPriceNow,
+  priceSlot,
+  priceReady = true,
+  note,
 }: Props) => {
   const [confirm, setConfirm] = useState(false);
   const list = Object.values(results);
@@ -47,17 +53,19 @@ const NomenCreatePanel = ({
         4. Создание в 1С
       </div>
       <p className="text-xs text-muted-foreground">
-        Перед созданием сайт сверяет артикул и наименование с 1С. Совпали оба — карточка уже есть, не
+        {note || <>Перед созданием сайт сверяет артикул и наименование с 1С. Совпали оба — карточка уже есть, не
         создаётся. Совпал только один — позиция уходит в «Нужно решение». Штрихкод записывается, только
-        если его нет в 1С. Базовые цены — одним документом на все созданные.
+        если его нет в 1С. Базовые цены — одним документом на все созданные.</>}
       </p>
+      {priceSlot}
 
       {!running && !confirm && (
-        <Button onClick={() => setConfirm(true)} disabled={readyCount === 0 || pricing}>
+        <Button onClick={() => setConfirm(true)} disabled={readyCount === 0 || pricing || !priceReady}>
           <Icon name="PackagePlus" size={16} />
           Создать в 1С ({readyCount})
         </Button>
       )}
+      {!priceReady && !running && <div className="text-xs text-amber-400">Выберите вид цены.</div>}
       {readyCount === 0 && !running && list.length === 0 && (
         <div className="text-xs text-amber-400">Заполните позиции в шаге 3 — создаются только готовые.</div>
       )}
@@ -86,7 +94,7 @@ const NomenCreatePanel = ({
         <div className="space-y-2">
           <div className="text-sm text-muted-foreground flex items-center gap-2">
             <Icon name="Loader2" size={14} className="animate-spin" />
-            {pricing ? "Устанавливаю базовые цены" : progress.stage}
+            {pricing ? "Устанавливаю цены" : progress.stage}
             {!pricing && progress.total > 0 && ` · ${progress.done} из ${progress.total}`}
           </div>
           {!pricing && (
@@ -131,7 +139,7 @@ const NomenCreatePanel = ({
               }`}
             >
               {d.ok
-                ? `Установка цен № ${d.number}: ${d.lines} строк, ${
+                ? `Установка цен № ${d.number}${d.price_kind ? ` (${d.price_kind})` : ""}: ${d.lines} строк, ${
                     d.posted ? "проведена" : `не проведена — ${d.post_error}`
                   }`
                 : `Цены не установлены: ${d.error}`}
@@ -141,7 +149,7 @@ const NomenCreatePanel = ({
           {unpriced > 0 && !pricing && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
               <div className="text-xs text-amber-200">
-                Без базовой цены: {unpriced}.{" "}
+                Без цены: {unpriced}.{" "}
                 {pendingDecisions > 0
                   ? `Цены будут установлены, когда решите по всем позициям ниже: осталось ${pendingDecisions}.`
                   : lastDoc && !lastDoc.ok

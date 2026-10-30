@@ -5,9 +5,9 @@ import {
   InvoiceItem,
   MatchItem,
   MatchStatus,
-  SEARCH_BY_SHORT,
-  SEARCH_BY_TITLES,
-  SearchBy,
+  FIELD_SHORT,
+  FIELD_TITLES,
+  MatchField,
 } from "@/pages/odata/nomenApi";
 
 export type Filter = "all" | MatchStatus | `bc_${BarcodeState}`;
@@ -30,13 +30,14 @@ export const BC_META: Record<BarcodeState, { label: string; cls: string }> = {
   error: { label: "ШК: ошибка", cls: "text-rose-400 bg-rose-500/10" },
 };
 
-const FIELDS: SearchBy[] = ["article", "name"];
+const DEFAULT_FIELDS: MatchField[] = ["article", "name"];
 
 interface Props {
   items: InvoiceItem[];
   matches: (MatchItem | null)[];
   filter: Filter;
   showHits: boolean;
+  fields?: MatchField[];
   renderExtra?: (i: number) => React.ReactNode;
 }
 
@@ -47,7 +48,7 @@ const matchesFilter = (m: MatchItem | null, filter: Filter) => {
   return m.status === filter;
 };
 
-const NomenMatchTable = ({ items, matches, filter, showHits, renderExtra }: Props) => {
+const NomenMatchTable = ({ items, matches, filter, showHits, fields = DEFAULT_FIELDS, renderExtra }: Props) => {
   const [open, setOpen] = useState<number | null>(null);
 
   const rows = items
@@ -84,12 +85,12 @@ const NomenMatchTable = ({ items, matches, filter, showHits, renderExtra }: Prop
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     {showHits &&
                       m?.hits &&
-                      FIELDS.map((f) => {
+                      fields.map((f) => {
                         const h = m.hits?.[f];
                         return (
                           <span
                             key={f}
-                            title={`${SEARCH_BY_TITLES[f]}: ${
+                            title={`${FIELD_TITLES[f]}: ${
                               h === null ? "пусто в счёте" : h ? "совпал" : "не найден"
                             }`}
                             className={`text-[10px] font-semibold w-5 h-5 rounded flex items-center justify-center ${
@@ -100,7 +101,7 @@ const NomenMatchTable = ({ items, matches, filter, showHits, renderExtra }: Prop
                                   : "bg-white/[0.08] text-muted-foreground"
                             }`}
                           >
-                            {h === null ? "–" : SEARCH_BY_SHORT[f]}
+                            {h === null ? "–" : FIELD_SHORT[f]}
                           </span>
                         );
                       })}
@@ -153,7 +154,7 @@ const NomenMatchTable = ({ items, matches, filter, showHits, renderExtra }: Prop
                     </div>
                     {showHits && c.matched && (
                       <div className="text-muted-foreground mt-0.5">
-                        Совпало: {c.matched.map((f) => SEARCH_BY_TITLES[f].toLowerCase()).join(", ")}
+                        Совпало: {c.matched.map((f) => FIELD_TITLES[f].toLowerCase()).join(", ")}
                       </div>
                     )}
                   </div>

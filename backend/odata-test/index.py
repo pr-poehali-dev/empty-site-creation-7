@@ -475,16 +475,28 @@ def _row_status(active_count):
     return 'missing'
 
 
-def nomen_match(cfg, rows, mode='single', by='article', exact=True, check_barcodes=False):
+MATCH_FIELDS = ('article', 'name', 'barcode')
+
+
+def nomen_match(cfg, rows, mode='single', by='article', exact=True, check_barcodes=False, fields=None):
     """Проверяет порцию строк счёта в 1С.
     mode=single — по одному реквизиту by (артикул или наименование); mode=all — по артикулу и наименованию:
     exact — у одной карточки должны совпасть все заполненные в счёте реквизиты, иначе хватит одного.
     check_barcodes — у найденной карточки сверить штрихкоды с штрихкодом из счёта."""
-    if mode not in ('single', 'all'):
-        return {'ok': False, 'error': 'Неизвестный режим поиска'}
-    if mode == 'single' and by not in NOMEN_FIELDS:
-        return {'ok': False, 'error': 'Неизвестный реквизит поиска'}
-    fields = NOMEN_FIELDS if mode == 'all' else (by,)
+    if fields:
+        fields = tuple(f for f in MATCH_FIELDS if f in fields)
+        if not fields:
+            return {'ok': False, 'error': 'Не выбраны реквизиты поиска'}
+        mode, exact = ('single', True) if len(fields) == 1 else ('all', True)
+        by = fields[0]
+        if 'barcode' in fields:
+            check_barcodes = False
+    else:
+        if mode not in ('single', 'all'):
+            return {'ok': False, 'error': 'Неизвестный режим поиска'}
+        if mode == 'single' and by not in NOMEN_FIELDS:
+            return {'ok': False, 'error': 'Неизвестный реквизит поиска'}
+        fields = NOMEN_FIELDS if mode == 'all' else (by,)
     norm_rows = [{'article': str(r.get('article') or '').strip(), 'name': norm_name(r.get('name')),
                   'barcode': str(r.get('barcode') or '').strip()} for r in rows]
 
@@ -701,9 +713,17 @@ def _lone_adjective(basis):
     return len(w) == 1 and w[0].lower().endswith(ADJ_END)
 
 
+def nf(cfg):
+    """Имена реквизитов карточки: ТНВЭД и вес в УНФ называются иначе."""
+    if (cfg or {}).get('kind') == 'unf':
+        return {'tnved': 'ТоварнаяНоменклатураВЭД_Key', 'weight': 'Вес'}
+    return {'tnved': 'КодТНВЭД_Key', 'weight': 'ВесПоСертификатуТовара'}
+
+
 def tnved_by_type(cfg, kind):
+    f = nf(cfg)
     r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1000"
-                        "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара,СтранаПроисхождения_Key"
+                        f"&$select={f['tnved']},Description,Code,{f['weight']},СтранаПроисхождения_Key"
                         f"&$filter=IsFolder eq false and DeletionMark eq false"
                         f" and substringof('{_q(kind)}',Description) eq true")
     if not r['ok']:
@@ -718,14 +738,14 @@ def tnved_by_type(cfg, kind):
         if not (c_name == want or c_name.startswith(want + ' ')):
             continue
         total += 1
-        k = x.get('КодТНВЭД_Key')
+        k = x.get(f['tnved'])
         if k and k != EMPTY_GUID:
             counts[k] = counts.get(k, 0) + 1
         c = x.get('СтранаПроисхождения_Key') or EMPTY_GUID
         c = '' if c == EMPTY_GUID else c
         countries[c] = countries.get(c, 0) + 1
         try:
-            w = float(x.get('ВесПоСертификатуТовара') or 0)
+            w = float(x.get(f['weight']) or 0)
         except (TypeError, ValueError):
             w = 0
         if w > 0:
@@ -762,6 +782,17 @@ def nomen_tnved(cfg, kinds):
     stats, errors = _run_parallel(lambda k: tnved_with_fallback(cfg, k), [(k,) for k in kinds])
     keys = sorted({g for s in stats.values() if s for g in s['counts']})
     codes, _ = _run_parallel(lambda k: tnved_code(cfg, k), [(k,) for k in keys])
+    if cfg.get('kind') == 'unf':
+        out = {}
+        for k in kinds:
+            s = stats.get((k,))
+            if not s:
+                out[k] = {'similar': 0, 'options': [], 'weights': [], 'error': errors.get((k,))}
+                continue
+            opts = [{'key': g, 'code': codes.get((g,)) or '', 'count': n} for g, n in s['counts'].items()]
+            opts.sort(key=lambda o: -o['count'])
+            out[k] = {'similar': s['total'], 'basis': s.get('basis') or k, 'options': opts, 'weights': []}
+        return {'ok': True, 'kinds': out, 'countries': [], 'countries_error': None}
     need_wide = sorted({country_family(k)[1] for k in kinds if country_family(k)
                         and (stats.get((k,)) or {}).get('total', 0) < COUNTRY_MIN_SIMILAR})
     wide, _ = _run_parallel(lambda s: countries_by_family(cfg, s), [(s,) for s in need_wide])
@@ -798,8 +829,9 @@ def nomen_search(cfg, query):
     if not words:
         return {'ok': False, 'error': 'Введите слова для поиска'}
     main = max(words, key=len)
+    f = nf(cfg)
     r = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=2000"
-                        "&$select=КодТНВЭД_Key,Description,Code,ВесПоСертификатуТовара,СтранаПроисхождения_Key"
+                        f"&$select={f['tnved']},Description,Code,{f['weight']},СтранаПроисхождения_Key"
                         f"&$filter=IsFolder eq false and DeletionMark eq false and {_word_clause(main)}")
     if not r['ok']:
         return {'ok': False, 'error': r['error']}
@@ -810,7 +842,7 @@ def nomen_search(cfg, query):
         n = name.lower().replace('ё', 'е')
         if not all(w in n for w in low):
             continue
-        k = x.get('КодТНВЭД_Key') or EMPTY_GUID
+        k = x.get(f['tnved']) or EMPTY_GUID
         k = '' if k == EMPTY_GUID else k
         if k:
             counts[k] = counts.get(k, 0) + 1
@@ -818,7 +850,7 @@ def nomen_search(cfg, query):
         c = '' if c == EMPTY_GUID else c
         countries[c] = countries.get(c, 0) + 1
         try:
-            w = float(x.get('ВесПоСертификатуТовара') or 0)
+            w = float(x.get(f['weight']) or 0)
         except (TypeError, ValueError):
             w = 0
         code = (x.get('Code') or '').strip()
@@ -1024,6 +1056,17 @@ def create_one_card(cfg, refs, row, force=False):
         if not tkey:
             return dict(base, state='error', error=f'Кода ТНВЭД {tnved} нет в справочнике 1С')
 
+    if cfg.get('kind') == 'unf':
+        r = call_odata(cfg, 'Catalog_Номенклатура?$format=json', method='POST',
+                       payload=unf_payload(refs, name, article, group, weight, tkey))
+        if not r['ok']:
+            return dict(base, state='error', error=r['error'])
+        d = r['data']
+        res = dict(base, state='created', key=d.get('Ref_Key'), code=(d.get('Code') or '').strip(),
+                   name=d.get('Description'), country='none')
+        res.update(write_barcode(cfg, res['key'], barcode))
+        return res
+
     payload = {
         'Description': name[:100],
         'НаименованиеПолное': name,
@@ -1074,9 +1117,112 @@ def write_country(cfg, key, ckey, traceable=None):
     return {'country': 'set', 'traceable': traceable}
 
 
+UNF_DEFAULTS = {
+    'category': ('Catalog_КатегорииНоменклатуры', '<Без категории>'),
+    'direction': ('Catalog_НаправленияДеятельности', 'Основное направление'),
+    'maker': ('Catalog_СтруктурныеЕдиницы', 'Основное подразделение'),
+    'warehouse': ('Catalog_СтруктурныеЕдиницы', 'Основной склад'),
+}
+
+
+UNF_ACCOUNTS = ('СчетУчетаЗапасов_Key', 'СчетУчетаЗатрат_Key', 'СчетУчетаДоходов_Key',
+                'СчетУчетаНДСПоПриобретеннымЦенностям_Key', 'СчетУчетаНДСПоРеализации_Key')
+
+
+def unf_refs(cfg):
+    """Справочные значения, одинаковые для всех новых карточек УНФ."""
+    out, _ = _run_parallel(lambda k: _first_key(cfg, *UNF_DEFAULTS[k]), [(k,) for k in UNF_DEFAULTS], workers=4)
+    refs = {k: out.get((k,)) for k in UNF_DEFAULTS}
+    refs['unit'] = find_unit_pcs(cfg)
+    acc = call_odata(cfg, "Catalog_Номенклатура?$format=json&$top=1&$orderby=Code desc"
+                          f"&$select={','.join(UNF_ACCOUNTS)}"
+                          f"&$filter=IsFolder eq false and DeletionMark eq false"
+                          f" and СчетУчетаЗапасов_Key ne guid'{EMPTY_GUID}'")
+    rows = (acc.get('data') or {}).get('value') or [] if acc['ok'] else []
+    refs['accounts'] = {f: rows[0][f] for f in UNF_ACCOUNTS
+                        if rows and rows[0].get(f) and rows[0][f] != EMPTY_GUID}
+    missing = [UNF_DEFAULTS[k][1] for k in UNF_DEFAULTS if not refs[k]] + ([] if refs['unit'] else ['шт'])
+    if missing:
+        return None, 'В 1С не нашёл: ' + ', '.join(missing)
+    return refs, None
+
+
+def unf_payload(refs, name, article, group, weight, tkey):
+    return {
+        'Description': name[:100],
+        'НаименованиеПолное': name,
+        'Артикул': article,
+        'IsFolder': False,
+        'Parent_Key': group,
+        'ТипНоменклатуры': 'Запас',
+        'ЕдиницаИзмерения_Key': refs['unit'],
+        'КатегорияНоменклатуры_Key': refs['category'],
+        'НаправлениеДеятельности_Key': refs['direction'],
+        'Изготовитель_Key': refs['maker'],
+        'Склад_Key': refs['warehouse'],
+        'ВидСтавкиНДС': 'БезНДС',
+        'СпособПополнения': 'Закупка',
+        'МетодОценки': 'FIFO',
+        'Вес': weight,
+        'ТоварнаяНоменклатураВЭД_Key': tkey,
+        **refs.get('accounts', {}),
+    }
+
+
+def unf_price_kinds(cfg):
+    r = call_odata(cfg, "Catalog_ВидыЦен?$format=json&$select=Ref_Key,Description,DeletionMark,ВалютаЦены_Key")
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    kinds = [{'key': x['Ref_Key'], 'name': (x.get('Description') or '').strip()}
+             for x in r['data'].get('value', []) if not x.get('DeletionMark')]
+    return {'ok': True, 'kinds': kinds}
+
+
+def unf_set_prices(cfg, rows, comment, price_kind):
+    """Один документ «Установка цен номенклатуры» УНФ на выбранный вид цены, затем проведение."""
+    if not re.fullmatch(r'[0-9a-f-]{36}', str(price_kind or '')):
+        return {'ok': False, 'error': 'Не выбран вид цены'}
+    k = call_odata(cfg, f"Catalog_ВидыЦен(guid'{price_kind}')?$format=json&$select=Description,ВалютаЦены_Key")
+    if not k['ok']:
+        return {'ok': False, 'error': k['error']}
+    currency = k['data'].get('ВалютаЦены_Key')
+    unit = find_unit_pcs(cfg)
+    goods = []
+    for r in rows:
+        key = str(r.get('key') or '').strip()
+        price = round(_num(r.get('price')), 2)
+        if re.fullmatch(r'[0-9a-f-]{36}', key) and price > 0:
+            line = {'LineNumber': str(len(goods) + 1), 'Номенклатура_Key': key, 'ВидЦены_Key': price_kind,
+                    'Цена': price}
+            if currency and currency != EMPTY_GUID:
+                line['Валюта_Key'] = currency
+            if unit:
+                line['ЕдиницаИзмерения'] = unit
+                line['ЕдиницаИзмерения_Type'] = 'StandardODATA.Catalog_КлассификаторЕдиницИзмерения'
+            goods.append(line)
+    if not goods:
+        return {'ok': False, 'error': 'Нет позиций с ценой'}
+    doc = {
+        'Date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'Комментарий': (comment or 'Создано сайтом: новая номенклатура')[:200],
+        'ЗаписыватьНовыеЦеныПоверхУстановленных': True,
+        'Запасы': goods,
+    }
+    r = call_odata(cfg, 'Document_УстановкаЦенНоменклатуры?$format=json', method='POST', payload=doc)
+    if not r['ok']:
+        return {'ok': False, 'error': r['error']}
+    d = r['data']
+    key = d.get('Ref_Key')
+    p = call_odata(cfg, f"Document_УстановкаЦенНоменклатуры(guid'{key}')/Post?PostingModeOperational=false",
+                   method='POST', raw=True)
+    return {'ok': True, 'key': key, 'number': d.get('Number'), 'lines': len(goods),
+            'price_kind': (k['data'].get('Description') or '').strip(),
+            'posted': p['ok'], 'post_error': None if p['ok'] else p['error']}
+
+
 def nomen_create(cfg, rows, force=False):
     """Создаёт порцию карточек номенклатуры (по одной, параллельно). force — без проверки на совпадения."""
-    refs, err = nomen_refs(cfg)
+    refs, err = unf_refs(cfg) if cfg.get('kind') == 'unf' else nomen_refs(cfg)
     if err:
         return {'ok': False, 'error': err}
     rows = rows[:10]
@@ -2184,8 +2330,9 @@ def handler(event: dict, context) -> dict:
     action = params.get('action') or body.get('action') or ''
 
     NUMBER_KINDS.clear()
-    NUMBER_KINDS.update({str(k).strip(): v for k, v in (body.get('kinds') or {}).items()
-                         if v in ('td', 'rnpt')})
+    raw_kinds = body.get('kinds')
+    if isinstance(raw_kinds, dict):
+        NUMBER_KINDS.update({str(k).strip(): v for k, v in raw_kinds.items() if v in ('td', 'rnpt')})
 
     if not check_owner(get_token(event)):
         return resp(401, {'error': 'Доступ только для владельца'})
@@ -2236,6 +2383,7 @@ def handler(event: dict, context) -> dict:
         return resp(200, {'result': nomen_match(
             cfg, body.get('rows') or [], mode=body.get('mode') or 'single', by=body.get('by') or 'article',
             exact=body.get('exact', True) is not False, check_barcodes=bool(body.get('check_barcodes')),
+            fields=body.get('fields') or None,
         )})
 
     if action == 'nomen_refs':
@@ -2267,8 +2415,15 @@ def handler(event: dict, context) -> dict:
             return resp(400, {'error': 'Нужны карточка и штрихкод'})
         return resp(200, {'result': dict({'ok': True}, **write_barcode(cfg, key, bc))})
 
+    if action == 'nomen_set_prices' and cfg.get('kind') == 'unf':
+        return resp(200, {'result': unf_set_prices(cfg, body.get('rows') or [], body.get('comment') or '',
+                                                   body.get('price_kind'))})
+
     if action == 'nomen_set_prices':
         return resp(200, {'result': nomen_set_prices(cfg, body.get('rows') or [], body.get('comment') or '')})
+
+    if action == 'price_kinds':
+        return resp(200, {'result': unf_price_kinds(cfg)})
 
     if action == 'nomen_groups':
         return resp(200, {'result': nomen_groups(cfg)})

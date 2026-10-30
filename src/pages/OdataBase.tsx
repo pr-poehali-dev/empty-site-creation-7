@@ -41,7 +41,7 @@ const OdataBase = () => {
   const navigate = useNavigate();
   const { base = "trade-resurs" } = useParams();
   const baseInfo = findBase(base);
-  const sections = baseInfo?.kind === "unf" ? SECTIONS.filter((s) => s.path === "tests") : SECTIONS;
+  const sections = baseInfo?.kind === "unf" ? SECTIONS.filter((s) => s.path === "tests" || s.path === "nomenclature") : SECTIONS;
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
 
   useEffect(() => {
