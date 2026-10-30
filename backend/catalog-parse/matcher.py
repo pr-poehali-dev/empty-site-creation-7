@@ -67,7 +67,7 @@ def item_codes(it):
 
 
 def list_row(it):
-    return {'article': it.get('article') or '', 'name': it.get('name') or '',
+    return {'row': it.get('row'), 'article': it.get('article') or '', 'name': it.get('name') or '',
             'barcodes': item_codes(it), 'category': it.get('category') or ''}
 
 

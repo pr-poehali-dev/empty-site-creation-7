@@ -85,6 +85,29 @@ def save_brand_groups(cur, mapping):
                         "SET product_group = EXCLUDED.product_group", (b, g))
 
 
+NAME_MAX = 100
+
+
+def rename_items(draft_id, names):
+    """Сохраняет исправленные наименования в черновике: {номер строки: новое наименование}."""
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    fix = {str(k): ' '.join(str(v or '').split()) for k, v in (names or {}).items()}
+    rows = d['rows_data'] or []
+    changed = 0
+    for it in rows:
+        v = fix.get(str(it.get('row')))
+        if v and v != it.get('name'):
+            it['name'] = v
+            changed += 1
+    if changed:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute("UPDATE catalog_drafts SET rows_data = %s WHERE id = %s",
+                        (json.dumps(rows, ensure_ascii=False), draft_id))
+    return {'changed': changed}, None
+
+
 def _norm_folder(s):
     return ' '.join(str(s or '').split()).lower()
 
@@ -300,6 +323,12 @@ def commit(draft_id, opts):
     limit = min(max(int(opts.get('limit') or COMMIT_CHUNK), 1), 300)
 
     all_items = apply_filters(d['rows_data'] or [], excluded, article_case)
+    if offset == 0:
+        with _conn() as c, c.cursor() as cur:
+            rm, _ = match_items(cur, all_items)
+        long_new = [it for it in all_items if it['row'] not in rm and len((it.get('name') or '').strip()) > NAME_MAX]
+        if long_new:
+            return None, f'Наименование длиннее {NAME_MAX} знаков у {len(long_new)} новых товаров — сократите их'
     total = len(all_items)
     items = all_items[offset:offset + limit]
 
@@ -567,6 +596,12 @@ def handler(event, context):
             return _resp(404, {'error': err})
         return _resp(200, {'report': rep})
 
+    if action == 'rename_items':
+        res, err = rename_items(body.get('draft_id'), body.get('names'))
+        if err:
+            return _resp(404, {'error': err})
+        return _resp(200, res)
+
     if action == 'brand_groups':
         res, err = brand_groups(body.get('draft_id'), body.get('excluded_categories'), body.get('article_case'))
         if err:
@@ -576,7 +611,7 @@ def handler(event, context):
     if action == 'commit':
         res, err = commit(body.get('draft_id'), body)
         if err:
-            return _resp(404, {'error': err})
+            return _resp(400 if 'Наименование' in err else 404, {'error': err})
         return _resp(200, {'result': res})
 
     if action == 'barcodes_preview':

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import Icon from "@/components/ui/icon";
 
 export interface ReportItem {
+  row?: number;
   article: string;
   name: string;
   barcodes: string[];

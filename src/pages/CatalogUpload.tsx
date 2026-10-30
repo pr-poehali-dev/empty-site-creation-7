@@ -11,6 +11,7 @@ import ReportItemsSheet, { ReportGroup, ReportItem } from "@/components/catalog/
 import BarcodeStep from "@/components/catalog/BarcodeStep";
 import UploadSteps, { UploadStep } from "@/components/catalog/UploadSteps";
 import BrandGroupMap, { BrandRow } from "@/components/catalog/BrandGroupMap";
+import LongNames, { NAME_MAX } from "@/components/catalog/LongNames";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -144,6 +145,7 @@ const CatalogUpload = () => {
   const [vatRate, setVatRate] = useState("");
   const [productGroup, setProductGroup] = useState("");
   const [folders, setFolders] = useState<{ name: string; products: number }[]>([]);
+  const [longNames, setLongNames] = useState<Record<number, string>>({});
   const [groupMode, setGroupMode] = useState<"single" | "brand">("single");
   const [brandRows, setBrandRows] = useState<BrandRow[]>([]);
   const [brandMap, setBrandMap] = useState<Record<string, string>>({});
@@ -247,6 +249,11 @@ const CatalogUpload = () => {
   }, [hasBrandCol, groupMode]);
 
   if (user.role !== "owner") return null;
+
+  const longLeft = (report?.new_items || []).filter((x) => {
+    const v = x.row !== undefined && longNames[x.row] !== undefined ? longNames[x.row] : x.name;
+    return v.trim().length > NAME_MAX || !v.trim();
+  }).length;
 
   const allFolders = [
     ...folders,
@@ -384,6 +391,7 @@ const CatalogUpload = () => {
         return;
       }
       setReport(d.report);
+      setLongNames({});
       setFillFields(new Set((d.report.fill || []).map((f: FillStat) => f.field)));
     } finally {
       setChecking(false);
@@ -393,6 +401,21 @@ const CatalogUpload = () => {
   const runCommit = async () => {
     if (!result) return;
     setSaving(true);
+    const fixes = Object.fromEntries(Object.entries(longNames).map(([k, v]) => [k, v.trim().replace(/\s+/g, " ")]));
+    if (Object.keys(fixes).length && !(progress && progress.status === "error" && progress.done > 0)) {
+      try {
+        const r = await fetch(CATALOG_URL, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ action: "rename_items", draft_id: result.draft_id, names: fixes }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Не сохранил наименования");
+      } catch (e) {
+        toast({ title: (e as Error).message, variant: "destructive" });
+        setSaving(false);
+        return;
+      }
+    }
     const prev = progress && progress.status === "error" && progress.draftId === result.draft_id ? progress : null;
     let st: UploadProgress = prev
       ? { ...prev, status: "running", error: "" }
@@ -939,6 +962,12 @@ const CatalogUpload = () => {
               onClose={() => setOpenGroup(null)}
             />
 
+            <LongNames
+              items={report.new_items || []}
+              names={longNames}
+              onChange={(row, name) => setLongNames((p) => ({ ...p, [row]: name }))}
+            />
+
             {(report.excluded_existing ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">
                 Из отсеянных уже есть в каталоге: {report.excluded_existing}
@@ -1008,13 +1037,20 @@ const CatalogUpload = () => {
                 </Button>
               </div>
             ) : (
-              <Button onClick={runCommit} disabled={saving} className="rounded-xl w-full">
+              <>
+              {longLeft > 0 && (
+                <div className="text-xs text-rose-400 text-center">
+                  Сократите наименования: осталось {longLeft}
+                </div>
+              )}
+              <Button onClick={runCommit} disabled={saving || longLeft > 0} className="rounded-xl w-full">
                 {saving
                   ? `Загружаю… ${progress?.done ?? 0} из ${progress?.total ?? report.total}`
                   : progress?.status === "error"
                     ? "Продолжить загрузку"
                     : "Загрузить товары"}
               </Button>
+              </>
             )}
             <div className="text-xs text-muted-foreground text-center">
               Штрихкоды записываются на следующем шаге
