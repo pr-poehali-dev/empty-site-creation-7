@@ -4,6 +4,8 @@ import { CatMatch, PRICE_RULES, PriceRule, Twin, WbBuild, WbItem, finalPrice, gu
 import { TwinList, twinsOf } from "./AutoArticles";
 import { CardList, Marks } from "./CatalogSummary";
 
+const ART_W = "w-[90px] min-w-[90px] max-w-[90px]";
+const ART_TXT = "break-words [overflow-wrap:anywhere]";
 const CAT_TH = "bg-emerald-500/10 text-emerald-300/90";
 const CAT_TD = "bg-emerald-500/[0.06]";
 
@@ -221,8 +223,14 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-card text-muted-foreground">
             <tr className="text-left">
-              <th className="p-2 font-normal">Артикул</th>
-              {showCat && <th className={`p-2 font-normal ${CAT_TH}`}>Артикул из каталога</th>}
+              <th className={`p-2 font-normal ${ART_W}`}>Артикул</th>
+              {showCat && (
+                <th className={`p-2 font-normal leading-tight ${ART_W} ${CAT_TH}`}>
+                  Артикул
+                  <br />
+                  из каталога
+                </th>
+              )}
               <th className="p-2 font-normal">Наименование</th>
               {showCat && <th className={`p-2 font-normal ${CAT_TH}`}>Наименование из каталога</th>}
               <th className="p-2 font-normal">Штрихкод</th>
@@ -246,33 +254,35 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
               return (
                 <Fragment key={x.key}>
                   <tr>
-                    <td className="p-2 whitespace-nowrap">
-                      <span className={auto ? "text-sky-400" : ""}>{x.article || "—"}</span>
+                    <td className={`p-2 align-top ${ART_W}`}>
+                      <div className={`${ART_TXT} ${auto ? "text-sky-400" : ""}`}>{x.article || "—"}</div>
                       {tw.length > 0 && (
                         <button
                           type="button"
                           onClick={() => setOpenRow(open ? null : x.key)}
-                          className="ml-1 rounded px-1 bg-amber-500/15 text-amber-400"
+                          className="mt-0.5 rounded px-1 text-[10px] leading-4 whitespace-nowrap bg-amber-500/15 text-amber-400"
                         >
                           Совпадает: {tw.length} {open ? "▴" : "▾"}
                         </button>
                       )}
                     </td>
                     {showCat && (
-                      <td className={`${catTd} whitespace-nowrap`}>
+                      <td className={`${catTd} align-top ${ART_W}`}>
                         {c ? (
                           <>
-                            {c.article || "—"}
-                            <Marks c={c} />
-                            {more > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setOpenCat(catOpen ? null : x.key)}
-                                className="ml-1 rounded px-1 bg-white/[0.08] text-foreground"
-                              >
-                                ещё {more} {catOpen ? "▴" : "▾"}
-                              </button>
-                            )}
+                            <div className={ART_TXT}>{c.article || "—"}</div>
+                            <div className="mt-0.5 flex flex-wrap gap-0.5">
+                              <Marks c={c} />
+                              {more > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenCat(catOpen ? null : x.key)}
+                                  className="rounded px-1 text-[10px] leading-4 whitespace-nowrap bg-white/[0.08] text-foreground"
+                                >
+                                  ещё {more} {catOpen ? "▴" : "▾"}
+                                </button>
+                              )}
+                            </div>
                           </>
                         ) : (
                           "—"

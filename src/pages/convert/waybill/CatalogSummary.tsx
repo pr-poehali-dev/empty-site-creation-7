@@ -3,13 +3,13 @@ import Icon from "@/components/ui/icon";
 import { CatCard, CatMatch, MATCH_FIELDS, WbItem } from "./api";
 
 export const Marks = ({ c }: { c: CatCard }) => (
-  <span className="ml-1 inline-flex gap-0.5 align-middle">
+  <span className="inline-flex flex-wrap gap-0.5 align-middle">
     {MATCH_FIELDS.filter((f) => c.matched.includes(f.value)).map((f) => (
-      <span key={f.value} className="rounded px-1 text-[10px] bg-emerald-500/20 text-emerald-300" title={f.label}>
+      <span key={f.value} className="rounded px-1 text-[10px] leading-4 bg-emerald-500/20 text-emerald-300" title={f.label}>
         {f.short}
       </span>
     ))}
-    {c.in_name && <span className="rounded px-1 text-[10px] bg-amber-500/15 text-amber-400">в названии</span>}
+    {c.in_name && <span className="rounded px-1 text-[10px] leading-4 whitespace-nowrap bg-amber-500/15 text-amber-400">в названии</span>}
   </span>
 );
 
@@ -18,7 +18,7 @@ export const CardList = ({ cards }: { cards: CatCard[] }) => (
     {cards.map((c) => (
       <li key={c.id}>
         <span className="text-foreground">{c.article || "—"}</span> · {c.name}
-        {c.group ? <span className="opacity-70"> · {c.group}</span> : null}
+        {c.group ? <span className="opacity-70"> · {c.group}</span> : null}{" "}
         <Marks c={c} />
       </li>
     ))}
