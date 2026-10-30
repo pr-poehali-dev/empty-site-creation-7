@@ -8,7 +8,7 @@ from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
 import catalog_match
-from matcher import build_report, barcode_report, norm_article, match_items, item_codes, list_row
+from matcher import build_report, barcode_report, norm_article, match_items, item_codes, list_row, resolve
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -266,13 +266,32 @@ def apply_filters(items, excluded, article_case):
     return out
 
 
-def preview(draft_id, excluded, article_case):
+def group_opts(src):
+    """Режим групп из параметров экрана: одна группа или по брендам."""
+    src = src or {}
+    mode = 'brand' if src.get('group_mode') == 'brand' else 'single'
+    return {
+        'mode': mode,
+        'product_group': None if mode == 'brand' else (' '.join(str(src.get('product_group') or '').split()) or None),
+        'brand_groups': (src.get('brand_groups') or {}) if mode == 'brand' else {},
+    }
+
+
+def _same_opts(a, b):
+    return json.dumps(a or {}, sort_keys=True, ensure_ascii=False) == json.dumps(b or {}, sort_keys=True, ensure_ascii=False)
+
+
+def preview(draft_id, excluded, article_case, opts=None):
     d = get_draft(draft_id)
     if not d:
         return None, 'Черновик истёк'
     items = apply_filters(d['rows_data'] or [], excluded, article_case)
+    g = group_opts(opts)
+    decisions = d.get('group_decisions') or {}
     with _conn() as c, c.cursor() as cur:
-        report, _ = build_report(cur, items)
+        cur.execute("UPDATE catalog_drafts SET group_opts = %s WHERE id = %s",
+                    (json.dumps(g, ensure_ascii=False), draft_id))
+        report, _ = build_report(cur, items, g, decisions)
         kept = {it['row'] for it in items}
         dropped = [dict(it, article=convert_article(it.get('article'), article_case or 'as_is'))
                    for it in (d['rows_data'] or []) if it['row'] not in kept]
@@ -281,6 +300,24 @@ def preview(draft_id, excluded, article_case):
     report['excluded_count'] = len(d['rows_data'] or []) - len(items)
     report['excluded_existing'] = len(drop_map)
     return report, None
+
+
+def decide(draft_id, decisions):
+    """Сохраняет решения по товарам, найденным в другой группе: {строка: {action, product_id}}."""
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    cur_dec = d.get('group_decisions') or {}
+    for k, v in (decisions or {}).items():
+        act = (v or {}).get('action')
+        if act in ('update', 'move', 'new', 'skip'):
+            cur_dec[str(k)] = {'action': act, 'product_id': (v or {}).get('product_id')}
+        else:
+            cur_dec.pop(str(k), None)
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("UPDATE catalog_drafts SET group_decisions = %s WHERE id = %s",
+                    (json.dumps(cur_dec, ensure_ascii=False), draft_id))
+    return {'saved': len(decisions or {})}, None
 
 
 def _price_values(item, price_mapping):
@@ -301,6 +338,16 @@ def _sql_val(v):
 
 
 COMMIT_CHUNK = 100
+
+
+def _folder_of(cur, cache, name):
+    """Точное имя и id папки каталога по названию группы."""
+    if not cache:
+        cur.execute("SELECT product_group, max(product_group_id) FROM products "
+                    "WHERE product_group IS NOT NULL AND product_group <> '' GROUP BY product_group")
+        for n, gid in cur.fetchall():
+            cache[_norm_folder(n)] = (n, gid)
+    return cache.get(_norm_folder(name), (name, None))
 
 
 def commit(draft_id, opts):
@@ -324,10 +371,18 @@ def commit(draft_id, opts):
     limit = min(max(int(opts.get('limit') or COMMIT_CHUNK), 1), 300)
 
     all_items = apply_filters(d['rows_data'] or [], excluded, article_case)
+    gopts = group_opts(opts)
+    decisions = d.get('group_decisions') or {}
+    if not _same_opts(gopts, d.get('group_opts')):
+        return None, 'Группы изменились после сверки — нажмите «Пересверить»'
     if offset == 0:
         with _conn() as c, c.cursor() as cur:
-            rm, _ = match_items(cur, all_items)
-        long_new = [it for it in all_items if it['row'] not in rm and len((it.get('name') or '').strip()) > NAME_MAX]
+            res0 = resolve(cur, all_items, gopts, decisions)
+        if res0['undecided']:
+            return None, f'Нужно решение по товарам из другой группы: {res0["undecided"]}'
+        rm = res0['row_map']
+        long_new = [it for it in all_items if it['row'] not in rm and it['row'] not in res0['skip']
+                    and len((it.get('name') or '').strip()) > NAME_MAX]
         if long_new:
             return None, f'Наименование длиннее {NAME_MAX} знаков у {len(long_new)} новых товаров — сократите их'
     total = len(all_items)
@@ -335,7 +390,8 @@ def commit(draft_id, opts):
 
     created = updated = 0
     with _conn() as c, c.cursor() as cur:
-        row_map, _ = match_items(cur, items)
+        res = resolve(cur, all_items, gopts, decisions)
+        row_map, skip_rows, moves = res['row_map'], res['skip'], res['moves']
         folder_ids = {}
         if group_mode == 'brand':
             cur.execute(
@@ -367,12 +423,20 @@ def commit(draft_id, opts):
         new_items = []
         item_pid = {}
         for idx, it in enumerate(items):
+            if it['row'] in skip_rows:
+                continue
             existing = row_map.get(it['row'])
             if not existing:
                 new_items.append((idx, it))
                 continue
             item_pid[idx] = existing['id']
             if fill_mode == 'skip':
+                mg = moves.get(existing['id'])
+                if mg:
+                    mname, mid = _folder_of(cur, folder_ids, mg)
+                    updates.append("UPDATE products SET product_group = " + _sql_val(mname)
+                                   + ", product_group_id = " + _sql_val(mid)
+                                   + ", updated_at = NOW() WHERE id = " + str(int(existing['id'])))
                 continue
             prices = _price_values(it, price_mapping)
             sets = []
@@ -396,6 +460,11 @@ def commit(draft_id, opts):
                     sets.append("vat_rate = " + _sql_val(vat_rate))
             elif vat_rate:
                 sets.append("vat_rate = COALESCE(vat_rate, " + _sql_val(vat_rate) + ")")
+            mg = moves.get(existing['id'])
+            if mg:
+                mname, mid = _folder_of(cur, folder_ids, mg)
+                sets.append("product_group = " + _sql_val(mname))
+                sets.append("product_group_id = " + _sql_val(mid))
             if sets:
                 updates.append("UPDATE products SET " + ', '.join(sets)
                                + ", updated_at = NOW() WHERE id = " + str(int(existing['id'])))
@@ -467,7 +536,7 @@ def barcodes_preview(draft_id):
     if not d:
         return None, 'Черновик истёк'
     with _conn() as c, c.cursor() as cur:
-        rep = barcode_report(cur, _draft_items(d))
+        rep = barcode_report(cur, _draft_items(d), d.get('group_opts'), d.get('group_decisions') or {})
     rep['file_name'] = d.get('file_name')
     rep['supplier_name'] = d.get('supplier_name')
     return rep, None
@@ -485,7 +554,9 @@ def barcodes_commit(draft_id, opts):
     items = all_items[offset:offset + limit]
     added = tried = 0
     with _conn() as c, c.cursor() as cur:
-        row_map, _ = match_items(cur, items)
+        res = resolve(cur, all_items, d.get('group_opts'), d.get('group_decisions') or {})
+        row_map = res['row_map']
+        items = [it for it in items if it['row'] not in res['skip']]
         earlier = set()
         for it in all_items[:offset]:
             earlier.update(item_codes(it))
@@ -592,10 +663,16 @@ def handler(event, context):
 
     if action == 'preview':
         rep, err = preview(body.get('draft_id'), body.get('excluded_categories'),
-                           body.get('article_case'))
+                           body.get('article_case'), body)
         if err:
             return _resp(404, {'error': err})
         return _resp(200, {'report': rep})
+
+    if action == 'group_decide':
+        res, err = decide(body.get('draft_id'), body.get('decisions'))
+        if err:
+            return _resp(404, {'error': err})
+        return _resp(200, res)
 
     if action == 'catalog_match':
         with _conn() as c, c.cursor() as cur:

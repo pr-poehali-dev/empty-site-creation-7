@@ -22,40 +22,87 @@ def _same(a, b):
         return str(a).strip() == str(b).strip()
 
 
-def match_items(cur, items):
-    """Ищет товары по нормализованному артикулу. Возвращает карту row -> product."""
-    arts = {}
-    for it in items:
-        na = norm_article(it.get('article'))
-        if na:
-            arts.setdefault(na, []).append(it['row'])
-    if not arts:
-        return {}, {}
+def _fold(s):
+    return ' '.join(str(s or '').split()).lower()
 
-    keys = list(arts.keys())
+
+def expected_group(it, opts):
+    """Группа, в которой товар строки ищется в первую очередь. None — искать по всему каталогу."""
+    opts = opts or {}
+    if opts.get('mode') == 'brand':
+        bmap = {_fold(k): v for k, v in (opts.get('brand_groups') or {}).items()}
+        g = bmap.get(_fold(it.get('brand')))
+    else:
+        g = opts.get('product_group')
+    g = ' '.join(str(g or '').split())
+    return g or None
+
+
+def _candidates(cur, items):
+    keys = sorted({norm_article(it.get('article')) for it in items if norm_article(it.get('article'))})
     found = {}
-    chunk = 2000
-    for i in range(0, len(keys), chunk):
-        part = keys[i:i + chunk]
+    for i in range(0, len(keys), 2000):
+        part = keys[i:i + 2000]
         vals = ','.join("'" + k.replace("'", "''") + "'" for k in part)
         cur.execute(
             "SELECT id, article, tnved_code, weight_gross, weight_net, "
-            + NORM_SQL.format(col='article') + " AS na, name "
-            "FROM products WHERE " + NORM_SQL.format(col='article') + " IN (" + vals + ")"
+            + NORM_SQL.format(col='article') + " AS na, name, product_group "
+            "FROM products WHERE " + NORM_SQL.format(col='article') + " IN (" + vals + ") ORDER BY id"
         )
         for r in cur.fetchall():
-            found.setdefault(r[5], {
+            found.setdefault(r[5], []).append({
                 'id': r[0], 'article': r[1], 'tnved_code': r[2],
-                'weight_gross': r[3], 'weight_net': r[4], 'name': r[6],
+                'weight_gross': r[3], 'weight_net': r[4], 'name': r[6], 'group': r[7] or '',
             })
+    return found
 
-    row_map = {}
-    for na, rows in arts.items():
-        p = found.get(na)
-        if p:
-            for rw in rows:
-                row_map[rw] = p
-    return row_map, found
+
+def resolve(cur, items, opts=None, decisions=None):
+    """Поиск сначала в группе строки, потом по всему каталогу.
+
+    Возвращает dict: row_map (строка -> карточка для обновления), conflicts (найдены только в другой
+    группе), skip (строки, которые решили пропустить), moves (id карточки -> группа для переноса).
+    """
+    found = _candidates(cur, items)
+    decisions = decisions or {}
+    row_map, conflicts, skip, moves = {}, [], set(), {}
+    for it in items:
+        cands = found.get(norm_article(it.get('article'))) or []
+        if not cands:
+            continue
+        g = expected_group(it, opts)
+        if not g:
+            row_map[it['row']] = cands[0]
+            continue
+        inside = [c for c in cands if _fold(c['group']) == _fold(g)]
+        if inside:
+            row_map[it['row']] = inside[0]
+            continue
+        dec = decisions.get(str(it['row'])) or {}
+        act = dec.get('action')
+        pick = next((c for c in cands if c['id'] == dec.get('product_id')), None)
+        if act in ('update', 'move') and pick:
+            row_map[it['row']] = pick
+            if act == 'move':
+                moves[pick['id']] = g
+        elif act == 'skip':
+            skip.add(it['row'])
+        elif act != 'new':
+            act = None
+        conflicts.append({
+            **list_row(it), 'expected_group': g, 'action': act,
+            'product_id': pick['id'] if pick else cands[0]['id'],
+            'cards': [{'id': c['id'], 'article': c['article'] or '', 'name': c['name'] or '',
+                       'group': c['group']} for c in cands[:5]],
+        })
+    return {'row_map': row_map, 'conflicts': conflicts, 'skip': skip, 'moves': moves,
+            'undecided': sum(1 for c in conflicts if not c['action'])}
+
+
+def match_items(cur, items):
+    """Поиск по артикулу по всему каталогу. Возвращает карту row -> product."""
+    res = resolve(cur, items)
+    return res['row_map'], {}
 
 
 def item_codes(it):
@@ -90,12 +137,16 @@ def existing_barcodes(cur, codes):
     return out
 
 
-def build_report(cur, items):
-    """Отчёт: новые, существующие, что можно дополнить, двойные штрихкоды."""
-    row_map, _ = match_items(cur, items)
+def build_report(cur, items, opts=None, decisions=None):
+    """Отчёт: новые, существующие, найденные в другой группе, что можно дополнить."""
+    res = resolve(cur, items, opts, decisions)
+    row_map = res['row_map']
+    conflict_rows = {c['row'] for c in res['conflicts'] if c['action'] in (None, 'skip')}
 
     new_rows, exist_rows = [], []
     for it in items:
+        if it['row'] in conflict_rows:
+            continue
         (exist_rows if it['row'] in row_map else new_rows).append(it)
 
     fill = []
@@ -126,15 +177,21 @@ def build_report(cur, items):
                         for it in exist_rows],
         'new_count': len(new_rows),
         'exist_count': len(exist_rows),
+        'conflicts': res['conflicts'],
+        'conflict_count': len(res['conflicts']),
+        'undecided': res['undecided'],
         'fill': fill,
     }, row_map
 
 
-def barcode_report(cur, items):
+def barcode_report(cur, items, opts=None, decisions=None):
     """Сверка штрихкодов файла с каталогом после загрузки товаров."""
-    row_map, _ = match_items(cur, items)
+    res = resolve(cur, items, opts, decisions)
+    row_map = res['row_map']
     file_codes = {}
     for it in items:
+        if it['row'] in res['skip']:
+            continue
         for bc in item_codes(it):
             file_codes.setdefault(bc, []).append(it)
     taken = existing_barcodes(cur, list(file_codes.keys()))

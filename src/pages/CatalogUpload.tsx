@@ -12,6 +12,7 @@ import BarcodeStep from "@/components/catalog/BarcodeStep";
 import UploadSteps, { UploadStep } from "@/components/catalog/UploadSteps";
 import BrandGroupMap, { BrandRow } from "@/components/catalog/BrandGroupMap";
 import LongNames, { NAME_MAX } from "@/components/catalog/LongNames";
+import GroupConflicts, { ConflictAction, GroupConflict } from "@/components/catalog/GroupConflicts";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -107,6 +108,9 @@ interface Report {
   excluded_items?: ReportItem[];
   excluded_count: number;
   excluded_existing?: number;
+  conflicts?: GroupConflict[];
+  conflict_count?: number;
+  undecided?: number;
   fill: FillStat[];
 }
 
@@ -160,6 +164,8 @@ const CatalogUpload = () => {
   const [bcBusy, setBcBusy] = useState(false);
 
   const [report, setReport] = useState<Report | null>(null);
+  const [reportKey, setReportKey] = useState("");
+  const [deciding, setDeciding] = useState(false);
   const [openGroup, setOpenGroup] = useState<ReportGroup | null>(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -371,9 +377,17 @@ const CatalogUpload = () => {
     setReport(null);
   };
 
-  const runCheck = async () => {
+  const groupKey = JSON.stringify(
+    groupMode === "brand"
+      ? { m: "brand", b: Object.keys(brandMap).sort().map((k) => [k, brandMap[k]]) }
+      : { m: "single", g: productGroup.trim() },
+  );
+  const stale = !!report && reportKey !== groupKey;
+
+  const runCheck = async (keep = false) => {
     if (!result) return;
-    setChecking(true);
+    if (keep) setDeciding(true);
+    else setChecking(true);
     try {
       const r = await fetch(CATALOG_URL, {
         method: "POST",
@@ -383,6 +397,9 @@ const CatalogUpload = () => {
           draft_id: result.draft_id,
           excluded_categories: Array.from(excluded),
           article_case: articleCase,
+          group_mode: groupMode,
+          product_group: groupMode === "single" ? productGroup || null : null,
+          brand_groups: groupMode === "brand" ? brandMap : null,
         }),
       });
       const d = await r.json();
@@ -391,10 +408,35 @@ const CatalogUpload = () => {
         return;
       }
       setReport(d.report);
-      setLongNames({});
-      setFillFields(new Set((d.report.fill || []).map((f: FillStat) => f.field)));
+      setReportKey(groupKey);
+      if (!keep) {
+        setLongNames({});
+        setFillFields(new Set((d.report.fill || []).map((f: FillStat) => f.field)));
+      }
     } finally {
       setChecking(false);
+      setDeciding(false);
+    }
+  };
+
+  const decide = async (rows: { row: number; action: ConflictAction; product_id: number }[]) => {
+    if (!result || !rows.length) return;
+    setDeciding(true);
+    try {
+      const r = await fetch(CATALOG_URL, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          action: "group_decide",
+          draft_id: result.draft_id,
+          decisions: Object.fromEntries(rows.map((x) => [String(x.row), { action: x.action, product_id: x.product_id }])),
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Не сохранил решение");
+      await runCheck(true);
+    } catch (e) {
+      toast({ title: (e as Error).message, variant: "destructive" });
+      setDeciding(false);
     }
   };
 
@@ -906,13 +948,16 @@ const CatalogUpload = () => {
               </div>
             </div>
 
+            {stale && !productsDone && (
+              <div className="text-xs text-amber-400 text-center">Группы изменились после сверки — отчёт устарел</div>
+            )}
             <Button
-              onClick={runCheck}
+              onClick={() => runCheck()}
               disabled={checking || !!productsDone}
               className="rounded-xl w-full"
               variant="secondary"
             >
-              {checking ? "Сверяю..." : "Сверить с каталогом"}
+              {checking ? "Сверяю..." : stale ? "Пересверить" : "Сверить с каталогом"}
             </Button>
           </>
         )}
@@ -948,6 +993,7 @@ const CatalogUpload = () => {
                 );
               })}
             </div>
+            <GroupConflicts items={report.conflicts || []} busy={deciding || saving || !!productsDone} onDecide={decide} />
             <ReportItemsSheet
               group={openGroup}
               items={
@@ -1043,7 +1089,19 @@ const CatalogUpload = () => {
                   Сократите наименования: осталось {longLeft}
                 </div>
               )}
-              <Button onClick={runCommit} disabled={saving || longLeft > 0} className="rounded-xl w-full">
+              {(report.undecided ?? 0) > 0 && (
+                <div className="text-xs text-rose-400 text-center">
+                  Нужно решение: {report.undecided} — товары найдены в другой группе
+                </div>
+              )}
+              {stale && (
+                <div className="text-xs text-rose-400 text-center">Группы изменились — нажмите «Пересверить»</div>
+              )}
+              <Button
+                onClick={runCommit}
+                disabled={saving || longLeft > 0 || (report.undecided ?? 0) > 0 || stale || deciding}
+                className="rounded-xl w-full"
+              >
                 {saving
                   ? `Загружаю… ${progress?.done ?? 0} из ${progress?.total ?? report.total}`
                   : progress?.status === "error"

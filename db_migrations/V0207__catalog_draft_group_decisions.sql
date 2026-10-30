@@ -1,0 +1,2 @@
+ALTER TABLE t_p69702834_empty_site_creation_.catalog_drafts ADD COLUMN IF NOT EXISTS group_opts jsonb NULL;
+ALTER TABLE t_p69702834_empty_site_creation_.catalog_drafts ADD COLUMN IF NOT EXISTS group_decisions jsonb NULL;
