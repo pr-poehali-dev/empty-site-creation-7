@@ -1,5 +1,7 @@
 """Файл для «Загрузки каталога» из накладных 1С: список накладных и сборка товаров без дублей."""
 import re
+
+from art_rule import art_from_name
 from concurrent.futures import ThreadPoolExecutor
 
 EMPTY = '00000000-0000-0000-0000-000000000000'
@@ -15,24 +17,14 @@ FIELDS = {
 }
 MAX_DOCS = 60
 
-ART_RX = [
-    re.compile(r'\b([А-ЯA-Z]{2,4}-\d{2,6}(?:-{1,2}[\dA-Za-zА-Яа-я]{1,6})?)\b'),
-    re.compile(r'\b([A-ZА-Я]{2,}\d{3,})\b'),
-    re.compile(r'\b([A-ZА-Я]{1,4}-[A-ZА-Я0-9]*\d[A-ZА-Я0-9]*(?:-[A-ZА-Я0-9]{1,6})?)\b'),
-]
-
-
-def art_from_name(name):
-    s = ' '.join(str(name or '').split())
-    for rx in ART_RX:
-        m = rx.findall(s)
-        if m:
-            return m[-1]
-    return ''
+_CYR, _LAT = 'АВЕКМНОРСТУХ', 'ABEKMHOPCTYX'
+_TO_LAT = str.maketrans(_CYR, _LAT, ' №')
+_TO_CYR = str.maketrans(_LAT, _CYR)
 
 
 def norm_art(v):
-    return re.sub(r'[\s\-_./]+', '', str(v or '')).upper()
+    """Как в счетах: регистр, кириллица/латиница и пробелы не важны, дефис важен."""
+    return str(v or '').upper().translate(_TO_LAT)
 
 
 def _core(v):
@@ -40,9 +32,16 @@ def _core(v):
     return max(parts, key=len) if parts else ''
 
 
+def _core_variants(v):
+    c = _core(v).upper()
+    if not c:
+        return set()
+    return {c, c.translate(_TO_LAT), c.translate(_TO_CYR)}
+
+
 def _article_twins(call, wanted):
-    """Карточки номенклатуры, у которых артикул совпадает с wanted (без учёта регистра, пробелов, дефисов)."""
-    cores = sorted({_core(a) for a in wanted if _core(a)})
+    """Карточки номенклатуры с тем же артикулом (правила сравнения — как в счетах)."""
+    cores = sorted({v for a in wanted for v in _core_variants(a)})
     targets = {norm_art(a) for a in wanted}
     out = {}
 

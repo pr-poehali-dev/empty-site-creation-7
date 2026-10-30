@@ -135,7 +135,56 @@ export const writeArticles = async (base: string, rows: { key: string; article: 
   return out;
 };
 
-export const normArt = (v: string) => v.replace(/[\s\-_./]+/g, "").toUpperCase();
+const CYR = "АВЕКМНОРСТУХ";
+const LAT = "ABEKMHOPCTYX";
+
+export const normArt = (v: string) =>
+  v
+    .toUpperCase()
+    .replace(/[\s№]+/g, "")
+    .replace(/[АВЕКМНОРСТУХ]/g, (c) => LAT[CYR.indexOf(c)]);
+
+const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
+
+export type MatchField = "article" | "name" | "barcode";
+
+export const MATCH_FIELDS: { value: MatchField; label: string; short: string }[] = [
+  { value: "article", label: "Артикул", short: "А" },
+  { value: "name", label: "Наименование", short: "Н" },
+  { value: "barcode", label: "Штрихкод", short: "Ш" },
+];
+
+export interface CatCard {
+  id: number;
+  article: string;
+  name: string;
+  group: string;
+  matched: MatchField[];
+  in_name?: boolean;
+}
+
+export interface CatMatch {
+  status: "found" | "partial" | "missing";
+  cards: CatCard[];
+}
+
+export const matchCatalog = async (items: WbItem[], fields: MatchField[]) => {
+  const r = await fetch(CATALOG_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Auth-Token": localStorage.getItem("auth_token") || "" },
+    body: JSON.stringify({
+      action: "catalog_match",
+      fields,
+      items: items.map((x) => ({ key: x.key, article: x.article, name: x.name, barcodes: x.barcodes })),
+    }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `Ошибка сверки, код ${r.status}`);
+  return d.items as Record<string, CatMatch>;
+};
+
+export const withoutAutoArticles = (items: WbItem[]) =>
+  items.map((x) => (x.article_auto ? { ...x, article: "", article_auto: false } : x));
 
 export const KNOWN_BRANDS = ["GARLYN", "REDMOND", "RED SOLUTION", "WEISSGAUFF", "MIDEA"];
 

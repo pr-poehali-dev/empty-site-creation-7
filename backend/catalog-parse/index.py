@@ -7,6 +7,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
+import catalog_match
 from matcher import build_report, barcode_report, norm_article, match_items, item_codes, list_row
 
 CORS = {
@@ -595,6 +596,13 @@ def handler(event, context):
         if err:
             return _resp(404, {'error': err})
         return _resp(200, {'report': rep})
+
+    if action == 'catalog_match':
+        with _conn() as c, c.cursor() as cur:
+            res, err = catalog_match.match(cur, body.get('items') or [], body.get('fields'))
+        if err:
+            return _resp(400, {'error': err})
+        return _resp(200, res)
 
     if action == 'rename_items':
         res, err = rename_items(body.get('draft_id'), body.get('names'))

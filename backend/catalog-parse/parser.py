@@ -163,19 +163,7 @@ def merge_same(items):
     return out, len(items) - len(out)
 
 
-ART_RX = [
-    re.compile(r'\b([А-ЯA-Z]{2,4}-\d{2,6}(?:-{1,2}[\dA-Za-zА-Яа-я]{1,6})?)\b'),
-    re.compile(r'\b([A-ZА-Я]{2,}\d{3,})\b'),
-]
-
-
-def art_from_name(name):
-    s = norm(name)
-    for rx in ART_RX:
-        m = rx.findall(s)
-        if m:
-            return m[-1]
-    return ''
+from art_rule import art_from_name  # noqa: E402
 
 
 def article_alphabet(article):

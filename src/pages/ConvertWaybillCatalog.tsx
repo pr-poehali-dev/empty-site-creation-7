@@ -11,6 +11,8 @@ import { saveToYuraFiles } from "./odata/nomenExcel";
 import WaybillList from "./convert/waybill/WaybillList";
 import WaybillResult from "./convert/waybill/WaybillResult";
 import AutoArticles from "./convert/waybill/AutoArticles";
+import BuildOptions from "./convert/waybill/BuildOptions";
+import CatalogSummary from "./convert/waybill/CatalogSummary";
 import {
   DocType,
   PriceRule,
@@ -22,6 +24,10 @@ import {
   writeArticles,
   ArtResult,
   Twin,
+  CatMatch,
+  MatchField,
+  matchCatalog,
+  withoutAutoArticles,
   WbDoc,
   buildCatalogXlsx,
   buildWaybillItems,
@@ -74,6 +80,43 @@ const ConvertWaybillCatalog = () => {
   const [twinsLoading, setTwinsLoading] = useState(false);
   const [written, setWritten] = useState<Record<string, ArtResult>>({});
   const [writing, setWriting] = useState(false);
+  const [extract, setExtract] = useState(() => localStorage.getItem("wb_extract") !== "0");
+  const [doMatch, setDoMatch] = useState(() => localStorage.getItem("wb_match") === "1");
+  const [fields, setFields] = useState<MatchField[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("wb_match_fields") || "null");
+      return Array.isArray(v) ? v : ["article", "name", "barcode"];
+    } catch {
+      return ["article", "name", "barcode"];
+    }
+  });
+  const [cat, setCat] = useState<Record<string, CatMatch> | null>(null);
+  const [catLoading, setCatLoading] = useState(false);
+
+  useEffect(() => localStorage.setItem("wb_extract", extract ? "1" : "0"), [extract]);
+  useEffect(() => localStorage.setItem("wb_match", doMatch ? "1" : "0"), [doMatch]);
+  useEffect(() => localStorage.setItem("wb_match_fields", JSON.stringify(fields)), [fields]);
+
+  const shown = useMemo(() => (result ? (extract ? result.items : withoutAutoArticles(result.items)) : []), [result, extract]);
+  const view = useMemo(() => (result ? { ...result, items: shown } : null), [result, shown]);
+  const fieldsKey = [...fields].sort().join(",");
+
+  useEffect(() => {
+    if (!result || !doMatch || !fields.length) {
+      setCat(null);
+      return;
+    }
+    let stop = false;
+    setCatLoading(true);
+    matchCatalog(shown, fields)
+      .then((m) => !stop && setCat(m))
+      .catch((e) => !stop && toast({ title: "Не удалось сверить с каталогом", description: (e as Error).message, variant: "destructive" }))
+      .finally(() => !stop && setCatLoading(false));
+    return () => {
+      stop = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, doMatch, fieldsKey]);
 
   const baseTitle = bases.find((b) => b.slug === base)?.title || base;
   const typeTitle = docType === "sale" ? "Реализация" : "Поступление";
@@ -134,7 +177,7 @@ const ConvertWaybillCatalog = () => {
       const r = await buildWaybillItems(base, docType, [...selected]);
       setResult(r);
       const arts = [...new Set(r.items.filter((x) => x.article_auto).map((x) => x.article))];
-      if (arts.length) {
+      if (arts.length && extract) {
         setTwinsLoading(true);
         findTwins(base, arts)
           .then(setTwins)
@@ -151,7 +194,7 @@ const ConvertWaybillCatalog = () => {
   const writeArts = async () => {
     if (!result) return;
     const rows = result.items
-      .filter((x) => x.article_auto && written[x.key]?.state !== "written")
+      .filter((x) => extract && x.article_auto && written[x.key]?.state !== "written")
       .map((x) => ({ key: x.key, article: x.article }));
     if (!rows.length) return;
     setWriting(true);
@@ -177,7 +220,7 @@ const ConvertWaybillCatalog = () => {
     try {
       const numbers = result.docs.map((d) => d.number);
       const fileName = catalogFileName(baseTitle, docType, numbers);
-      const b64 = buildCatalogXlsx(result.items, priceOf, brandOf);
+      const b64 = buildCatalogXlsx(shown, priceOf, brandOf);
       await saveToYuraFiles(
         b64,
         fileName,
@@ -249,6 +292,28 @@ const ConvertWaybillCatalog = () => {
           {!loading && !error && (
             <WaybillList docs={docs} selected={selected} onToggle={toggle} onSet={setMany} disabled={busy} />
           )}
+          <BuildOptions
+            extract={extract}
+            onExtract={(v) => {
+              setExtract(v);
+              setSaved(null);
+              if (v && result && !twins && !twinsLoading) {
+                const arts = [...new Set(result.items.filter((x) => x.article_auto).map((x) => x.article))];
+                if (arts.length) {
+                  setTwinsLoading(true);
+                  findTwins(base, arts)
+                    .then(setTwins)
+                    .catch(() => null)
+                    .finally(() => setTwinsLoading(false));
+                }
+              }
+            }}
+            match={doMatch}
+            onMatch={setDoMatch}
+            fields={fields}
+            onFields={setFields}
+            disabled={building}
+          />
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={build} disabled={busy || !selected.size}>
               <Icon name={building ? "Loader2" : "PackageSearch"} size={16} className={building ? "animate-spin" : ""} />
@@ -273,7 +338,7 @@ const ConvertWaybillCatalog = () => {
               Бренд, Вес, Код ТНВЭД, Цена. Синим — артикул, созданный из названия; бренд можно исправить в таблице.
             </p>
             <WaybillResult
-              data={result}
+              data={view || result}
               rule={rule}
               picks={picks}
               onRule={(r) => {
@@ -296,8 +361,10 @@ const ConvertWaybillCatalog = () => {
               }}
               twins={twins}
               writtenKeys={new Set(Object.values(written).filter((r) => r.state === "written").map((r) => r.key))}
+              cat={doMatch && fields.length ? cat : null}
+              catalog={doMatch && fields.length ? <CatalogSummary items={shown} cat={cat} loading={catLoading} /> : null}
               articles={
-                <AutoArticles
+                !extract ? null : <AutoArticles
                   items={result.items}
                   twins={twins}
                   twinsLoading={twinsLoading}

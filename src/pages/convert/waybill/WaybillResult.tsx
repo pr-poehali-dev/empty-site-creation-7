@@ -1,7 +1,11 @@
 import { Fragment, ReactNode, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { PRICE_RULES, PriceRule, Twin, WbBuild, WbItem, finalPrice, guessBrand, isMultiPrice } from "./api";
+import { CatMatch, PRICE_RULES, PriceRule, Twin, WbBuild, WbItem, finalPrice, guessBrand, isMultiPrice } from "./api";
 import { TwinList, twinsOf } from "./AutoArticles";
+import { CardList, Marks } from "./CatalogSummary";
+
+const CAT_TH = "bg-emerald-500/10 text-emerald-300/90";
+const CAT_TD = "bg-emerald-500/[0.06]";
 
 const money = (n: number) => n.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 
@@ -39,6 +43,8 @@ interface Props {
   twins: Record<string, Twin[]> | null;
   writtenKeys: Set<string>;
   articles: ReactNode;
+  cat: Record<string, CatMatch> | null;
+  catalog: ReactNode;
 }
 
 const BrandInput = ({ x, value, edited, onBrand }: { x: WbItem; value: string; edited: boolean; onBrand: (key: string, brand: string) => void }) => (
@@ -79,7 +85,10 @@ const NoBrand = ({ list, brandOf, onBrand }: { list: WbItem[]; brandOf: (x: WbIt
   );
 };
 
-const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twins, writtenKeys, articles }: Props) => {
+const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twins, writtenKeys, articles, cat, catalog }: Props) => {
+  const [openCat, setOpenCat] = useState<string | null>(null);
+  const showCat = !!cat;
+  const cols = showCat ? 10 : 7;
   const [openRow, setOpenRow] = useState<string | null>(null);
   const brandOf = (x: WbItem) => (brands[x.key] !== undefined ? brands[x.key] : guessBrand(x.name, x.group));
   const [noBrandKeys] = useState(() => new Set(data.items.filter((x) => !guessBrand(x.name, x.group)).map((x) => x.key)));
@@ -195,6 +204,7 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
       )}
 
       <div className="space-y-1">
+        {catalog}
         {articles}
         <Missing title="Без артикула" list={items.filter((x) => !x.article)} />
         <Missing title="Без штрихкода" list={items.filter((x) => !x.barcodes.length)} />
@@ -212,9 +222,12 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
           <thead className="sticky top-0 bg-card text-muted-foreground">
             <tr className="text-left">
               <th className="p-2 font-normal">Артикул</th>
+              {showCat && <th className={`p-2 font-normal ${CAT_TH}`}>Артикул из каталога</th>}
               <th className="p-2 font-normal">Наименование</th>
+              {showCat && <th className={`p-2 font-normal ${CAT_TH}`}>Наименование из каталога</th>}
               <th className="p-2 font-normal">Штрихкод</th>
               <th className="p-2 font-normal">Бренд</th>
+              {showCat && <th className={`p-2 font-normal ${CAT_TH}`}>Группа из каталога</th>}
               <th className="p-2 font-normal text-right">Вес</th>
               <th className="p-2 font-normal">Код ТНВЭД</th>
               <th className="p-2 font-normal text-right">Цена</th>
@@ -225,6 +238,11 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
               const tw = twinsOf(x, items, twins);
               const auto = x.article_auto && !writtenKeys.has(x.key);
               const open = openRow === x.key;
+              const m = cat?.[x.key];
+              const c = m?.cards?.[0];
+              const more = (m?.cards?.length || 0) - 1;
+              const catOpen = openCat === x.key;
+              const catTd = `p-2 ${CAT_TD}`;
               return (
                 <Fragment key={x.key}>
                   <tr>
@@ -240,7 +258,29 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
                         </button>
                       )}
                     </td>
-                    <td className="p-2 min-w-[220px]">{x.name}</td>
+                    {showCat && (
+                      <td className={`${catTd} whitespace-nowrap`}>
+                        {c ? (
+                          <>
+                            {c.article || "—"}
+                            <Marks c={c} />
+                            {more > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setOpenCat(catOpen ? null : x.key)}
+                                className="ml-1 rounded px-1 bg-white/[0.08] text-foreground"
+                              >
+                                ещё {more} {catOpen ? "▴" : "▾"}
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    )}
+                    <td className="p-2 min-w-[180px]">{x.name}</td>
+                    {showCat && <td className={`${catTd} min-w-[180px]`}>{c?.name || "—"}</td>}
                     <td className="p-2 whitespace-nowrap tabular-nums">{x.barcodes.join(", ") || "—"}</td>
                     <td className="p-2 whitespace-nowrap">
                       <BrandInput
@@ -250,13 +290,22 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twi
                         onBrand={onBrand}
                       />
                     </td>
+                    {showCat && <td className={`${catTd} whitespace-nowrap`}>{c?.group || "—"}</td>}
                     <td className="p-2 text-right tabular-nums">{x.weight || "—"}</td>
                     <td className="p-2 whitespace-nowrap tabular-nums">{x.tnved || "—"}</td>
                     <td className="p-2 text-right tabular-nums whitespace-nowrap">{money(priceOf(x))}</td>
                   </tr>
+                  {catOpen && m && (
+                    <tr>
+                      <td colSpan={cols} className="px-2 pb-2 bg-emerald-500/[0.04]">
+                        <div className="text-muted-foreground pt-1">Найдено в каталоге:</div>
+                        <CardList cards={m.cards} />
+                      </td>
+                    </tr>
+                  )}
                   {open && (
                     <tr>
-                      <td colSpan={7} className="px-2 pb-2 bg-amber-500/[0.04]">
+                      <td colSpan={cols} className="px-2 pb-2 bg-amber-500/[0.04]">
                         <div className="text-muted-foreground pt-1">Товары с таким же артикулом:</div>
                         <TwinList list={tw} />
                       </td>
