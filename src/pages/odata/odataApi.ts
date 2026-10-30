@@ -114,6 +114,7 @@ export const odataApi = {
     kind: string,
     organizationKey?: string,
     warehouseKey?: string,
+    receiverKey?: string,
   ) =>
     call(
       "create_doc",
@@ -122,6 +123,7 @@ export const odataApi = {
         kind,
         organization_key: organizationKey,
         warehouse_key: warehouseKey,
+        receiver_key: receiverKey,
       },
       undefined,
       base,
@@ -190,6 +192,12 @@ export const VAT_RATES = [
   { value: "5", label: "5%" },
   { value: "0", label: "0%" },
   { value: "none", label: "Без НДС" },
+];
+
+export const UNF_DOC_KINDS = [
+  { kind: "unf_receipt", title: "Приходная накладная", icon: "PackagePlus" },
+  { kind: "unf_sale", title: "Расходная накладная (реализация)", icon: "PackageMinus" },
+  { kind: "unf_transfer", title: "Перемещение запасов", icon: "ArrowRightLeft" },
 ];
 
 export const DOC_KINDS = [

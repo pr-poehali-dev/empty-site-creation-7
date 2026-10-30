@@ -61,6 +61,20 @@ def check_owner(token):
         conn.close()
 
 
+BASE_KINDS = {'fomkin': 'unf'}
+
+UNF_DOC_TYPES = {
+    'unf_receipt': 'Document_ПриходнаяНакладная',
+    'unf_sale': 'Document_РасходнаяНакладная',
+    'unf_transfer': 'Document_ПеремещениеЗапасов',
+}
+
+UNF_OPERATIONS = {
+    'unf_receipt': 'ПоступлениеОтПоставщика',
+    'unf_sale': 'ПродажаПокупателю',
+    'unf_transfer': 'Перемещение',
+}
+
 BASES = {
     'trade-resurs': '',
     'fomkin': '_FOMKIN',
@@ -79,7 +93,7 @@ def odata_config(base='trade-resurs'):
         return None
     if not url.endswith('/'):
         url += '/'
-    return {'url': url, 'user': user, 'password': password}
+    return {'url': url, 'user': user, 'password': password, 'kind': BASE_KINDS.get(base, 'trade')}
 
 
 def encode_path(path):
@@ -152,11 +166,16 @@ def load_refs(cfg):
         ]
     else:
         out['organizations_error'] = orgs['error']
-    whs = call_odata(cfg, 'Catalog_Склады?$format=json&$select=Ref_Key,Description,DeletionMark')
+    if cfg.get('kind') == 'unf':
+        whs = call_odata(cfg, 'Catalog_СтруктурныеЕдиницы?$format=json'
+                              '&$select=Ref_Key,Description,DeletionMark,ТипСтруктурнойЕдиницы')
+    else:
+        whs = call_odata(cfg, 'Catalog_Склады?$format=json&$select=Ref_Key,Description,DeletionMark')
     if whs['ok']:
         out['warehouses'] = [
             {'key': w.get('Ref_Key'), 'name': w.get('Description')}
             for w in whs['data'].get('value', []) if not w.get('DeletionMark')
+            and w.get('ТипСтруктурнойЕдиницы', 'Склад') == 'Склад'
         ]
     else:
         out['warehouses_error'] = whs['error']
@@ -2035,6 +2054,54 @@ def find_unit_pcs(cfg):
     return None
 
 
+def unf_currency(cfg, entity):
+    for ent in (entity, 'Document_ПриходнаяНакладная', 'Document_РасходнаяНакладная'):
+        r = call_odata(cfg, f"{ent}?$format=json&$top=1&$orderby=Date desc&$select=ВалютаДокумента_Key")
+        if r['ok']:
+            rows = r['data'].get('value') or []
+            if rows and rows[0].get('ВалютаДокумента_Key') not in (None, EMPTY_GUID):
+                return rows[0]['ВалютаДокумента_Key']
+    return None
+
+
+def create_unf_doc(cfg, doc_kind, org_key, warehouse_key, receiver_key):
+    entity = UNF_DOC_TYPES.get(doc_kind)
+    if not entity:
+        return {'ok': False, 'error': 'Неизвестный тип документа'}
+    payload = {
+        'Date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+        'Posted': False,
+        'ВидОперации': UNF_OPERATIONS[doc_kind],
+    }
+    if org_key:
+        payload['Организация_Key'] = org_key
+    if warehouse_key:
+        payload['СтруктурнаяЕдиница_Key'] = warehouse_key
+    if doc_kind == 'unf_transfer':
+        if receiver_key:
+            payload['СтруктурнаяЕдиницаПолучатель_Key'] = receiver_key
+    else:
+        payload['ПоложениеСклада'] = 'ВШапке'
+        payload['Контрагент_Key'] = EMPTY_GUID
+        payload['Договор_Key'] = EMPTY_GUID
+    currency = unf_currency(cfg, entity)
+    if currency:
+        payload['ВалютаДокумента_Key'] = currency
+
+    r = call_odata(cfg, f'{entity}?$format=json', method='POST', payload=payload)
+    if not r['ok']:
+        return {'ok': False, 'error': r['error'], 'sent': payload}
+    d = r['data']
+    return {
+        'ok': True,
+        'entity': entity,
+        'key': d.get('Ref_Key'),
+        'number': d.get('Number'),
+        'date': d.get('Date'),
+        'posted': d.get('Posted'),
+    }
+
+
 def create_doc(cfg, doc_kind, org_key, warehouse_key):
     entity = DOC_TYPES.get(doc_kind)
     if not entity:
@@ -2145,6 +2212,12 @@ def handler(event: dict, context) -> dict:
 
     if action == 'find_product':
         return resp(200, {'result': find_product(cfg, params.get('article') or body.get('article'))})
+
+    if action == 'create_doc' and cfg.get('kind') == 'unf':
+        return resp(200, {'result': create_unf_doc(
+            cfg, body.get('kind'), body.get('organization_key'), body.get('warehouse_key'),
+            body.get('receiver_key')
+        )})
 
     if action == 'create_doc':
         return resp(200, {'result': create_doc(

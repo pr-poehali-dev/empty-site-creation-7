@@ -10,13 +10,15 @@ import Icon from "@/components/ui/icon";
 import TestCard from "@/components/odata/TestCard";
 import ResultBox from "@/components/odata/ResultBox";
 import DocTest from "@/components/odata/DocTest";
-import { odataApi, DOC_KINDS, RefItem, FoundProduct } from "./odata/odataApi";
+import { odataApi, DOC_KINDS, UNF_DOC_KINDS, RefItem, FoundProduct } from "./odata/odataApi";
 import { findBase } from "./odata/bases";
 
 const OdataTests = () => {
   const navigate = useNavigate();
   const { base = "trade-resurs" } = useParams();
   const baseInfo = findBase(base);
+  const isUnf = baseInfo?.kind === "unf";
+  const docKinds = isUnf ? UNF_DOC_KINDS : DOC_KINDS;
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
 
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -27,6 +29,7 @@ const OdataTests = () => {
   const [warehouses, setWarehouses] = useState<RefItem[]>([]);
   const [orgKey, setOrgKey] = useState("");
   const [whKey, setWhKey] = useState("");
+  const [receiverKey, setReceiverKey] = useState("");
   const [refsBusy, setRefsBusy] = useState(false);
   const [refsError, setRefsError] = useState("");
 
@@ -58,6 +61,7 @@ const OdataTests = () => {
       setWarehouses(res.warehouses || []);
       if (res.organizations?.length) setOrgKey(res.organizations[0].key);
       if (res.warehouses?.length) setWhKey(res.warehouses[0].key);
+      if (res.warehouses?.length > 1) setReceiverKey(res.warehouses[1].key);
       if (res.organizations_error || res.warehouses_error) {
         setRefsError(res.organizations_error || res.warehouses_error);
       }
@@ -211,6 +215,21 @@ const OdataTests = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                  {isUnf && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Склад-получатель (для перемещения)</Label>
+                      <Select value={receiverKey} onValueChange={setReceiverKey}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="не найдено" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {warehouses.map((w) => (
+                            <SelectItem key={w.key} value={w.key}>{w.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               )}
             </TestCard>
@@ -260,7 +279,7 @@ const OdataTests = () => {
               )}
             </TestCard>
 
-            {DOC_KINDS.map((d) => (
+            {docKinds.map((d) => (
               <DocTest
                 key={d.kind}
                 base={base}
@@ -269,6 +288,7 @@ const OdataTests = () => {
                 icon={d.icon}
                 organizationKey={orgKey}
                 warehouseKey={whKey}
+                receiverKey={d.kind === "unf_transfer" ? receiverKey : undefined}
               />
             ))}
 

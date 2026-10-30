@@ -41,6 +41,7 @@ const OdataBase = () => {
   const navigate = useNavigate();
   const { base = "trade-resurs" } = useParams();
   const baseInfo = findBase(base);
+  const sections = baseInfo?.kind === "unf" ? SECTIONS.filter((s) => s.path === "tests") : SECTIONS;
   const user = JSON.parse(localStorage.getItem("auth_user") || "{}");
 
   useEffect(() => {
@@ -69,7 +70,7 @@ const OdataBase = () => {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8 space-y-3">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <button
             key={s.path}
             onClick={() => navigate(`/admin/odata/${base}/${s.path}`)}

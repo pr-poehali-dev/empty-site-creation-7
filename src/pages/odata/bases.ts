@@ -3,6 +3,7 @@ export interface OdataBase {
   title: string;
   hint: string;
   ready: boolean;
+  kind?: "trade" | "unf";
 }
 
 export const ODATA_BASES: OdataBase[] = [
@@ -15,8 +16,9 @@ export const ODATA_BASES: OdataBase[] = [
   {
     slug: "fomkin",
     title: "ИП Фомкин А.Л.",
-    hint: "Подключим позже",
-    ready: false,
+    hint: "Управление нашей фирмой (УНФ)",
+    ready: true,
+    kind: "unf",
   },
   {
     slug: "mirtehniki",

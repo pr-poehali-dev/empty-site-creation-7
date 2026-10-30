@@ -12,6 +12,7 @@ interface DocTestProps {
   icon: string;
   organizationKey?: string;
   warehouseKey?: string;
+  receiverKey?: string;
   isProduct?: boolean;
 }
 
@@ -22,6 +23,7 @@ const DocTest = ({
   icon,
   organizationKey,
   warehouseKey,
+  receiverKey,
   isProduct,
 }: DocTestProps) => {
   const [busy, setBusy] = useState(false);
@@ -36,7 +38,7 @@ const DocTest = ({
     try {
       const r = isProduct
         ? await odataApi.createProduct(base)
-        : await odataApi.createDoc(base, kind, organizationKey, warehouseKey);
+        : await odataApi.createDoc(base, kind, organizationKey, warehouseKey, receiverKey);
       setResult(r.result);
     } catch (e) {
       setResult({ ok: false, error: e instanceof Error ? e.message : "Ошибка" });
