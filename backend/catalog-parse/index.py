@@ -159,7 +159,7 @@ def find_layout(supplier_id, signature):
         return None
     with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            "SELECT mapping, price_mapping, excluded_categories, article_case "
+            "SELECT mapping, price_mapping, excluded_categories, article_case, red_suffix "
             "FROM catalog_layouts WHERE supplier_id = %s AND header_signature = %s",
             (supplier_id, signature)
         )
@@ -167,21 +167,21 @@ def find_layout(supplier_id, signature):
         return dict(row) if row else None
 
 
-def save_layout(supplier_id, signature, mapping, price_mapping, excluded, article_case):
+def save_layout(supplier_id, signature, mapping, price_mapping, excluded, article_case, red_suffix=False):
     if not supplier_id or not signature:
         return
     with _conn() as c, c.cursor() as cur:
         cur.execute(
             "INSERT INTO catalog_layouts "
-            "(supplier_id, header_signature, mapping, price_mapping, excluded_categories, article_case) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "(supplier_id, header_signature, mapping, price_mapping, excluded_categories, article_case, red_suffix) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (supplier_id, header_signature) DO UPDATE SET "
             "mapping = EXCLUDED.mapping, price_mapping = EXCLUDED.price_mapping, "
             "excluded_categories = EXCLUDED.excluded_categories, "
-            "article_case = EXCLUDED.article_case, "
+            "article_case = EXCLUDED.article_case, red_suffix = EXCLUDED.red_suffix, "
             "used_count = catalog_layouts.used_count + 1, last_used_at = NOW()",
             (supplier_id, signature, json.dumps(mapping),
-             json.dumps(price_mapping or {}), json.dumps(excluded or []), article_case)
+             json.dumps(price_mapping or {}), json.dumps(excluded or []), article_case, bool(red_suffix))
         )
 
 
@@ -253,8 +253,27 @@ def drop_draft(draft_id):
         cur.execute("DELETE FROM catalog_drafts WHERE id = %s", (draft_id,))
 
 
-def apply_filters(items, excluded, article_case):
-    """Отсев по категориям и приведение артикулов."""
+RED_BRAND = 'red solution'
+RED_SUFFIX = '(RED)'
+
+
+def is_red(it):
+    """Товар бренда RED SOLUTION: по колонке «Бренд», а без неё — по наименованию."""
+    b = ' '.join(str(it.get('brand') or '').split()).lower()
+    if b:
+        return b == RED_BRAND
+    return RED_BRAND in ' '.join(str(it.get('name') or '').split()).lower()
+
+
+def red_article(a):
+    a = ' '.join(str(a or '').split())
+    if not a or a.upper().replace(' ', '').endswith(RED_SUFFIX):
+        return a
+    return a + ' ' + RED_SUFFIX
+
+
+def apply_filters(items, excluded, article_case, red=False):
+    """Отсев по категориям, приведение артикулов и суффикс (RED) для RED SOLUTION."""
     ex = set(excluded or [])
     out = []
     for it in items:
@@ -262,6 +281,8 @@ def apply_filters(items, excluded, article_case):
             continue
         row = dict(it)
         row['article'] = convert_article(row.get('article'), article_case or 'as_is')
+        if red and is_red(row):
+            row['article'] = red_article(row['article'])
         out.append(row)
     return out
 
@@ -272,6 +293,7 @@ def group_opts(src):
     mode = 'brand' if src.get('group_mode') == 'brand' else 'single'
     return {
         'mode': mode,
+        'red_suffix': bool(src.get('red_suffix')),
         'product_group': None if mode == 'brand' else (' '.join(str(src.get('product_group') or '').split()) or None),
         'brand_groups': (src.get('brand_groups') or {}) if mode == 'brand' else {},
     }
@@ -285,15 +307,17 @@ def preview(draft_id, excluded, article_case, opts=None):
     d = get_draft(draft_id)
     if not d:
         return None, 'Черновик истёк'
-    items = apply_filters(d['rows_data'] or [], excluded, article_case)
     g = group_opts(opts)
+    items = apply_filters(d['rows_data'] or [], excluded, article_case, g['red_suffix'])
     decisions = d.get('group_decisions') or {}
     with _conn() as c, c.cursor() as cur:
         cur.execute("UPDATE catalog_drafts SET group_opts = %s WHERE id = %s",
                     (json.dumps(g, ensure_ascii=False), draft_id))
         report, _ = build_report(cur, items, g, decisions)
         kept = {it['row'] for it in items}
-        dropped = [dict(it, article=convert_article(it.get('article'), article_case or 'as_is'))
+        dropped = [dict(it, article=red_article(convert_article(it.get('article'), article_case or 'as_is'))
+                        if g['red_suffix'] and is_red(it)
+                        else convert_article(it.get('article'), article_case or 'as_is'))
                    for it in (d['rows_data'] or []) if it['row'] not in kept]
         drop_map, _ = match_items(cur, dropped)
     report['excluded_items'] = [dict(list_row(it), in_catalog=it['row'] in drop_map) for it in dropped]
@@ -370,8 +394,8 @@ def commit(draft_id, opts):
     offset = max(int(opts.get('offset') or 0), 0)
     limit = min(max(int(opts.get('limit') or COMMIT_CHUNK), 1), 300)
 
-    all_items = apply_filters(d['rows_data'] or [], excluded, article_case)
     gopts = group_opts(opts)
+    all_items = apply_filters(d['rows_data'] or [], excluded, article_case, gopts['red_suffix'])
     decisions = d.get('group_decisions') or {}
     if not _same_opts(gopts, d.get('group_opts')):
         return None, 'Группы изменились после сверки — нажмите «Пересверить»'
@@ -514,7 +538,8 @@ def commit(draft_id, opts):
                 save_brand_groups(cur, opts.get('brand_groups'))
         sig = opts.get('header_signature') or d.get('header_signature')
         if sig:
-            save_layout(d['supplier_id'], sig, d['mapping'], price_mapping, excluded, article_case)
+            save_layout(d['supplier_id'], sig, d['mapping'], price_mapping, excluded, article_case,
+                        gopts['red_suffix'])
         with _conn() as c, c.cursor() as cur:
             cur.execute(
                 "UPDATE catalog_drafts SET stage = 'products_done', excluded_categories = %s, "
@@ -528,7 +553,7 @@ def commit(draft_id, opts):
 
 def _draft_items(d):
     return apply_filters(d['rows_data'] or [], d.get('excluded_categories') or [],
-                         d.get('article_case') or 'as_is')
+                         d.get('article_case') or 'as_is', bool((d.get('group_opts') or {}).get('red_suffix')))
 
 
 def barcodes_preview(draft_id):
@@ -655,7 +680,9 @@ def handler(event, context):
             result['price_mapping'] = saved.get('price_mapping') or {}
             result['excluded_categories'] = saved.get('excluded_categories') or []
             result['article_case'] = saved.get('article_case')
+            result['red_suffix'] = bool(saved.get('red_suffix'))
             result['layout_reused'] = True
+        result['red_count'] = sum(1 for it in (result.get('items') or []) if is_red(it))
         draft_id = save_draft(supplier_id, body.get('file_name'), result, body.get('draft_id'))
         result['draft_id'] = draft_id
         result.pop('items', None)

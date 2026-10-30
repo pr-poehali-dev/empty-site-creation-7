@@ -1,0 +1,1 @@
+ALTER TABLE t_p69702834_empty_site_creation_.catalog_layouts ADD COLUMN IF NOT EXISTS red_suffix boolean NOT NULL DEFAULT false;

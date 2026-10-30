@@ -77,6 +77,8 @@ interface ParseResult {
   price_mapping?: Record<string, string>;
   excluded_categories?: string[];
   article_case?: string;
+  red_suffix?: boolean;
+  red_count?: number;
   stats: {
     total: number;
     rows_read?: number;
@@ -151,6 +153,7 @@ const CatalogUpload = () => {
   const [folders, setFolders] = useState<{ name: string; products: number }[]>([]);
   const [longNames, setLongNames] = useState<Record<number, string>>({});
   const [groupMode, setGroupMode] = useState<"single" | "brand">("single");
+  const [redSuffix, setRedSuffix] = useState(false);
   const [brandRows, setBrandRows] = useState<BrandRow[]>([]);
   const [brandMap, setBrandMap] = useState<Record<string, string>>({});
   const [brandLoading, setBrandLoading] = useState(false);
@@ -304,6 +307,7 @@ const CatalogUpload = () => {
     );
     setExcluded(ex);
     if (d.article_case) setArticleCase(d.article_case);
+    setRedSuffix(!!d.red_suffix);
     if (d.price_mapping && Object.keys(d.price_mapping).length) {
       setPriceMap(d.price_mapping);
     } else {
@@ -379,8 +383,8 @@ const CatalogUpload = () => {
 
   const groupKey = JSON.stringify(
     groupMode === "brand"
-      ? { m: "brand", b: Object.keys(brandMap).sort().map((k) => [k, brandMap[k]]) }
-      : { m: "single", g: productGroup.trim() },
+      ? { m: "brand", b: Object.keys(brandMap).sort().map((k) => [k, brandMap[k]]), r: redSuffix }
+      : { m: "single", g: productGroup.trim(), r: redSuffix },
   );
   const stale = !!report && reportKey !== groupKey;
 
@@ -400,6 +404,7 @@ const CatalogUpload = () => {
           group_mode: groupMode,
           product_group: groupMode === "single" ? productGroup || null : null,
           brand_groups: groupMode === "brand" ? brandMap : null,
+          red_suffix: redSuffix,
         }),
       });
       const d = await r.json();
@@ -481,6 +486,7 @@ const CatalogUpload = () => {
             product_group: groupMode === "single" ? productGroup || null : null,
             group_mode: groupMode,
             brand_groups: groupMode === "brand" ? brandMap : null,
+            red_suffix: redSuffix,
             fill_mode: fillMode,
             fill_fields: Array.from(fillFields),
             header_signature: result.header_signature,
@@ -945,6 +951,22 @@ const CatalogUpload = () => {
                   </>
                 )}
                 <p className="text-[11px] text-muted-foreground">Только для новых товаров</p>
+                {(result?.red_count ?? 0) > 0 && (
+                  <label className="flex items-start gap-2 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={redSuffix}
+                      onChange={(e) => setRedSuffix(e.target.checked)}
+                      className="w-4 h-4 rounded mt-0.5"
+                    />
+                    <span className="text-sm">
+                      Добавлять (RED) к артикулам RED SOLUTION
+                      <span className="block text-[11px] text-muted-foreground">
+                        Товаров RED SOLUTION в файле: {result?.red_count}. Пример: RK-M1721 → RK-M1721 (RED)
+                      </span>
+                    </span>
+                  </label>
+                )}
               </div>
             </div>
 
