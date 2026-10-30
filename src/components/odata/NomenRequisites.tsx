@@ -152,9 +152,9 @@ const NomenRequisites = ({ item, originalName, kind, groups, countries, made, fa
   parts.push(item.barcode.trim() ? { text: "ШК есть", title: item.barcode } : { text: "ШК нет", tone: "auto" });
   if (item.name.trim().length > 100)
     parts.push({
-      text: "наим. > 100",
-      tone: "warn",
-      title: "В короткое наименование войдут первые 100 символов, полное сохранится целиком",
+      text: `наим. ${item.name.trim().length} знаков > 100 — сократите`,
+      tone: "bad",
+      title: "Позиция не создастся, пока наименование длиннее 100 знаков",
     });
 
   return (

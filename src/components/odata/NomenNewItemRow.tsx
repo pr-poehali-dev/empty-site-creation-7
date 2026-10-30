@@ -25,6 +25,7 @@ import {
   sitePrice,
   fmtWeight,
   newItemProblems,
+  NAME_MAX,
   similarWeights,
   itemTrace,
 } from "@/pages/odata/nomenApi";
@@ -71,7 +72,7 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
     <div className={`p-3 space-y-3 ${item.skip ? "opacity-50" : ""}`}>
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs">
-          <span className={`flex-1 min-w-0 truncate ${!item.skip && bad("наименование") ? "text-rose-400" : "text-muted-foreground"}`}>
+          <span className={`flex-1 min-w-0 truncate ${!item.skip && (bad("наименование") || bad("наименование > 100")) ? "text-rose-400" : "text-muted-foreground"}`}>
             {item.idx + 1} · Наименование
           </span>
           {!item.skip && (
@@ -98,7 +99,25 @@ const NomenNewItemRow = ({ item, groups, tnved: auto, countries, similarCountry,
             {item.skip ? "Вернуть" : "Не загружать"}
           </button>
         </div>
-        <AutoTextarea value={item.name} onChange={(v) => onChange({ name: v })} />
+        <AutoTextarea
+          value={item.name}
+          onChange={(v) => onChange({ name: v })}
+          className={!item.skip && item.name.trim().length > NAME_MAX ? "border-rose-500 focus-visible:ring-rose-500" : ""}
+        />
+        <div className="flex items-start gap-2 text-[11px] leading-tight">
+          {item.name.trim().length > NAME_MAX && (
+            <span className="flex-1 text-rose-400">
+              Больше {NAME_MAX} знаков — 1С обрежет. Сократите прямо здесь.
+            </span>
+          )}
+          <span
+            className={`ml-auto shrink-0 tabular-nums ${
+              item.name.trim().length > NAME_MAX ? "text-rose-400 font-semibold" : "text-muted-foreground"
+            }`}
+          >
+            {item.name.trim().length} / {NAME_MAX}
+          </span>
+        </div>
         {item.category && <div className="text-xs text-muted-foreground truncate">Категория: {item.category}</div>}
       </div>
 

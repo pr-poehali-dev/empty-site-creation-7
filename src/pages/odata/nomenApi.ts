@@ -449,9 +449,14 @@ export const toNumber = (s: string) => {
   return Number.isFinite(n) ? n : NaN;
 };
 
+export const NAME_MAX = 100;
+
+export const nameTooLong = (x: NewItem) => x.name.trim().length > NAME_MAX;
+
 export const newItemProblems = (x: NewItem): string[] => {
   const p: string[] = [];
   if (!x.name.trim()) p.push("наименование");
+  else if (nameTooLong(x)) p.push("наименование > 100");
   if (!x.groupKey) p.push("группа");
   if (!(toNumber(x.weight) > 0)) p.push("вес");
   if (!/^\d{10}$/.test(x.tnved.trim())) p.push("ТНВЭД");

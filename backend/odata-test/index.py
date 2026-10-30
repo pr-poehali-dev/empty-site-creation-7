@@ -1026,6 +1026,9 @@ def with_barcodes(cfg, cards):
     return [dict(c, barcodes=out.get((c['key'],)) or []) for c in cards]
 
 
+NAME_MAX = 100
+
+
 def create_one_card(cfg, refs, row, force=False):
     """Создаёт одну карточку и записывает её штрихкод (если он свободен)."""
     article = str(row.get('article') or '').strip()
@@ -1038,6 +1041,8 @@ def create_one_card(cfg, refs, row, force=False):
     if not name or not re.fullmatch(r'[0-9a-f-]{36}', group) or weight <= 0 \
             or not re.fullmatch(r'\d{10}', tnved):
         return dict(base, state='error', error='Не заполнены обязательные реквизиты')
+    if len(name) > NAME_MAX:
+        return dict(base, state='error', error=f'Наименование длиннее {NAME_MAX} знаков ({len(name)}) — сократите')
 
     if not force:
         state, cards, err = precheck_card(cfg, article, name)
@@ -1068,7 +1073,7 @@ def create_one_card(cfg, refs, row, force=False):
         return res
 
     payload = {
-        'Description': name[:100],
+        'Description': name,
         'НаименованиеПолное': name,
         'Артикул': article,
         'IsFolder': False,
@@ -1149,7 +1154,7 @@ def unf_refs(cfg):
 
 def unf_payload(refs, name, article, group, weight, tkey):
     return {
-        'Description': name[:100],
+        'Description': name,
         'НаименованиеПолное': name,
         'Артикул': article,
         'IsFolder': False,

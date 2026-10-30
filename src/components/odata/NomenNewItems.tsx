@@ -19,6 +19,7 @@ import {
   SiteSettings,
   TnvedKind,
   newItemProblems,
+  nameTooLong,
   siteLookup,
 } from "@/pages/odata/nomenApi";
 
@@ -50,7 +51,7 @@ interface Props {
   unf?: boolean;
 }
 
-type TnFilter = "all" | "has" | "none" | "missing" | "skip";
+type TnFilter = "all" | "has" | "none" | "missing" | "skip" | "long";
 
 const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onAll, onReload, base, onGroupAdded, tnvedMissing, similarCountry, onSimilarCountry, unf }: Props) => {
   const [tf, setTfState] = useState<TnFilter>("all");
@@ -87,6 +88,7 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
     none: items.filter((x) => !x.fileTnved).length,
     missing: items.filter(isMissing).length,
     skip: skipped,
+    long: items.filter((x) => !x.skip && nameTooLong(x)).length,
   };
   const toggleNotReady = () => {
     if (notReady) return setNotReady(null);
@@ -94,7 +96,9 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
     if (tf === "skip") setTfState("all");
   };
   const shown = items.filter((x) => (notReady ? notReady.has(x.idx) && !x.skip : true)).filter((x) =>
-    tf === "skip"
+    tf === "long"
+      ? !x.skip && nameTooLong(x)
+      : tf === "skip"
       ? x.skip
       : tf === "has"
         ? x.fileTnved
@@ -136,6 +140,20 @@ const NomenNewItems = ({ items, groups, tnved, countries, loading, onChange, onA
               ? `Не готовы: ${active.filter((x) => newItemProblems(x).length > 0).length} · показать все`
               : `Готово ${ready} из ${active.length}`}
           </button>
+          {(tnCounts.long > 0 || tf === "long") && (
+            <button
+              type="button"
+              onClick={() => setTf(tf === "long" ? "all" : "long")}
+              className={`text-xs rounded-md px-2 py-1 flex items-center gap-1 text-rose-400 bg-rose-500/10 ${
+                tf === "long" ? "ring-1 ring-rose-400" : ""
+              }`}
+            >
+              <Icon name="TextCursorInput" size={12} />
+              {tf === "long"
+                ? `Длинных наименований: ${tnCounts.long} · показать все`
+                : `Длинных наименований: ${tnCounts.long} · показать только их`}
+            </button>
+          )}
           {skipped > 0 && (
             <button
               type="button"
