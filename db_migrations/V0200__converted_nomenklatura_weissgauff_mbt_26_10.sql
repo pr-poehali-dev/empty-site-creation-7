@@ -1,0 +1,4 @@
+INSERT INTO converted_files (title, description, file_url, file_name, s3_key, size_bytes)
+VALUES ('Номенклатура Weissgauff МБТ 26.10 в загрузку 1С',
+ 'По правилу «Создание номенклатуры в 1С через OData» из счетов № 1258 и № 1259 от 27.10.2026 (ВГ-ТРЕЙД). 253 строки, после объединения 194 товара, по алфавиту. Суммы счетов сошлись: 1 125 406,80 и 225 629,40 руб. Все со штрихкодом, общих нет. Вес и ТН ВЭД взяты из прошлой номенклатуры Weissgauff: без веса 30, без ТН ВЭД 7. Цены нет, бренд Weissgauff.',
+ '/converted/nomenklatura-weissgauff-mbt-26-10-v-zagruzku-1s.xlsx', 'Номенклатура Weissgauff МБТ 26.10 в загрузку 1С.xlsx', '', 16950);
