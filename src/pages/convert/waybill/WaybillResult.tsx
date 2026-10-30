@@ -78,8 +78,11 @@ const WaybillResult = ({ data }: { data: WbBuild }) => {
             <tr className="text-left">
               <th className="p-2 font-normal">Артикул</th>
               <th className="p-2 font-normal">Наименование</th>
+              <th className="p-2 font-normal">Штрихкод</th>
               <th className="p-2 font-normal">Бренд</th>
+              <th className="p-2 font-normal">Категория</th>
               <th className="p-2 font-normal text-right">Вес</th>
+              <th className="p-2 font-normal">Код ТНВЭД</th>
               <th className="p-2 font-normal text-right">Цена</th>
             </tr>
           </thead>
@@ -87,9 +90,12 @@ const WaybillResult = ({ data }: { data: WbBuild }) => {
             {items.map((x) => (
               <tr key={x.key}>
                 <td className="p-2 whitespace-nowrap">{x.article || "—"}</td>
-                <td className="p-2">{x.name}</td>
+                <td className="p-2 min-w-[220px]">{x.name}</td>
+                <td className="p-2 whitespace-nowrap tabular-nums">{x.barcodes.join(", ") || "—"}</td>
                 <td className="p-2 whitespace-nowrap">{guessBrand(x.name, x.group) || "—"}</td>
+                <td className="p-2 whitespace-nowrap">{x.group || "—"}</td>
                 <td className="p-2 text-right tabular-nums">{x.weight || "—"}</td>
+                <td className="p-2 whitespace-nowrap tabular-nums">{x.tnved || "—"}</td>
                 <td className="p-2 text-right tabular-nums whitespace-nowrap">{money(x.price)}</td>
               </tr>
             ))}
