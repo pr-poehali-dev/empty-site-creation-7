@@ -24,6 +24,7 @@ export interface WbItem {
   key: string;
   name: string;
   article: string;
+  article_auto: boolean;
   barcodes: string[];
   group: string;
   weight: number;
@@ -100,6 +101,42 @@ export const listWaybills = async (base: string, docType: DocType, dateFrom: str
 export const buildWaybillItems = async (base: string, docType: DocType, keys: string[]) =>
   (await post("wb_build", base, { doc_type: docType, keys }, 90000)) as WbBuild;
 
+export interface Twin {
+  key: string;
+  name: string;
+  article: string;
+  group: string;
+}
+
+export const findTwins = async (base: string, articles: string[]) => {
+  const out: Record<string, Twin[]> = {};
+  const chunks: string[][] = [];
+  for (let i = 0; i < articles.length; i += 20) chunks.push(articles.slice(i, i + 20));
+  for (let i = 0; i < chunks.length; i += 3) {
+    const res = await Promise.all(chunks.slice(i, i + 3).map((c) => post("wb_twins", base, { articles: c }, 60000)));
+    res.forEach((r) => Object.assign(out, r.twins || {}));
+  }
+  return out;
+};
+
+export interface ArtResult {
+  key: string;
+  state: "written" | "skipped" | "error";
+  article?: string;
+  error?: string;
+}
+
+export const writeArticles = async (base: string, rows: { key: string; article: string }[]) => {
+  const out: ArtResult[] = [];
+  for (let i = 0; i < rows.length; i += 40) {
+    const r = await post("wb_set_articles", base, { rows: rows.slice(i, i + 40) }, 90000);
+    out.push(...(r.results || []));
+  }
+  return out;
+};
+
+export const normArt = (v: string) => v.replace(/[\s\-_./]+/g, "").toUpperCase();
+
 export const KNOWN_BRANDS = ["GARLYN", "REDMOND", "RED SOLUTION", "WEISSGAUFF", "MIDEA"];
 
 export const guessBrand = (name: string, group: string) => {
@@ -112,23 +149,26 @@ export const guessBrand = (name: string, group: string) => {
   return latin && !/\d/.test(latin[0]) ? latin[0] : "";
 };
 
-const HEADERS = ["Артикул", "Наименование", "Штрихкод", "Бренд", "Категория", "Вес", "Код ТНВЭД", "Цена"];
+const HEADERS = ["Артикул", "Наименование", "Штрихкод", "Бренд", "Вес", "Код ТНВЭД", "Цена"];
 
-export const buildCatalogXlsx = (items: WbItem[], priceOf: (x: WbItem) => number) => {
+export const buildCatalogXlsx = (
+  items: WbItem[],
+  priceOf: (x: WbItem) => number,
+  brandOf: (x: WbItem) => string,
+) => {
   const data = items.map((x) => [
     x.article,
     x.name,
     x.barcodes.join(", "),
-    guessBrand(x.name, x.group),
-    x.group,
+    brandOf(x),
     x.weight || "",
     x.tnved,
     priceOf(x),
   ]);
   const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...data]);
-  ws["!cols"] = [16, 60, 18, 16, 22, 8, 13, 12].map((wch) => ({ wch }));
+  ws["!cols"] = [16, 60, 18, 16, 8, 13, 12].map((wch) => ({ wch }));
   data.forEach((_, i) => {
-    for (const c of [0, 2, 6]) {
+    for (const c of [0, 2, 5]) {
       const ref = XLSX.utils.encode_cell({ r: i + 1, c });
       if (ws[ref]) ws[ref].t = "s";
     }

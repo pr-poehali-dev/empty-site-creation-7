@@ -2472,6 +2472,13 @@ def handler(event: dict, context) -> dict:
         data, err = fn(oc, cfg.get('kind') or 'trade', body)
         return resp(400, {'error': err}) if err else resp(200, data)
 
+    if action in ('wb_set_articles', 'wb_twins'):
+        if not cfg:
+            return resp(400, {'error': 'База 1С не подключена'})
+        fn = waybill_catalog.set_articles if action == 'wb_set_articles' else waybill_catalog.find_twins
+        data, err = fn(lambda path, **kw: call_odata(cfg, path, **kw), body)
+        return resp(400, {'error': err}) if err else resp(200, data)
+
     if action in ('recon_list', 'recon_compare'):
         if not cfg:
             return resp(400, {'error': 'База 1С не подключена'})

@@ -42,6 +42,49 @@ def list_folders():
         return [{'name': r[0], 'id': r[1], 'products': r[2]} for r in cur.fetchall()]
 
 
+def brand_groups(draft_id, excluded, article_case):
+    """Бренды из файла с числом товаров и подставленной группой каталога."""
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    items = apply_filters(d['rows_data'] or [], excluded, article_case)
+    counts = {}
+    for it in items:
+        b = ' '.join(str(it.get('brand') or '').split())
+        counts[b] = counts.get(b, 0) + 1
+    folders = list_folders()
+    by_norm = {_norm_folder(f['name']): f['name'] for f in folders}
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT name, product_group FROM brands WHERE product_group IS NOT NULL AND product_group <> ''")
+        saved = {_norm_folder(n): g for n, g in cur.fetchall()}
+    out = []
+    for b, n in sorted(counts.items(), key=lambda x: (x[0] == '', x[0].lower())):
+        group, source = '', ''
+        if b and saved.get(_norm_folder(b)):
+            group, source = saved[_norm_folder(b)], 'saved'
+        elif b and by_norm.get(_norm_folder(b)):
+            group, source = by_norm[_norm_folder(b)], 'auto'
+        elif not b and saved.get(''):
+            group, source = saved[''], 'saved'
+        out.append({'brand': b, 'count': n, 'group': group, 'source': source})
+    return {'brands': out, 'has_brand': any(b for b in counts)}, None
+
+
+def save_brand_groups(cur, mapping):
+    for b, g in mapping.items():
+        g = ' '.join(str(g or '').split())
+        b = ' '.join(str(b or '').split())
+        if not g or not b:
+            continue
+        cur.execute("SELECT id FROM brands WHERE lower(name) = lower(%s) LIMIT 1", (b,))
+        row = cur.fetchone()
+        if row:
+            cur.execute("UPDATE brands SET product_group = %s WHERE id = %s", (g, row[0]))
+        else:
+            cur.execute("INSERT INTO brands (name, product_group) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE "
+                        "SET product_group = EXCLUDED.product_group", (b, g))
+
+
 def _norm_folder(s):
     return ' '.join(str(s or '').split()).lower()
 
@@ -248,6 +291,9 @@ def commit(draft_id, opts):
     vat_rate = opts.get('vat_rate') or d.get('vat_rate')
     product_group = ' '.join(str(opts.get('product_group') or d.get('product_group') or '').split()) or None
     product_group_id = None
+    group_mode = opts.get('group_mode') or 'single'
+    brand_map = {' '.join(str(k or '').split()).lower(): ' '.join(str(v or '').split())
+                 for k, v in (opts.get('brand_groups') or {}).items()}
     fill_mode = opts.get('fill_mode') or 'empty_only'
     fill_fields = set(opts.get('fill_fields') or [])
     offset = max(int(opts.get('offset') or 0), 0)
@@ -260,7 +306,15 @@ def commit(draft_id, opts):
     created = updated = 0
     with _conn() as c, c.cursor() as cur:
         row_map, _ = match_items(cur, items)
-        if product_group:
+        folder_ids = {}
+        if group_mode == 'brand':
+            cur.execute(
+                "SELECT product_group, max(product_group_id) FROM products "
+                "WHERE product_group IS NOT NULL AND product_group <> '' GROUP BY product_group"
+            )
+            for name, gid in cur.fetchall():
+                folder_ids[_norm_folder(name)] = (name, gid)
+        if product_group and group_mode != 'brand':
             cur.execute(
                 "SELECT product_group, max(product_group_id) FROM products "
                 "WHERE product_group IS NOT NULL AND product_group <> '' GROUP BY product_group"
@@ -323,9 +377,13 @@ def commit(draft_id, opts):
             rows_sql = []
             for _, it in new_items:
                 prices = _price_values(it, price_mapping)
+                pg, pgid = product_group, product_group_id
+                if group_mode == 'brand':
+                    g = brand_map.get(' '.join(str(it.get('brand') or '').split()).lower()) or 'Общая'
+                    pg, pgid = folder_ids.get(_norm_folder(g), (g, None))
                 rows_sql.append('(' + ', '.join([
                     str(int(default_cat)), _sql_val(it['name']), _sql_val(it.get('article')),
-                    _sql_val(it.get('brand')), _sql_val(product_group), _sql_val(product_group_id),
+                    _sql_val(it.get('brand')), _sql_val(pg), _sql_val(pgid),
                     _sql_val(prices['price_base']), _sql_val(prices['price_retail']),
                     _sql_val(prices['price_wholesale']), _sql_val(prices['price_purchase']),
                     _sql_val(vat_rate), _sql_val(it.get('weight_gross')), _sql_val(it.get('weight_net')),
@@ -352,6 +410,9 @@ def commit(draft_id, opts):
     done = min(offset + limit, total)
     finished = done >= total
     if finished:
+        if group_mode == 'brand' and opts.get('brand_groups'):
+            with _conn() as c, c.cursor() as cur:
+                save_brand_groups(cur, opts.get('brand_groups'))
         sig = opts.get('header_signature') or d.get('header_signature')
         if sig:
             save_layout(d['supplier_id'], sig, d['mapping'], price_mapping, excluded, article_case)
@@ -505,6 +566,12 @@ def handler(event, context):
         if err:
             return _resp(404, {'error': err})
         return _resp(200, {'report': rep})
+
+    if action == 'brand_groups':
+        res, err = brand_groups(body.get('draft_id'), body.get('excluded_categories'), body.get('article_case'))
+        if err:
+            return _resp(404, {'error': err})
+        return _resp(200, res)
 
     if action == 'commit':
         res, err = commit(body.get('draft_id'), body)

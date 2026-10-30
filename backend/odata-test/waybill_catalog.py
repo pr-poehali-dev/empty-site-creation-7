@@ -15,6 +15,84 @@ FIELDS = {
 }
 MAX_DOCS = 60
 
+ART_RX = [
+    re.compile(r'\b([А-ЯA-Z]{2,4}-\d{2,6}(?:-{1,2}[\dA-Za-zА-Яа-я]{1,6})?)\b'),
+    re.compile(r'\b([A-ZА-Я]{2,}\d{3,})\b'),
+    re.compile(r'\b([A-ZА-Я]{1,4}-[A-ZА-Я0-9]*\d[A-ZА-Я0-9]*(?:-[A-ZА-Я0-9]{1,6})?)\b'),
+]
+
+
+def art_from_name(name):
+    s = ' '.join(str(name or '').split())
+    for rx in ART_RX:
+        m = rx.findall(s)
+        if m:
+            return m[-1]
+    return ''
+
+
+def norm_art(v):
+    return re.sub(r'[\s\-_./]+', '', str(v or '')).upper()
+
+
+def _core(v):
+    parts = [p for p in re.split(r'[^0-9A-Za-zА-Яа-яЁё]+', str(v or '')) if p]
+    return max(parts, key=len) if parts else ''
+
+
+def _article_twins(call, wanted):
+    """Карточки номенклатуры, у которых артикул совпадает с wanted (без учёта регистра, пробелов, дефисов)."""
+    cores = sorted({_core(a) for a in wanted if _core(a)})
+    targets = {norm_art(a) for a in wanted}
+    out = {}
+
+    def load(core):
+        r = call("Catalog_Номенклатура?$format=json&$top=50&$select=Ref_Key,Description,Артикул,Parent_Key,DeletionMark"
+                 f"&$filter=IsFolder eq false and substringof('{_q(core)}',Артикул) eq true")
+        return r['data'].get('value') or [] if r['ok'] else []
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for rows in ex.map(load, cores):
+            for x in rows:
+                n = norm_art(x.get('Артикул'))
+                if n in targets and not x.get('DeletionMark'):
+                    out.setdefault(n, {})[x['Ref_Key']] = x
+    return out
+
+
+def find_twins(call, body):
+    """Карточки 1С с тем же артикулом (без учёта регистра, пробелов, дефисов)."""
+    arts = [str(a or '').strip() for a in (body.get('articles') or []) if str(a or '').strip()][:60]
+    twins = _article_twins(call, arts)
+    group_name = _groups(call)
+    out = {}
+    for a in arts:
+        n = norm_art(a)
+        out[a] = [{'key': k, 'name': (x.get('Description') or '').strip(), 'article': (x.get('Артикул') or '').strip(),
+                   'group': group_name(x.get('Parent_Key'))} for k, x in (twins.get(n) or {}).items()]
+    return {'twins': out}, None
+
+
+def set_articles(call, body):
+    """Записывает артикулы в карточки номенклатуры, только если там артикул пустой."""
+    rows = [r for r in (body.get('rows') or []) if _guid(r.get('key')) and str(r.get('article') or '').strip()][:500]
+
+    def one(r):
+        k, art = r['key'], str(r['article']).strip()[:50]
+        g = call(f"Catalog_Номенклатура(guid'{k}')?$format=json&$select=Ref_Key,Артикул")
+        if not g['ok']:
+            return {'key': k, 'state': 'error', 'error': g.get('error')}
+        if (g['data'].get('Артикул') or '').strip():
+            return {'key': k, 'state': 'skipped', 'article': g['data'].get('Артикул').strip()}
+        w = call(f"Catalog_Номенклатура(guid'{k}')?$format=json", method='PATCH', payload={'Артикул': art})
+        if not w['ok']:
+            return {'key': k, 'state': 'error', 'error': w.get('error')}
+        return {'key': k, 'state': 'written', 'article': art}
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        res = list(ex.map(one, rows))
+    return {'results': res}, None
+
 
 def _q(v):
     return str(v or '').replace("'", "''")
@@ -169,16 +247,25 @@ def _fill(call, f, items, order, lines, docs):
     barcodes = _barcodes(call, order)
     group_name = _groups(call)
 
+    autos = {}
+    for k in order:
+        c = cards.get(k) or {}
+        if not (c.get('Артикул') or '').strip():
+            a = art_from_name(c.get('Description'))
+            if a:
+                autos[k] = a
     out = []
     for k in order:
         it = items[k]
         c = cards.get(k) or {}
         t = tnved.get(c.get(f['tnved'])) or {}
         distinct = sorted({p['price'] for p in it['prices']})
+        auto = autos.get(k, '')
         out.append({
             'key': k,
             'name': (c.get('Description') or '').strip(),
-            'article': (c.get('Артикул') or '').strip(),
+            'article': (c.get('Артикул') or '').strip() or auto,
+            'article_auto': bool(auto),
             'barcodes': barcodes.get(k, []),
             'group': group_name(c.get('Parent_Key')),
             'weight': _num(c.get(f['weight'])),

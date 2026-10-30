@@ -1,0 +1,1 @@
+ALTER TABLE t_p69702834_empty_site_creation_.brands ADD COLUMN IF NOT EXISTS product_group VARCHAR(255) NULL;

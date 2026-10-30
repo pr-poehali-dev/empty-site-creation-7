@@ -10,6 +10,7 @@ import UploadBanner, { UploadProgress } from "@/components/catalog/UploadBanner"
 import ReportItemsSheet, { ReportGroup, ReportItem } from "@/components/catalog/ReportItemsSheet";
 import BarcodeStep from "@/components/catalog/BarcodeStep";
 import UploadSteps, { UploadStep } from "@/components/catalog/UploadSteps";
+import BrandGroupMap, { BrandRow } from "@/components/catalog/BrandGroupMap";
 
 const CATALOG_URL = "https://functions.poehali.dev/85960a37-dc7f-4ace-b024-444033b366d7";
 
@@ -143,6 +144,11 @@ const CatalogUpload = () => {
   const [vatRate, setVatRate] = useState("");
   const [productGroup, setProductGroup] = useState("");
   const [folders, setFolders] = useState<{ name: string; products: number }[]>([]);
+  const [groupMode, setGroupMode] = useState<"single" | "brand">("single");
+  const [brandRows, setBrandRows] = useState<BrandRow[]>([]);
+  const [brandMap, setBrandMap] = useState<Record<string, string>>({});
+  const [brandLoading, setBrandLoading] = useState(false);
+  const [newFolders, setNewFolders] = useState<string[]>([]);
   const [fillMode, setFillMode] = useState("empty_only");
   const [fillFields, setFillFields] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<UploadStep>(1);
@@ -200,7 +206,57 @@ const CatalogUpload = () => {
       .catch(() => setFolders([]));
   }, []);
 
+  const hasBrandCol = !!result && result.mapping && result.mapping.brand !== undefined;
+  const brandKey = result ? `${result.draft_id}|${[...excluded].sort().join(",")}|${articleCase}` : "";
+
+  useEffect(() => {
+    if (!result || groupMode !== "brand" || !hasBrandCol) return;
+    let stop = false;
+    setBrandLoading(true);
+    fetch(CATALOG_URL, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        action: "brand_groups",
+        draft_id: result.draft_id,
+        excluded_categories: Array.from(excluded),
+        article_case: articleCase,
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (stop) return;
+        const rows: BrandRow[] = d.brands || [];
+        setBrandRows(rows);
+        setBrandMap((prev) => {
+          const n: Record<string, string> = {};
+          rows.forEach((r) => (n[r.brand] = prev[r.brand] !== undefined ? prev[r.brand] : r.group));
+          return n;
+        });
+      })
+      .catch(() => !stop && setBrandRows([]))
+      .finally(() => !stop && setBrandLoading(false));
+    return () => {
+      stop = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandKey, groupMode, hasBrandCol]);
+
+  useEffect(() => {
+    if (!hasBrandCol && groupMode === "brand") setGroupMode("single");
+  }, [hasBrandCol, groupMode]);
+
   if (user.role !== "owner") return null;
+
+  const allFolders = [
+    ...folders,
+    ...newFolders
+      .filter((n) => !folders.some((f) => f.name.toLowerCase() === n.toLowerCase()))
+      .map((name) => ({ name, products: 0 })),
+  ];
+  const unmappedBrands = brandRows.filter(
+    (r) => !allFolders.some((f) => f.name.trim().toLowerCase() === (brandMap[r.brand] || "").trim().toLowerCase() && brandMap[r.brand]),
+  );
 
   const createSupplier = async () => {
     const name = newName.trim();
@@ -357,7 +413,9 @@ const CatalogUpload = () => {
             article_case: articleCase,
             price_mapping: priceMap,
             vat_rate: vatRate || null,
-            product_group: productGroup || null,
+            product_group: groupMode === "single" ? productGroup || null : null,
+            group_mode: groupMode,
+            brand_groups: groupMode === "brand" ? brandMap : null,
             fill_mode: fillMode,
             fill_fields: Array.from(fillFields),
             header_signature: result.header_signature,
@@ -758,24 +816,69 @@ const CatalogUpload = () => {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">Папка</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="w-full sm:w-72">
-                    <PickList
-                      value={productGroup}
-                      onChange={setProductGroup}
-                      placeholder="Не указывать"
-                      extra={[{ value: "", label: "Не указывать" }]}
-                      options={[
-                        ...folders.map((f) => ({ value: f.name, label: f.name, count: f.products })),
-                        ...(productGroup && !folders.some((f) => f.name === productGroup)
-                          ? [{ value: productGroup, label: `${productGroup} (новая)` }]
-                          : []),
-                      ]}
-                    />
-                  </div>
-                  <NewFolderButton existing={folders.map((f) => f.name)} onApply={setProductGroup} />
+                <label className="text-xs text-muted-foreground">Группа для новых товаров</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ["single", "Одна группа для всех"],
+                      ["brand", "Сопоставление по брендам"],
+                    ] as const
+                  ).map(([v, t]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      disabled={v === "brand" && !hasBrandCol}
+                      onClick={() => setGroupMode(v)}
+                      className={`rounded-xl border px-3 py-2 text-sm text-left disabled:opacity-40 ${
+                        groupMode === v ? "border-primary bg-primary/10" : "border-white/[0.08] hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
                 </div>
+                {!hasBrandCol && (
+                  <p className="text-[11px] text-muted-foreground">В файле нет колонки «Бренд» — доступна только одна группа для всех</p>
+                )}
+                {groupMode === "single" ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-full sm:w-72">
+                      <PickList
+                        value={productGroup}
+                        onChange={setProductGroup}
+                        placeholder="Не указывать"
+                        extra={[{ value: "", label: "Не указывать" }]}
+                        options={[
+                          ...folders.map((f) => ({ value: f.name, label: f.name, count: f.products })),
+                          ...(productGroup && !folders.some((f) => f.name === productGroup)
+                            ? [{ value: productGroup, label: `${productGroup} (новая)` }]
+                            : []),
+                        ]}
+                      />
+                    </div>
+                    <NewFolderButton existing={folders.map((f) => f.name)} onApply={setProductGroup} />
+                  </div>
+                ) : brandLoading && !brandRows.length ? (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Icon name="Loader2" size={13} className="animate-spin" />
+                    Собираю бренды из файла…
+                  </div>
+                ) : (
+                  <>
+                    <BrandGroupMap
+                      rows={brandRows}
+                      map={brandMap}
+                      folders={allFolders}
+                      onChange={(b, g) => setBrandMap((p) => ({ ...p, [b]: g }))}
+                      onNewFolder={(n) => setNewFolders((p) => (p.includes(n) ? p : [...p, n]))}
+                    />
+                    {unmappedBrands.length > 0 && (
+                      <p className="text-[11px] text-amber-400">
+                        Без группы: {unmappedBrands.length} — их товары попадут в группу «Общая»
+                      </p>
+                    )}
+                  </>
+                )}
                 <p className="text-[11px] text-muted-foreground">Только для новых товаров</p>
               </div>
             </div>

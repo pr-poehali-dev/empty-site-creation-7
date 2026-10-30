@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { Fragment, ReactNode, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { PRICE_RULES, PriceRule, WbBuild, WbItem, finalPrice, guessBrand, isMultiPrice } from "./api";
+import { PRICE_RULES, PriceRule, Twin, WbBuild, WbItem, finalPrice, guessBrand, isMultiPrice } from "./api";
+import { TwinList, twinsOf } from "./AutoArticles";
 
 const money = (n: number) => n.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 
@@ -33,9 +34,55 @@ interface Props {
   picks: Record<string, number>;
   onRule: (r: PriceRule) => void;
   onPick: (key: string, price: number | null) => void;
+  brands: Record<string, string>;
+  onBrand: (key: string, brand: string) => void;
+  twins: Record<string, Twin[]> | null;
+  writtenKeys: Set<string>;
+  articles: ReactNode;
 }
 
-const WaybillResult = ({ data, rule, picks, onRule, onPick }: Props) => {
+const BrandInput = ({ x, value, edited, onBrand }: { x: WbItem; value: string; edited: boolean; onBrand: (key: string, brand: string) => void }) => (
+  <input
+    value={value}
+    onChange={(e) => onBrand(x.key, e.target.value)}
+    placeholder="—"
+    className={`w-32 rounded border bg-transparent px-1.5 py-0.5 text-xs outline-none focus:border-primary ${
+      !value.trim()
+        ? "border-rose-500/60 bg-rose-500/10"
+        : edited
+          ? "border-violet-500/50 text-violet-300"
+          : "border-white/[0.08]"
+    }`}
+  />
+);
+
+const NoBrand = ({ list, brandOf, onBrand }: { list: WbItem[]; brandOf: (x: WbItem) => string; onBrand: (key: string, brand: string) => void }) => {
+  const [open, setOpen] = useState(false);
+  if (!list.length) return null;
+  return (
+    <div className="text-xs">
+      <button type="button" onClick={() => setOpen(!open)} className="text-amber-400 flex items-center gap-1">
+        <Icon name={open ? "ChevronDown" : "ChevronRight"} size={12} />
+        Бренд не определён: {list.length}
+      </button>
+      {open && (
+        <ul className="mt-1 ml-4 space-y-1 text-muted-foreground">
+          {list.map((x) => (
+            <li key={x.key} className="flex items-center gap-2">
+              <BrandInput x={x} value={brandOf(x)} edited={false} onBrand={onBrand} />
+              <span>{x.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+const WaybillResult = ({ data, rule, picks, onRule, onPick, brands, onBrand, twins, writtenKeys, articles }: Props) => {
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const brandOf = (x: WbItem) => (brands[x.key] !== undefined ? brands[x.key] : guessBrand(x.name, x.group));
+  const [noBrandKeys] = useState(() => new Set(data.items.filter((x) => !guessBrand(x.name, x.group)).map((x) => x.key)));
   const [showDiff, setShowDiff] = useState(false);
   const [showMulti, setShowMulti] = useState(true);
   const items = data.items;
@@ -148,11 +195,16 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick }: Props) => {
       )}
 
       <div className="space-y-1">
+        {articles}
         <Missing title="Без артикула" list={items.filter((x) => !x.article)} />
         <Missing title="Без штрихкода" list={items.filter((x) => !x.barcodes.length)} />
         <Missing title="Без веса" list={items.filter((x) => !x.weight)} />
         <Missing title="Без ТН ВЭД" list={items.filter((x) => !x.tnved)} />
-        <Missing title="Бренд не определён" list={items.filter((x) => !guessBrand(x.name, x.group))} />
+        <NoBrand
+          list={items.filter((x) => noBrandKeys.has(x.key) || !brandOf(x).trim())}
+          brandOf={brandOf}
+          onBrand={onBrand}
+        />
       </div>
 
       <div className="rounded-lg border border-white/[0.08] max-h-[420px] overflow-auto">
@@ -163,25 +215,56 @@ const WaybillResult = ({ data, rule, picks, onRule, onPick }: Props) => {
               <th className="p-2 font-normal">Наименование</th>
               <th className="p-2 font-normal">Штрихкод</th>
               <th className="p-2 font-normal">Бренд</th>
-              <th className="p-2 font-normal">Категория</th>
               <th className="p-2 font-normal text-right">Вес</th>
               <th className="p-2 font-normal">Код ТНВЭД</th>
               <th className="p-2 font-normal text-right">Цена</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.06]">
-            {items.map((x) => (
-              <tr key={x.key}>
-                <td className="p-2 whitespace-nowrap">{x.article || "—"}</td>
-                <td className="p-2 min-w-[220px]">{x.name}</td>
-                <td className="p-2 whitespace-nowrap tabular-nums">{x.barcodes.join(", ") || "—"}</td>
-                <td className="p-2 whitespace-nowrap">{guessBrand(x.name, x.group) || "—"}</td>
-                <td className="p-2 whitespace-nowrap">{x.group || "—"}</td>
-                <td className="p-2 text-right tabular-nums">{x.weight || "—"}</td>
-                <td className="p-2 whitespace-nowrap tabular-nums">{x.tnved || "—"}</td>
-                <td className="p-2 text-right tabular-nums whitespace-nowrap">{money(priceOf(x))}</td>
-              </tr>
-            ))}
+            {items.map((x) => {
+              const tw = twinsOf(x, items, twins);
+              const auto = x.article_auto && !writtenKeys.has(x.key);
+              const open = openRow === x.key;
+              return (
+                <Fragment key={x.key}>
+                  <tr>
+                    <td className="p-2 whitespace-nowrap">
+                      <span className={auto ? "text-sky-400" : ""}>{x.article || "—"}</span>
+                      {tw.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setOpenRow(open ? null : x.key)}
+                          className="ml-1 rounded px-1 bg-amber-500/15 text-amber-400"
+                        >
+                          Совпадает: {tw.length} {open ? "▴" : "▾"}
+                        </button>
+                      )}
+                    </td>
+                    <td className="p-2 min-w-[220px]">{x.name}</td>
+                    <td className="p-2 whitespace-nowrap tabular-nums">{x.barcodes.join(", ") || "—"}</td>
+                    <td className="p-2 whitespace-nowrap">
+                      <BrandInput
+                        x={x}
+                        value={brandOf(x)}
+                        edited={brands[x.key] !== undefined && brands[x.key] !== guessBrand(x.name, x.group)}
+                        onBrand={onBrand}
+                      />
+                    </td>
+                    <td className="p-2 text-right tabular-nums">{x.weight || "—"}</td>
+                    <td className="p-2 whitespace-nowrap tabular-nums">{x.tnved || "—"}</td>
+                    <td className="p-2 text-right tabular-nums whitespace-nowrap">{money(priceOf(x))}</td>
+                  </tr>
+                  {open && (
+                    <tr>
+                      <td colSpan={7} className="px-2 pb-2 bg-amber-500/[0.04]">
+                        <div className="text-muted-foreground pt-1">Товары с таким же артикулом:</div>
+                        <TwinList list={tw} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

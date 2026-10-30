@@ -10,12 +10,18 @@ import { ODATA_BASES } from "./odata/bases";
 import { saveToYuraFiles } from "./odata/nomenExcel";
 import WaybillList from "./convert/waybill/WaybillList";
 import WaybillResult from "./convert/waybill/WaybillResult";
+import AutoArticles from "./convert/waybill/AutoArticles";
 import {
   DocType,
   PriceRule,
   WbBuild,
   WbItem,
   finalPrice,
+  guessBrand,
+  findTwins,
+  writeArticles,
+  ArtResult,
+  Twin,
   WbDoc,
   buildCatalogXlsx,
   buildWaybillItems,
@@ -62,6 +68,12 @@ const ConvertWaybillCatalog = () => {
   const [rule, setRule] = useState<PriceRule>("max");
   const [picks, setPicks] = useState<Record<string, number>>({});
   const priceOf = (x: WbItem) => finalPrice(x, rule, picks);
+  const [brands, setBrands] = useState<Record<string, string>>({});
+  const brandOf = (x: WbItem) => (brands[x.key] !== undefined ? brands[x.key] : guessBrand(x.name, x.group)).trim();
+  const [twins, setTwins] = useState<Record<string, Twin[]> | null>(null);
+  const [twinsLoading, setTwinsLoading] = useState(false);
+  const [written, setWritten] = useState<Record<string, ArtResult>>({});
+  const [writing, setWriting] = useState(false);
 
   const baseTitle = bases.find((b) => b.slug === base)?.title || base;
   const typeTitle = docType === "sale" ? "Реализация" : "Поступление";
@@ -115,12 +127,47 @@ const ConvertWaybillCatalog = () => {
     setResult(null);
     setSaved(null);
     setPicks({});
+    setBrands({});
+    setTwins(null);
+    setWritten({});
     try {
-      setResult(await buildWaybillItems(base, docType, [...selected]));
+      const r = await buildWaybillItems(base, docType, [...selected]);
+      setResult(r);
+      const arts = [...new Set(r.items.filter((x) => x.article_auto).map((x) => x.article))];
+      if (arts.length) {
+        setTwinsLoading(true);
+        findTwins(base, arts)
+          .then(setTwins)
+          .catch((e) => toast({ title: "Не проверил совпадения артикулов", description: (e as Error).message, variant: "destructive" }))
+          .finally(() => setTwinsLoading(false));
+      }
     } catch (e) {
       toast({ title: "Не удалось собрать товары", description: (e as Error).message, variant: "destructive" });
     } finally {
       setBuilding(false);
+    }
+  };
+
+  const writeArts = async () => {
+    if (!result) return;
+    const rows = result.items
+      .filter((x) => x.article_auto && written[x.key]?.state !== "written")
+      .map((x) => ({ key: x.key, article: x.article }));
+    if (!rows.length) return;
+    setWriting(true);
+    try {
+      const res = await writeArticles(base, rows);
+      setWritten((p) => {
+        const n = { ...p };
+        res.forEach((r) => (n[r.key] = r));
+        return n;
+      });
+      const ok = res.filter((r) => r.state === "written").length;
+      toast({ title: `Записано в 1С: ${ok} из ${rows.length}` });
+    } catch (e) {
+      toast({ title: "Не удалось записать артикулы", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setWriting(false);
     }
   };
 
@@ -130,7 +177,7 @@ const ConvertWaybillCatalog = () => {
     try {
       const numbers = result.docs.map((d) => d.number);
       const fileName = catalogFileName(baseTitle, docType, numbers);
-      const b64 = buildCatalogXlsx(result.items, priceOf);
+      const b64 = buildCatalogXlsx(result.items, priceOf, brandOf);
       await saveToYuraFiles(
         b64,
         fileName,
@@ -223,7 +270,7 @@ const ConvertWaybillCatalog = () => {
             </div>
             <p className="text-xs text-muted-foreground">
               Каждый товар один раз. Цена — из самой поздней накладной; если в ней у товара несколько цен — по выбранному правилу или вручную. Колонки: Артикул, Наименование, Штрихкод,
-              Бренд, Категория (группа в 1С), Вес, Код ТНВЭД, Цена.
+              Бренд, Вес, Код ТНВЭД, Цена. Синим — артикул, созданный из названия; бренд можно исправить в таблице.
             </p>
             <WaybillResult
               data={result}
@@ -242,6 +289,23 @@ const ConvertWaybillCatalog = () => {
                   return n;
                 });
               }}
+              brands={brands}
+              onBrand={(key, brand) => {
+                setSaved(null);
+                setBrands((p) => ({ ...p, [key]: brand }));
+              }}
+              twins={twins}
+              writtenKeys={new Set(Object.values(written).filter((r) => r.state === "written").map((r) => r.key))}
+              articles={
+                <AutoArticles
+                  items={result.items}
+                  twins={twins}
+                  twinsLoading={twinsLoading}
+                  written={written}
+                  writing={writing}
+                  onWrite={writeArts}
+                />
+              }
             />
             <div className="flex items-center gap-2 flex-wrap">
               <Button onClick={save} disabled={busy || !result.items.length}>
