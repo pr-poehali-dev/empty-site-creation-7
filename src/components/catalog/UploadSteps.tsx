@@ -1,11 +1,12 @@
 import Icon from "@/components/ui/icon";
 
-export type UploadStep = 1 | 2 | 3;
+export type UploadStep = 1 | 2 | 3 | 4;
 
 const STEPS: { n: UploadStep; t: string }[] = [
   { n: 1, t: "Файл" },
   { n: 2, t: "Товары" },
   { n: 3, t: "Штрихкоды" },
+  { n: 4, t: "Цены" },
 ];
 
 const UploadSteps = ({ step }: { step: UploadStep }) => (

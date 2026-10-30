@@ -9,6 +9,7 @@ import NewFolderButton from "@/components/invoices/NewFolderButton";
 import UploadBanner, { UploadProgress } from "@/components/catalog/UploadBanner";
 import ReportItemsSheet, { ReportGroup, ReportItem } from "@/components/catalog/ReportItemsSheet";
 import BarcodeStep from "@/components/catalog/BarcodeStep";
+import PriceStep from "@/components/catalog/PriceStep";
 import UploadSteps, { UploadStep } from "@/components/catalog/UploadSteps";
 import BrandGroupMap, { BrandRow } from "@/components/catalog/BrandGroupMap";
 import LongNames, { NAME_MAX } from "@/components/catalog/LongNames";
@@ -188,7 +189,7 @@ const CatalogUpload = () => {
     try {
       const r = await fetch(`${CATALOG_URL}?action=drafts`, { headers: authHeaders });
       const d = await r.json();
-      if (r.ok) setPending((d.drafts || []).filter((x: PendingDraft) => x.stage === "products_done"));
+      if (r.ok) setPending((d.drafts || []).filter((x: PendingDraft) => x.stage === "products_done" || x.stage === "barcodes_done"));
     } catch {
       setPending([]);
     }
@@ -535,6 +536,13 @@ const CatalogUpload = () => {
     window.scrollTo({ top: 0 });
   };
 
+  const goPrices = (draftId: number) => {
+    setBcDraft(draftId);
+    setProgress(null);
+    setStep(4);
+    window.scrollTo({ top: 0 });
+  };
+
   const dropPending = async (id: number) => {
     await fetch(CATALOG_URL, {
       method: "POST",
@@ -582,15 +590,20 @@ const CatalogUpload = () => {
             headers={authHeaders}
             draftId={bcDraft}
             onBusy={setBcBusy}
-            onFinish={resetAll}
+            onFinish={() => goPrices(bcDraft)}
+            onSkip={() => goPrices(bcDraft)}
           />
+        )}
+
+        {step === 4 && bcDraft && (
+          <PriceStep url={CATALOG_URL} headers={authHeaders} draftId={bcDraft} onFinish={resetAll} />
         )}
 
         {step === 1 && pending.length > 0 && (
           <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
-            <div className="text-sm font-medium">Штрихкоды не записаны</div>
+            <div className="text-sm font-medium">Незавершённые загрузки</div>
             <div className="text-xs text-muted-foreground">
-              Товары из этих файлов загружены, осталось сверить и записать штрихкоды
+              Товары из этих файлов загружены, осталось сверить штрихкоды и цены
             </div>
             {pending.map((pd) => (
               <div key={pd.id} className="flex items-center gap-2 rounded-xl bg-secondary p-2">
@@ -601,8 +614,13 @@ const CatalogUpload = () => {
                     {pd.rows_count} строк
                   </div>
                 </div>
-                <Button size="sm" className="rounded-xl" onClick={() => goBarcodes(pd.id)}>
-                  Штрихкоды
+                {pd.stage === "products_done" && (
+                  <Button size="sm" className="rounded-xl" onClick={() => goBarcodes(pd.id)}>
+                    Штрихкоды
+                  </Button>
+                )}
+                <Button size="sm" variant={pd.stage === "products_done" ? "secondary" : "default"} className="rounded-xl" onClick={() => goPrices(pd.id)}>
+                  Цены
                 </Button>
                 <Button
                   size="icon"
@@ -1087,7 +1105,7 @@ const CatalogUpload = () => {
                 </div>
                 {fillMode === "overwrite" && (
                   <div className="text-xs text-amber-500">
-                    Данные каталога перепишут наши, включая цены
+                    Данные каталога перепишут наши ТН ВЭД и вес. Цены — на шаге «Цены»
                   </div>
                 )}
               </div>
@@ -1097,7 +1115,9 @@ const CatalogUpload = () => {
               <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
                 <div className="text-sm flex items-center gap-2">
                   <Icon name="CircleCheck" size={16} className="text-emerald-400" />
-                  Товары загружены: создано {productsDone.created}, обновлено {productsDone.updated}
+                  {productsDone.created || productsDone.updated
+                    ? `Товары загружены: создано ${productsDone.created}, обновлено ${productsDone.updated}`
+                    : "Сопоставление сохранено"}
                 </div>
                 <Button className="rounded-xl w-full" onClick={() => goBarcodes(productsDone.draftId)}>
                   Дальше: штрихкоды
@@ -1128,12 +1148,14 @@ const CatalogUpload = () => {
                   ? `Загружаю… ${progress?.done ?? 0} из ${progress?.total ?? report.total}`
                   : progress?.status === "error"
                     ? "Продолжить загрузку"
-                    : "Загрузить товары"}
+                    : report.new_count > 0
+                      ? `Загрузить товары (новых: ${report.new_count})`
+                      : "Дальше"}
               </Button>
               </>
             )}
             <div className="text-xs text-muted-foreground text-center">
-              Штрихкоды записываются на следующем шаге
+              Штрихкоды и цены — на следующих шагах
             </div>
           </div>
         )}

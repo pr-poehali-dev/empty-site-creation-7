@@ -8,6 +8,7 @@ from psycopg2.extras import RealDictCursor
 
 from parser import parse_catalog, convert_article, PRICE_FIELDS
 import catalog_match
+import prices
 from matcher import build_report, barcode_report, norm_article, match_items, item_codes, list_row, resolve
 
 CORS = {
@@ -446,6 +447,7 @@ def commit(draft_id, opts):
         updates = []
         new_items = []
         item_pid = {}
+        created_rows = {}
         for idx, it in enumerate(items):
             if it['row'] in skip_rows:
                 continue
@@ -462,7 +464,6 @@ def commit(draft_id, opts):
                                    + ", product_group_id = " + _sql_val(mid)
                                    + ", updated_at = NOW() WHERE id = " + str(int(existing['id'])))
                 continue
-            prices = _price_values(it, price_mapping)
             sets = []
             overwrite = fill_mode == 'overwrite'
             for src, col in [('tnved', 'tnved_code'), ('weight_gross', 'weight_gross'),
@@ -477,9 +478,6 @@ def commit(draft_id, opts):
                 else:
                     sets.append(col + " = COALESCE(" + col + ", " + _sql_val(val) + ")")
             if overwrite:
-                for col, val in prices.items():
-                    if val is not None:
-                        sets.append(col + " = " + str(val))
                 if vat_rate:
                     sets.append("vat_rate = " + _sql_val(vat_rate))
             elif vat_rate:
@@ -523,12 +521,27 @@ def commit(draft_id, opts):
                 item_pid[idx] = pid
             created = len(ids)
 
+            for (_, it), pid in zip(new_items, ids):
+                created_rows[str(it['row'])] = pid
+
             brands = sorted({it['brand'] for _, it in new_items if it.get('brand')})
             if brands:
                 cur.execute("INSERT INTO brands (name) VALUES "
                             + ', '.join('(' + _sql_val(b) + ')' for b in brands)
                             + " ON CONFLICT (name) DO NOTHING")
 
+
+        chunk_map = {}
+        for idx, it in enumerate(items):
+            pid = item_pid.get(idx)
+            if pid:
+                chunk_map[str(it['row'])] = {'id': int(pid), 'created': str(it['row']) in created_rows}
+        if offset == 0:
+            cur.execute("UPDATE catalog_drafts SET row_products = %s WHERE id = %s",
+                        (json.dumps(chunk_map), draft_id))
+        elif chunk_map:
+            cur.execute("UPDATE catalog_drafts SET row_products = COALESCE(row_products, '{}'::jsonb) || %s::jsonb "
+                        "WHERE id = %s", (json.dumps(chunk_map), draft_id))
 
     done = min(offset + limit, total)
     finished = done >= total
@@ -556,12 +569,61 @@ def _draft_items(d):
                          d.get('article_case') or 'as_is', bool((d.get('group_opts') or {}).get('red_suffix')))
 
 
+def _fixed_map(cur, d):
+    """Сопоставление строк, зафиксированное при записи товаров: строка -> карточка. None — старый черновик."""
+    rp = d.get('row_products')
+    if rp is None:
+        return None
+    ids = sorted({int(v['id']) for v in rp.values()})
+    names = {}
+    if ids:
+        cur.execute("SELECT id, article, name FROM products WHERE id IN (" + ','.join(map(str, ids)) + ")")
+        names = {r[0]: (r[1] or '', r[2] or '') for r in cur.fetchall()}
+    out = {}
+    for k, v in rp.items():
+        pid = int(v['id'])
+        a, n = names.get(pid, ('', ''))
+        out[int(k)] = {'id': pid, 'article': a, 'name': n}
+    return out
+
+
+def prices_preview(draft_id):
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    if d.get('row_products') is None:
+        return None, 'Сначала загрузите товары'
+    with _conn() as c, c.cursor() as cur:
+        return prices.preview(cur, d, _draft_items(d)), None
+
+
+def prices_apply(draft_id, field, items, settings):
+    d = get_draft(draft_id)
+    if not d:
+        return None, 'Черновик истёк'
+    with _conn() as c, c.cursor() as cur:
+        return prices.apply(cur, d, field, items, settings)
+
+
+def prices_revert(draft_id):
+    with _conn() as c, c.cursor() as cur:
+        return prices.revert(cur, draft_id)
+
+
+def finish_draft(draft_id):
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("UPDATE catalog_drafts SET stage = 'done', expires_at = NOW() + INTERVAL '1 day' WHERE id = %s",
+                    (draft_id,))
+    return {'ok': True}, None
+
+
 def barcodes_preview(draft_id):
     d = get_draft(draft_id)
     if not d:
         return None, 'Черновик истёк'
     with _conn() as c, c.cursor() as cur:
-        rep = barcode_report(cur, _draft_items(d), d.get('group_opts'), d.get('group_decisions') or {})
+        rep = barcode_report(cur, _draft_items(d), d.get('group_opts'), d.get('group_decisions') or {},
+                             _fixed_map(cur, d))
     rep['file_name'] = d.get('file_name')
     rep['supplier_name'] = d.get('supplier_name')
     return rep, None
@@ -579,9 +641,11 @@ def barcodes_commit(draft_id, opts):
     items = all_items[offset:offset + limit]
     added = tried = 0
     with _conn() as c, c.cursor() as cur:
-        res = resolve(cur, all_items, d.get('group_opts'), d.get('group_decisions') or {})
-        row_map = res['row_map']
-        items = [it for it in items if it['row'] not in res['skip']]
+        row_map = _fixed_map(cur, d)
+        if row_map is None:
+            res = resolve(cur, all_items, d.get('group_opts'), d.get('group_decisions') or {})
+            row_map = res['row_map']
+            items = [it for it in items if it['row'] not in res['skip']]
         earlier = set()
         for it in all_items[:offset]:
             earlier.update(item_codes(it))
@@ -606,7 +670,9 @@ def barcodes_commit(draft_id, opts):
     done = min(offset + limit, total)
     finished = done >= total
     if finished:
-        drop_draft(draft_id)
+        with _conn() as c, c.cursor() as cur:
+            cur.execute("UPDATE catalog_drafts SET stage = 'barcodes_done', expires_at = NOW() + INTERVAL '7 days' "
+                        "WHERE id = %s", (draft_id,))
     return {'added': added, 'skipped': tried - added, 'done': done, 'total': total,
             'finished': finished}, None
 
@@ -737,6 +803,22 @@ def handler(event, context):
         if err:
             return _resp(404, {'error': err})
         return _resp(200, {'result': res})
+
+    if action == 'prices_preview':
+        res, err = prices_preview(body.get('draft_id'))
+        return _resp(404 if err else 200, {'error': err} if err else res)
+
+    if action == 'prices_apply':
+        res, err = prices_apply(body.get('draft_id'), body.get('price_field'), body.get('items'), body.get('settings'))
+        return _resp(400 if err else 200, {'error': err} if err else res)
+
+    if action == 'prices_revert':
+        res, err = prices_revert(body.get('draft_id'))
+        return _resp(200, res)
+
+    if action == 'finish_draft':
+        res, err = finish_draft(body.get('draft_id'))
+        return _resp(200, res)
 
     if action == 'drop_draft':
         drop_draft(body.get('draft_id'))

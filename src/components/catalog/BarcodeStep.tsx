@@ -16,6 +16,7 @@ interface Props {
   draftId: number;
   onFinish: () => void;
   onBusy: (busy: boolean) => void;
+  onSkip?: () => void;
 }
 
 const TILES: { g: BarcodeGroup; cls: string }[] = [
@@ -26,7 +27,7 @@ const TILES: { g: BarcodeGroup; cls: string }[] = [
   { g: "dups", cls: "" },
 ];
 
-const BarcodeStep = ({ url, headers, draftId, onFinish, onBusy }: Props) => {
+const BarcodeStep = ({ url, headers, draftId, onFinish, onBusy, onSkip }: Props) => {
   const [rep, setRep] = useState<BarcodeReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -104,7 +105,8 @@ const BarcodeStep = ({ url, headers, draftId, onFinish, onBusy }: Props) => {
           другим товаром {rep?.counts.foreign ?? 0}.
         </div>
         <Button className="rounded-xl w-full" onClick={onFinish}>
-          Загрузить другой файл
+          Дальше: цены
+          <Icon name="ArrowRight" size={18} className="ml-2" />
         </Button>
       </div>
     );
@@ -182,8 +184,13 @@ const BarcodeStep = ({ url, headers, draftId, onFinish, onBusy }: Props) => {
                 ? "Продолжить запись"
                 : rep.counts.add > 0
                   ? `Записать штрихкоды: ${rep.counts.add}`
-                  : "Завершить"}
+                  : "Дальше: цены"}
           </Button>
+          {onSkip && rep.counts.add > 0 && !saving && (
+            <Button variant="ghost" onClick={onSkip} className="rounded-xl w-full">
+              Пропустить штрихкоды, к ценам
+            </Button>
+          )}
 
           <BarcodeItemsSheet
             group={open}

@@ -184,13 +184,19 @@ def build_report(cur, items, opts=None, decisions=None):
     }, row_map
 
 
-def barcode_report(cur, items, opts=None, decisions=None):
-    """Сверка штрихкодов файла с каталогом после загрузки товаров."""
-    res = resolve(cur, items, opts, decisions)
-    row_map = res['row_map']
+def barcode_report(cur, items, opts=None, decisions=None, fixed=None):
+    """Сверка штрихкодов файла с каталогом после загрузки товаров.
+
+    fixed — сопоставление, зафиксированное при записи товаров; строки вне его не участвуют.
+    """
+    if fixed is not None:
+        row_map, skip = fixed, {it['row'] for it in items if it['row'] not in fixed}
+    else:
+        res = resolve(cur, items, opts, decisions)
+        row_map, skip = res['row_map'], res['skip']
     file_codes = {}
     for it in items:
-        if it['row'] in res['skip']:
+        if it['row'] in skip:
             continue
         for bc in item_codes(it):
             file_codes.setdefault(bc, []).append(it)

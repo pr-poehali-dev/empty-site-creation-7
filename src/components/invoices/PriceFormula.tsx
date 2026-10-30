@@ -50,9 +50,10 @@ interface Props {
   steps: FormulaStep[];
   onSource: (v: string) => void;
   onSteps: (s: FormulaStep[]) => void;
+  sources?: { value: string; label: string }[];
 }
 
-const PriceFormula = ({ source, steps, onSource, onSteps }: Props) => {
+const PriceFormula = ({ source, steps, onSource, onSteps, sources = SOURCES }: Props) => {
   const update = (i: number, key: keyof FormulaStep, v: string) =>
     onSteps(steps.map((s, idx) => (idx === i ? { ...s, [key]: v } : s)));
 
@@ -63,7 +64,7 @@ const PriceFormula = ({ source, steps, onSource, onSteps }: Props) => {
         <Select value={source} onValueChange={onSource}>
           <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {SOURCES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+            {sources.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
