@@ -32,7 +32,31 @@ export interface WbItem {
   price_doc: string;
   qty: number;
   price_diff: PriceHit[];
+  variants: { price: number; qty: number }[];
 }
+
+export type PriceRule = "max" | "min" | "avg";
+
+export const PRICE_RULES: { value: PriceRule; label: string }[] = [
+  { value: "max", label: "Самая большая" },
+  { value: "min", label: "Самая маленькая" },
+  { value: "avg", label: "Средняя" },
+];
+
+export const isMultiPrice = (x: WbItem) => (x.variants?.length || 0) > 1;
+
+export const priceByRule = (x: WbItem, rule: PriceRule) => {
+  const v = x.variants || [];
+  if (v.length < 2) return x.price;
+  if (rule === "max") return Math.max(...v.map((p) => p.price));
+  if (rule === "min") return Math.min(...v.map((p) => p.price));
+  const qty = v.reduce((a, p) => a + p.qty, 0);
+  const avg = qty > 0 ? v.reduce((a, p) => a + p.price * p.qty, 0) / qty : v.reduce((a, p) => a + p.price, 0) / v.length;
+  return Math.round(avg * 100) / 100;
+};
+
+export const finalPrice = (x: WbItem, rule: PriceRule, picks: Record<string, number>) =>
+  isMultiPrice(x) && picks[x.key] !== undefined ? picks[x.key] : priceByRule(x, rule);
 
 export interface WbBuild {
   items: WbItem[];
@@ -90,7 +114,7 @@ export const guessBrand = (name: string, group: string) => {
 
 const HEADERS = ["Артикул", "Наименование", "Штрихкод", "Бренд", "Категория", "Вес", "Код ТНВЭД", "Цена"];
 
-export const buildCatalogXlsx = (items: WbItem[]) => {
+export const buildCatalogXlsx = (items: WbItem[], priceOf: (x: WbItem) => number) => {
   const data = items.map((x) => [
     x.article,
     x.name,
@@ -99,7 +123,7 @@ export const buildCatalogXlsx = (items: WbItem[]) => {
     x.group,
     x.weight || "",
     x.tnved,
-    x.price,
+    priceOf(x),
   ]);
   const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...data]);
   ws["!cols"] = [16, 60, 18, 16, 22, 8, 13, 12].map((wch) => ({ wch }));

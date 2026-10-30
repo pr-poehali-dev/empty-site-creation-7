@@ -12,7 +12,10 @@ import WaybillList from "./convert/waybill/WaybillList";
 import WaybillResult from "./convert/waybill/WaybillResult";
 import {
   DocType,
+  PriceRule,
   WbBuild,
+  WbItem,
+  finalPrice,
   WbDoc,
   buildCatalogXlsx,
   buildWaybillItems,
@@ -56,6 +59,9 @@ const ConvertWaybillCatalog = () => {
   const [result, setResult] = useState<WbBuild | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const [rule, setRule] = useState<PriceRule>("max");
+  const [picks, setPicks] = useState<Record<string, number>>({});
+  const priceOf = (x: WbItem) => finalPrice(x, rule, picks);
 
   const baseTitle = bases.find((b) => b.slug === base)?.title || base;
   const typeTitle = docType === "sale" ? "Реализация" : "Поступление";
@@ -108,6 +114,7 @@ const ConvertWaybillCatalog = () => {
     setBuilding(true);
     setResult(null);
     setSaved(null);
+    setPicks({});
     try {
       setResult(await buildWaybillItems(base, docType, [...selected]));
     } catch (e) {
@@ -123,7 +130,7 @@ const ConvertWaybillCatalog = () => {
     try {
       const numbers = result.docs.map((d) => d.number);
       const fileName = catalogFileName(baseTitle, docType, numbers);
-      const b64 = buildCatalogXlsx(result.items);
+      const b64 = buildCatalogXlsx(result.items, priceOf);
       await saveToYuraFiles(
         b64,
         fileName,
@@ -215,10 +222,27 @@ const ConvertWaybillCatalog = () => {
               3. Файл для загрузки каталога
             </div>
             <p className="text-xs text-muted-foreground">
-              Каждый товар один раз. Цена — из самой поздней накладной. Колонки: Артикул, Наименование, Штрихкод,
+              Каждый товар один раз. Цена — из самой поздней накладной; если в ней у товара несколько цен — по выбранному правилу или вручную. Колонки: Артикул, Наименование, Штрихкод,
               Бренд, Категория (группа в 1С), Вес, Код ТНВЭД, Цена.
             </p>
-            <WaybillResult data={result} />
+            <WaybillResult
+              data={result}
+              rule={rule}
+              picks={picks}
+              onRule={(r) => {
+                setRule(r);
+                setSaved(null);
+              }}
+              onPick={(key, price) => {
+                setSaved(null);
+                setPicks((p) => {
+                  const n = { ...p };
+                  if (price === null) delete n[key];
+                  else n[key] = price;
+                  return n;
+                });
+              }}
+            />
             <div className="flex items-center gap-2 flex-wrap">
               <Button onClick={save} disabled={busy || !result.items.length}>
                 <Icon name={saving ? "Loader2" : "Save"} size={16} className={saving ? "animate-spin" : ""} />

@@ -146,8 +146,12 @@ def build(call, kind, body):
             if not it:
                 it = items[k] = {'key': k, 'prices': [], 'qty': 0.0}
                 order.append(k)
-            it['qty'] += _num(row.get('Количество'))
+            qty = _num(row.get('Количество'))
+            it['qty'] += qty
             it['prices'].append({'doc': num, 'date': (d.get('Date') or '')[:10], 'price': price})
+            if it.get('price_doc') != num:
+                it['variants'] = {}
+            it['variants'][price] = it['variants'].get(price, 0.0) + qty
             it['price'] = price
             it['price_doc'] = num
 
@@ -183,6 +187,7 @@ def _fill(call, f, items, order, lines, docs):
             'price_doc': it['price_doc'],
             'qty': it['qty'],
             'price_diff': it['prices'] if len(distinct) > 1 else [],
+            'variants': [{'price': p, 'qty': q} for p, q in sorted(it['variants'].items())],
         })
     return {'items': out, 'lines': lines,
             'docs': [{'number': (d.get('Number') or '').strip(), 'date': d.get('Date')} for d in docs]}
