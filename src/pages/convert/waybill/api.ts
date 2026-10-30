@@ -1,0 +1,124 @@
+import * as XLSX from "xlsx";
+
+const ODATA_URL = "https://functions.poehali.dev/74601b0f-9a91-4dbb-aef5-3cf2cadf93c8";
+
+export type DocType = "sale" | "receipt";
+
+export interface WbDoc {
+  key: string;
+  number: string;
+  date: string;
+  posted: boolean;
+  counterparty: string;
+  amount: number;
+  comment: string;
+}
+
+export interface PriceHit {
+  doc: string;
+  date: string;
+  price: number;
+}
+
+export interface WbItem {
+  key: string;
+  name: string;
+  article: string;
+  barcodes: string[];
+  group: string;
+  weight: number;
+  tnved: string;
+  price: number;
+  price_doc: string;
+  qty: number;
+  price_diff: PriceHit[];
+}
+
+export interface WbBuild {
+  items: WbItem[];
+  lines: number;
+  docs: { number: string; date: string }[];
+}
+
+const post = async (action: string, base: string, payload: object, timeoutMs = 60000) => {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${ODATA_URL}?action=${action}&base=${encodeURIComponent(base)}`, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("auth_token") || ""}`,
+      },
+      body: JSON.stringify({ action, base, ...payload }),
+    });
+    const text = await r.text();
+    let d;
+    try {
+      d = JSON.parse(text);
+    } catch {
+      throw new Error(`1С не ответила вовремя (код ${r.status})`);
+    }
+    if (!r.ok) throw new Error(d.error || `Ошибка запроса, код ${r.status}`);
+    return d;
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new Error("1С не ответила вовремя");
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+};
+
+export const listWaybills = async (base: string, docType: DocType, dateFrom: string, dateTo: string) =>
+  (await post("wb_list", base, { doc_type: docType, date_from: dateFrom, date_to: dateTo })).docs as WbDoc[];
+
+export const buildWaybillItems = async (base: string, docType: DocType, keys: string[]) =>
+  (await post("wb_build", base, { doc_type: docType, keys }, 90000)) as WbBuild;
+
+export const KNOWN_BRANDS = ["GARLYN", "REDMOND", "RED SOLUTION", "WEISSGAUFF", "MIDEA"];
+
+export const guessBrand = (name: string, group: string) => {
+  const up = name.toUpperCase();
+  const known = KNOWN_BRANDS.find((b) => up.includes(b));
+  if (known) return known;
+  const g = group.trim();
+  if (g && up.includes(g.toUpperCase())) return g;
+  const latin = name.match(/\b[A-Z][A-Z0-9-]{2,}\b/);
+  return latin && !/\d/.test(latin[0]) ? latin[0] : "";
+};
+
+const HEADERS = ["Артикул", "Наименование", "Штрихкод", "Бренд", "Категория", "Вес", "Код ТНВЭД", "Цена"];
+
+export const buildCatalogXlsx = (items: WbItem[]) => {
+  const data = items.map((x) => [
+    x.article,
+    x.name,
+    x.barcodes.join(", "),
+    guessBrand(x.name, x.group),
+    x.group,
+    x.weight || "",
+    x.tnved,
+    x.price,
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...data]);
+  ws["!cols"] = [16, 60, 18, 16, 22, 8, 13, 12].map((wch) => ({ wch }));
+  data.forEach((_, i) => {
+    for (const c of [0, 2, 6]) {
+      const ref = XLSX.utils.encode_cell({ r: i + 1, c });
+      if (ws[ref]) ws[ref].t = "s";
+    }
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Каталог");
+  return XLSX.write(wb, { type: "base64", bookType: "xlsx" }) as string;
+};
+
+export const catalogFileName = (baseTitle: string, docType: DocType, numbers: string[]) => {
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const kind = docType === "sale" ? "Реализации" : "Поступления";
+  const nums = numbers.length <= 3 ? numbers.join("_") : `${numbers.length}_накл`;
+  const src = `${baseTitle}_${kind}_${nums}`.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 80);
+  return `Каталог_${src}_${stamp}.xlsx`;
+};

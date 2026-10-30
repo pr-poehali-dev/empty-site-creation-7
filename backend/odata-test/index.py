@@ -14,6 +14,7 @@ import psycopg2
 from sites import site_lookup
 from card_trace import cards_trace, trace_apply
 import reconcile
+import waybill_catalog
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -2462,6 +2463,14 @@ def handler(event: dict, context) -> dict:
             q = (params.get('q') or '').lower()
             return resp(200, {'result': [s for s in sets if q in s.lower()]})
         return resp(200, {'result': call_odata(cfg, path)})
+
+    if action in ('wb_list', 'wb_build'):
+        if not cfg:
+            return resp(400, {'error': 'База 1С не подключена'})
+        oc = lambda path, **kw: call_odata(cfg, path, **kw)
+        fn = waybill_catalog.list_docs if action == 'wb_list' else waybill_catalog.build
+        data, err = fn(oc, cfg.get('kind') or 'trade', body)
+        return resp(400, {'error': err}) if err else resp(200, data)
 
     if action in ('recon_list', 'recon_compare'):
         if not cfg:

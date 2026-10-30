@@ -19,6 +19,7 @@ import PriceList from "./pages/PriceList";
 import ConvertedFiles from "./pages/ConvertedFiles";
 import ConvertMenu from "./pages/ConvertMenu";
 import ConvertSectionStub from "./pages/ConvertSectionStub";
+import ConvertWaybillCatalog from "./pages/ConvertWaybillCatalog";
 import SearchDicts from "./pages/SearchDicts";
 import Receipts from "./pages/Receipts";
 import BarcodeControl from "./pages/BarcodeControl";
@@ -116,6 +117,7 @@ const App = () => (
           <Route path="/admin/orders/price-list" element={<NotForWholesaler><PriceList /></NotForWholesaler>} />
           <Route path="/admin/converted-files" element={<NotForWholesaler><ConvertedFiles /></NotForWholesaler>} />
           <Route path="/admin/convert" element={<NotForWholesaler><ConvertMenu /></NotForWholesaler>} />
+          <Route path="/admin/convert/waybill-catalog" element={<NotForWholesaler><ConvertWaybillCatalog /></NotForWholesaler>} />
           <Route path="/admin/convert/xml" element={<NotForWholesaler><ConvertSectionStub /></NotForWholesaler>} />
           <Route path="/admin/convert/customs-ru" element={<NotForWholesaler><ConvertSectionStub /></NotForWholesaler>} />
           <Route path="/admin/convert/customs-by" element={<NotForWholesaler><ConvertSectionStub /></NotForWholesaler>} />
