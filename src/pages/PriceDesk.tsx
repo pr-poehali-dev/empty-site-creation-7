@@ -87,8 +87,6 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const tableWrap = useRef<HTMLDivElement>(null);
   const nameHead = useRef<HTMLTableCellElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const [headerH, setHeaderH] = useState(0);
 
   const marketItems = useMemo(
     () => items.map((it) => ({ id: it.id, brand: it.brand, model: it.model })),
@@ -111,14 +109,6 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
 
   useEffect(load, [load]);
 
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setHeaderH(el.offsetHeight));
-    ro.observe(el);
-    setHeaderH(el.offsetHeight);
-    return () => ro.disconnect();
-  }, [loading]);
 
   const catalogItems = items.filter((i) => !i.is_new);
   const newItems = items.filter((i) => i.is_new);
@@ -312,7 +302,7 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header ref={headerRef} className="border-b border-white/[0.08] bg-card sticky top-0 z-10">
+      <header className="border-b border-white/[0.08] bg-card">
         <div className="max-w-[1600px] mx-auto px-4 py-3 space-y-2">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => navigate(-1)}>
@@ -398,8 +388,8 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
         {!loading && items.length > 0 && (
           <div
             ref={tableWrap}
-            className="relative rounded-xl border border-white/[0.08] bg-card overflow-auto overscroll-contain"
-            style={{ maxHeight: `calc(100dvh - ${headerH + 24}px)` }}
+            className="relative rounded-xl border border-white/[0.08] bg-card overflow-auto"
+            style={{ maxHeight: "calc(100dvh - 16px)" }}
           >
             <FloatingNames wrapRef={tableWrap} anchorRef={nameHead} names={items.map((it) => ({ id: it.id, name: it.name }))} />
             <table className="w-full text-sm">
