@@ -442,6 +442,17 @@ def find_by_name(cfg, value):
 NOMEN_FIELDS = ('article', 'name')
 
 
+ZERO_GUID = '00000000-0000-0000-0000-000000000000'
+
+
+def barcode_payload(cfg, barcode, key):
+    """В УНФ у записи штрихкода 5 ключевых полей; пустые — нулевая ссылка, как у всех штрихкодов Фомкина."""
+    p = {'Штрихкод': barcode, 'Номенклатура_Key': key}
+    if cfg.get('kind') == 'unf':
+        p.update({'Характеристика_Key': ZERO_GUID, 'Партия_Key': ZERO_GUID, 'ЕдиницаИзмерения_Key': ZERO_GUID})
+    return p
+
+
 def card_barcodes(cfg, key):
     r = call_odata(cfg, "InformationRegister_ШтрихкодыНоменклатуры?$format=json&$select=Штрихкод"
                         f"&$filter=Номенклатура_Key eq guid'{key}'")
@@ -591,7 +602,7 @@ def add_one_barcode(cfg, key, barcode):
     if cards:
         return {'state': 'exists'}, None
     r = call_odata(cfg, 'InformationRegister_ШтрихкодыНоменклатуры?$format=json', method='POST',
-                   payload={'Штрихкод': barcode, 'Номенклатура_Key': key})
+                   payload=barcode_payload(cfg, barcode, key))
     if not r['ok']:
         return {'state': 'error', 'error': r['error']}, None
     return {'state': 'added'}, None
@@ -995,7 +1006,7 @@ def write_barcode(cfg, key, barcode):
     if owners:
         return {'barcode': 'added'}
     b = call_odata(cfg, 'InformationRegister_ШтрихкодыНоменклатуры?$format=json', method='POST',
-                   payload={'Штрихкод': barcode, 'Номенклатура_Key': key})
+                   payload=barcode_payload(cfg, barcode, key))
     if not b['ok']:
         return {'barcode': 'error', 'barcode_error': b['error']}
     return {'barcode': 'added'}
