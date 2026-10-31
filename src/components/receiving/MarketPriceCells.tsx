@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { money } from "@/lib/receivingCatalog";
+import PriceHistoryList from "./PriceHistoryList";
 import {
   SITE_COLUMNS,
   STATUS_TEXT,
@@ -146,6 +147,12 @@ export const SiteCell = ({ site, row, busy, canEdit, onFetch, onExclude, onConfi
                   Цена верная
                 </Button>
               )}
+            </div>
+          )}
+          {row && (
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">История поиска</p>
+              <PriceHistoryList site={site} brand={String(row.brand ?? "")} model={String(row.model ?? "")} cur={cur} />
             </div>
           )}
           {src && !src.exact && hasPrice && (

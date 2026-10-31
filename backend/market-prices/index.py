@@ -69,7 +69,7 @@ def who(cur, token):
         return None
     cur.execute(f"SELECT id, role_id FROM managers WHERE phone='{_esc(u['phone'])}' LIMIT 1")
     m = cur.fetchone() or {}
-    return {'is_owner': u['role'] == 'owner', 'manager_id': m.get('id'), 'role_id': m.get('role_id')}
+    return {'is_owner': u['role'] == 'owner', 'manager_id': m.get('id'), 'role_id': m.get('role_id'), 'user_id': u['id']}
 
 
 def perms_of(cur, actor):
@@ -434,8 +434,28 @@ def fetch_price(cur, body):
             f"{site}_title={_lit(msg)}, updated_at=NOW() "
             f"WHERE brand_key={_lit(b)} AND model_key={_lit(m)}"
         )
+    cur.execute(
+        f"INSERT INTO market_price_history (brand_key, model_key, site, status, price, title, url, user_id) "
+        f"VALUES ({_lit(b)}, {_lit(m)}, '{site}', '{status}', {_lit(price)}, "
+        f"{_lit(title if status in ('ok', 'not_found') else msg)}, {_lit(url)}, {_lit(body.get('_user_id'))})"
+    )
     recalc(cur, b, m)
     return {'row': get_row(cur, b, m), 'status': status, 'message': msg}, None
+
+
+def history(cur, body):
+    site = body.get('site')
+    if site not in SITES:
+        return None, 'Неизвестный сайт'
+    b, m = keys(body.get('brand') or '', body.get('model') or '')
+    cur.execute(
+        f"SELECT h.status, h.price, h.title, h.url, h.created_at, CASE WHEN u.role = 'owner' THEN 'Владелец' ELSE COALESCE(NULLIF(concat_ws(' ', mg.first_name, mg.last_name), ''), u.phone) END AS who "
+        f"FROM market_price_history h LEFT JOIN users u ON u.id = h.user_id "
+        f"LEFT JOIN managers mg ON mg.phone = u.phone "
+        f"WHERE h.brand_key={_lit(b)} AND h.model_key={_lit(m)} AND h.site='{site}' "
+        f"ORDER BY h.id DESC LIMIT 50"
+    )
+    return {'items': cur.fetchall()}, None
 
 
 def exclude(cur, body):
@@ -562,6 +582,10 @@ def handler(event: dict, context) -> dict:
             return _resp(200, {**lookup(cur, body), 'can_edit': bool(can_edit), 'is_owner': owner})
         if action in ('fetch', 'set_total', 'exclude', 'confirm') and not can_edit:
             return _resp(403, {'error': 'Нет права получать и править цены'})
+        if action == 'history':
+            data, err = history(cur, body)
+            return _resp(400, {'error': err}) if err else _resp(200, data)
+        body['_user_id'] = actor['user_id']
         if action == 'fetch':
             data, err = fetch_price(cur, body)
             return _resp(400, {'error': err}) if err else _resp(200, data)

@@ -1,4 +1,4 @@
-"""Справочники для поиска (бренды, товарные группы) и поля разбора товара. Только для владельца."""
+"""Справочники для поиска (бренды, товарные группы), поля разбора товара и ценовой стол (наборы товаров, разбор с записью в карточку). Только для владельца."""
 import json
 import os
 import psycopg2
@@ -7,6 +7,7 @@ from parser import parse_name
 from matcher import match_draft
 import creator
 import prices
+import desk
 
 
 def find_products(cur, q, brand_id=None):
@@ -111,18 +112,22 @@ def resp(status, body):
     return {'statusCode': status, 'headers': HEADERS, 'body': json.dumps(body, ensure_ascii=False, default=str)}
 
 
-def is_owner(cur, event):
+def owner_user_id(cur, event):
     h = event.get('headers') or {}
     token = (h.get('X-Authorization') or h.get('Authorization') or '').replace('Bearer ', '').strip()
     if not token:
-        return False
+        return None
     cur.execute(
-        """SELECT u.role FROM users u JOIN user_sessions s ON s.user_id = u.id
+        """SELECT u.role, u.id FROM users u JOIN user_sessions s ON s.user_id = u.id
            WHERE s.token = %s AND s.expires_at > NOW()""",
         (token,),
     )
     row = cur.fetchone()
-    return bool(row and row[0] == 'owner')
+    return row[1] if row and row[0] == 'owner' else None
+
+
+def is_owner(cur, event):
+    return owner_user_id(cur, event) is not None
 
 
 def clean_aliases(raw, name):
@@ -248,8 +253,18 @@ def handler(event: dict, context) -> dict:
     conn.autocommit = True
     cur = conn.cursor()
     try:
-        if not is_owner(cur, event):
+        uid = owner_user_id(cur, event)
+        if not uid:
             return resp(403, {'error': 'Доступно только владельцу'})
+
+        if section == 'desk':
+            conn.autocommit = False
+            status, data = desk.run(conn, uid, params, body)
+            if status == 200:
+                conn.commit()
+            else:
+                conn.rollback()
+            return resp(status, data)
 
         if section == 'find':
             return resp(200, {'items': find_products(cur, params.get('q', ''), int_or_none(params.get('brand_id')))})

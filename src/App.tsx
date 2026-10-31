@@ -54,6 +54,7 @@ import TmaBuy from "./pages/TmaBuy";
 import TmaMy from "./pages/TmaMy";
 import Wholesalers from "./pages/Wholesalers";
 import PricingRules from "./pages/PricingRules";
+import PriceDesk from "./pages/PriceDesk";
 import PricingRulesEdit from "./pages/PricingRulesEdit";
 import NewProducts from "./pages/NewProducts";
 import NewBarcodes from "./pages/NewBarcodes";
@@ -148,6 +149,8 @@ const App = () => (
           <Route path="/admin/auctions/info" element={<NotForWholesaler><AuctionsInfo /></NotForWholesaler>} />
           <Route path="/admin/auctions/settings" element={<NotForWholesaler><OwnerAuctionSettings /></NotForWholesaler>} />
           <Route path="/admin/wholesalers" element={<NotForWholesaler><Wholesalers /></NotForWholesaler>} />
+          <Route path="/admin/price-desk" element={<NotForWholesaler><PriceDesk /></NotForWholesaler>} />
+          <Route path="/admin/price-desk/:id" element={<NotForWholesaler><PriceDesk /></NotForWholesaler>} />
           <Route path="/admin/pricing" element={<NotForWholesaler><PricingRules /></NotForWholesaler>} />
           <Route path="/admin/pricing/:id" element={<NotForWholesaler><PricingRulesEdit /></NotForWholesaler>} />
           <Route path="/admin/new-products" element={<NotForWholesaler><NewProducts /></NotForWholesaler>} />

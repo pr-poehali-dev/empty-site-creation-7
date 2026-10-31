@@ -28,6 +28,7 @@ import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 import { orderApi, ItemPayload, VersionConflictError, LockInfo, setSessionId as setApiSessionId } from "./orderApi";
 import OrderVisibilityDialog from "./OrderVisibilityDialog";
+import PriceDeskButton from "@/components/price-desk/PriceDeskButton";
 
 const ORDERS_URL = "https://functions.poehali.dev/367c1ff5-e6fd-4901-8e79-6255d6893aed";
 const PRODUCTS_URL = "https://functions.poehali.dev/92f7ddb5-724d-4e82-8054-0fac4479b3f5";
@@ -1854,6 +1855,7 @@ const OrderCreatePage = () => {
               )}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              {editId && isOwner && <PriceDeskButton orderId={Number(editId)} />}
               {editId && (
                 <Button
                   variant="ghost"

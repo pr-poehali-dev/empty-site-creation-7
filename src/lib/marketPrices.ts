@@ -190,6 +190,18 @@ export const excludeCard = (site: SiteKey, brand: string, model: string) =>
 export const confirmPrice = (site: SiteKey, brand: string, model: string) =>
   post({ action: "confirm", site, brand, model }) as Promise<{ row: PriceRow }>;
 
+export interface PriceHistoryItem {
+  status: string;
+  price: string | number | null;
+  title: string | null;
+  url: string | null;
+  created_at: string;
+  who: string | null;
+}
+
+export const priceHistory = (site: SiteKey, brand: string, model: string) =>
+  post({ action: "history", site, brand, model }) as Promise<{ items: PriceHistoryItem[] }>;
+
 export type FilterKey = "preps" | "parts" | "synonyms";
 
 export interface Plaus {
