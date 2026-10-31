@@ -43,12 +43,17 @@ export interface ParseCounts {
 }
 
 const call = async <T,>(body: Record<string, unknown>): Promise<T> => {
-  const r = await fetch(`${SEARCH_DICTS_URL}?section=desk`, {
-    method: "POST",
-    headers: permHeaders(),
-    body: JSON.stringify(body),
-  });
-  const d = await r.json();
+  let r: Response;
+  try {
+    r = await fetch(`${SEARCH_DICTS_URL}?section=desk`, {
+      method: "POST",
+      headers: permHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("Сервер ценового стола не ответил — попробуйте ещё раз");
+  }
+  const d = await r.json().catch(() => ({ error: "Сервер ценового стола ответил ошибкой — попробуйте ещё раз" }));
   if (!r.ok) throw new Error(d.error || "Ошибка");
   return d as T;
 };

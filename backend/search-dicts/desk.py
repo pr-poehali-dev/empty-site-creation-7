@@ -2,7 +2,7 @@
 ручная правка бренда и модели, курс набора."""
 import re
 
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 
 from parser import CYR2LAT, find_brand, parse_name
 
@@ -47,7 +47,7 @@ def create_from_order(cur, uid, order_id):
         cur.execute("INSERT INTO price_sets (title, source_type, source_id, created_by) "
                     "VALUES (%s, 'order', %s, %s) RETURNING id", (title, order_id, uid))
         sid = cur.fetchone()['id']
-    seen = set()
+    seen, rows = set(), []
     for i, ln in enumerate(lines):
         pid = None if ln['temp_product_id'] else ln['product_id']
         key = ('t', ln['temp_product_id']) if ln['temp_product_id'] else ('p', pid)
@@ -59,10 +59,12 @@ def create_from_order(cur, uid, order_id):
             prev = old_temp.get(ln['temp_product_id'])
             brand = prev['brand'] if prev else ln['tp_brand']
             model = prev['model'] if prev else ln['tp_article']
-        cur.execute(
+        rows.append((sid, pid, ln['temp_product_id'], ln['name'], ln['quantity'], i, brand, model))
+    if rows:
+        execute_values(
+            cur,
             "INSERT INTO price_set_items (set_id, product_id, temp_product_id, name, quantity, sort_order, brand, model) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (sid, pid, ln['temp_product_id'], ln['name'], ln['quantity'], i, brand, model))
+            "VALUES %s", rows, page_size=2000)
     return {'id': sid}, None
 
 
@@ -118,32 +120,40 @@ def load_brands(cur):
             for r in cur.fetchall()]
 
 
-def brand_by_name(cur, brands, name):
-    """Бренд справочника по названию или синониму; если нет — заводим новый."""
+def brand_by_name(brands, name):
+    """Бренд справочника по названию или синониму; если нет — новый (id=None, запишется пачкой)."""
     n = re.sub(r'\s+', ' ', (name or '').strip())
     if not n:
         return None
     for b in brands:
         if n.lower() in (a.lower() for a in b['aliases']):
             return b
-    cur.execute("INSERT INTO search_brands (name, aliases) VALUES (%s, %s) RETURNING id", (n, [n]))
-    b = {'id': cur.fetchone()['id'], 'name': n, 'aliases': [n]}
+    b = {'id': None, 'name': n, 'aliases': [n]}
     brands.append(b)
     return b
 
 
-def group_id(cur, name):
-    if not name:
-        return None
-    cur.execute("SELECT id FROM search_groups WHERE lower(name) = lower(%s) LIMIT 1", (name,))
-    g = cur.fetchone()
-    if g:
-        return g['id']
-    cur.execute("INSERT INTO search_groups (name) VALUES (%s) RETURNING id", (name,))
-    return cur.fetchone()['id']
+def save_new_brands(cur, brands):
+    new = [b for b in brands if b['id'] is None]
+    if not new:
+        return
+    got = execute_values(cur, "INSERT INTO search_brands (name, aliases) VALUES %s RETURNING id, name",
+                         [(b['name'], [b['name']]) for b in new], page_size=2000, fetch=True)
+    ids = {r['name']: r['id'] for r in got}
+    for b in new:
+        b['id'] = ids.get(b['name'])
 
 
-def parse_one(cur, brands, name, card_brand, group, article):
+def group_ids(cur, names):
+    names = sorted({n for n in names if n})
+    if names:
+        execute_values(cur, "INSERT INTO search_groups (name) VALUES %s ON CONFLICT (name) DO NOTHING",
+                       [(n,) for n in names], page_size=2000)
+    cur.execute("SELECT id, lower(name) AS n FROM search_groups")
+    return {r['n']: r['id'] for r in cur.fetchall()}
+
+
+def parse_one(brands, name, card_brand, group, article):
     """Бренд ищем в наименовании по справочнику; не нашли — бренд карточки или папка каталога,
     если она встречается в наименовании. Модели нет — берём артикул, если он есть в наименовании."""
     best, best_pos = None, None
@@ -157,7 +167,7 @@ def parse_one(cur, brands, name, card_brand, group, article):
     else:
         for cand in (card_brand, group):
             if cand and (cand == card_brand or find_brand(name or '', [cand])):
-                best = brand_by_name(cur, brands, cand)
+                best = brand_by_name(brands, cand)
                 if best:
                     res = parse_name(name, best['aliases'], assume_brand=cand != group)
                     break
@@ -183,20 +193,31 @@ def parse_items(cur, sid, item_ids, only_new):
         rows = [r for r in rows if r['id'] in want]
     brands = load_brands(cur)
     counts = {'parsed': 0, 'doubtful': 0, 'no_brand': 0, 'skipped': 0}
+    done = []
     for r in rows:
         st = r['parse_status'] or 'none'
         if st == 'manual' or (only_new and st != 'none'):
             counts['skipped'] += 1
             continue
-        b, res = parse_one(cur, brands, r['name'], r['brand'], r['product_group'], r['article'])
+        b, res = parse_one(brands, r['name'], r['brand'], r['product_group'], r['article'])
         if not b or not res:
             counts['no_brand'] += 1
             continue
-        cur.execute(
-            "UPDATE products SET search_group_id = %s, search_brand_id = %s, model = %s, feature = %s, "
-            "parse_status = %s WHERE id = %s AND COALESCE(parse_status, 'none') <> 'manual'",
-            (group_id(cur, res['group']), b['id'], res['model'], res['feature'], res['status'], r['id']))
+        done.append((r['id'], b, res))
         counts[res['status']] += 1
+    if done:
+        save_new_brands(cur, brands)
+        gid = group_ids(cur, [res['group'] for _, _, res in done])
+        execute_values(
+            cur,
+            """UPDATE products p SET search_group_id = v.g, search_brand_id = v.b, model = v.m,
+                      feature = v.f, parse_status = v.s
+               FROM (VALUES %s) AS v(id, g, b, m, f, s)
+               WHERE p.id = v.id AND COALESCE(p.parse_status, 'none') <> 'manual'""",
+            [(pid, gid.get((res['group'] or '').lower()), b['id'], res['model'], res['feature'], res['status'])
+             for pid, b, res in done],
+            template='(%s::int, %s::int, %s::int, %s::text, %s::text, %s::text)',
+            page_size=2000)
     return counts
 
 
@@ -211,7 +232,9 @@ def save_item(cur, sid, body):
     if it['temp_product_id']:
         cur.execute("UPDATE price_set_items SET brand = %s, model = %s WHERE id = %s", (brand, model, it['id']))
         return {'ok': True}, None
-    b = brand_by_name(cur, load_brands(cur), brand) if brand else None
+    brands = load_brands(cur)
+    b = brand_by_name(brands, brand) if brand else None
+    save_new_brands(cur, brands)
     cur.execute("UPDATE products SET search_brand_id = %s, model = %s, parse_status = 'manual' WHERE id = %s",
                 (b['id'] if b else None, model, it['product_id']))
     return {'ok': True}, None
