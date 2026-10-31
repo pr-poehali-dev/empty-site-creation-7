@@ -106,11 +106,11 @@ const BasePanel = ({ set, items, onApply, onNotice, onError }: Props) => {
       </Button>
 
       <AlertDialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
-        <AlertDialogContent className="max-w-lg">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Записать Базовую цену в каталог?</AlertDialogTitle>
+        <AlertDialogContent className="w-[calc(100vw-1.5rem)] max-w-lg max-h-[calc(100dvh-1.5rem)] overflow-y-auto rounded-lg p-4 sm:p-6 [&>*]:min-w-0">
+          <AlertDialogHeader className="min-w-0 text-left">
+            <AlertDialogTitle className="break-words">Записать Базовую цену в каталог?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm">
+              <div className="min-w-0 space-y-2 text-sm break-words">
                 <p>
                   Всего: {preview?.total}. Заменится: {preview?.replace}. Впервые: {preview?.first}.
                 </p>
@@ -118,9 +118,9 @@ const BasePanel = ({ set, items, onApply, onNotice, onError }: Props) => {
                 {preview && preview.big.length > 0 && (
                   <div>
                     <p className="text-amber-300">Разница больше 30% — {preview.big.length}:</p>
-                    <div className="mt-1 max-h-48 overflow-auto rounded border border-white/10">
+                    <div className="mt-1 max-h-48 overflow-y-auto overflow-x-hidden rounded border border-white/10">
                       {preview.big.map((b, i) => (
-                        <div key={i} className="flex gap-2 px-2 py-1 text-xs border-b border-white/5">
+                        <div key={i} className="flex min-w-0 gap-2 px-2 py-1 text-xs border-b border-white/5">
                           <span className="flex-1 min-w-0 truncate">{b.name}</span>
                           <span className="tabular-nums whitespace-nowrap">
                             {money(b.old)} → {money(b.new)}
@@ -133,9 +133,9 @@ const BasePanel = ({ set, items, onApply, onNotice, onError }: Props) => {
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={write}>Записать</AlertDialogAction>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0">
+            <AlertDialogAction className="w-full sm:w-auto sm:order-2" onClick={write}>Записать</AlertDialogAction>
+            <AlertDialogCancel className="mt-0 w-full sm:w-auto sm:order-1">Отмена</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

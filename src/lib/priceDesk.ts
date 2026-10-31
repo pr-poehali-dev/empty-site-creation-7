@@ -69,7 +69,24 @@ export interface ParseCounts {
   skipped: number;
 }
 
+const ACTION_NAMES: Record<string, string> = {
+  from_order: "Создание ценового стола",
+  list: "Загрузка списка ценовых столов",
+  get: "Загрузка ценового стола",
+  parse: "Разбор товаров",
+  save_item: "Сохранение бренда и модели",
+  rate: "Сохранение курса",
+  percent: "Сохранение процента",
+  calc: "Расчёт цен",
+  price: "Сохранение цены",
+  fill_base: "Подстановка Новой Базовой",
+  new_base: "Сохранение Новой Базовой",
+  base_preview: "Проверка перед записью Базовой",
+  write_base: "Запись Базовой цены",
+};
+
 const call = async <T,>(body: Record<string, unknown>): Promise<T> => {
+  const what = ACTION_NAMES[String(body.action)] || "Действие";
   let r: Response;
   try {
     r = await fetch(`${SEARCH_DICTS_URL}?section=desk`, {
@@ -78,10 +95,10 @@ const call = async <T,>(body: Record<string, unknown>): Promise<T> => {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new Error("Сервер ценового стола не ответил — попробуйте ещё раз");
+    throw new Error(`${what}: нет связи с сервером — проверьте интернет и попробуйте ещё раз`);
   }
-  const d = await r.json().catch(() => ({ error: "Сервер ценового стола ответил ошибкой — попробуйте ещё раз" }));
-  if (!r.ok) throw new Error(d.error || "Ошибка");
+  const d = await r.json().catch(() => ({ error: "" }));
+  if (!r.ok) throw new Error(`${what}: ${d.error || `сервер ответил ошибкой (код ${r.status})`}`);
   return d as T;
 };
 
