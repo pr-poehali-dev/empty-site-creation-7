@@ -114,6 +114,13 @@ const Exchange1C = () => {
         </div>
 
         <div className="space-y-6">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200 flex gap-2">
+            <Icon name="Ban" size={18} className="shrink-0 mt-0.5" />
+            <span>
+              Загрузка цен из 1С отключена. Товары, артикулы, бренды, штрихкоды и картинки загружаются как обычно,
+              а цены, присланные из 1С, в каталог не записываются.
+            </span>
+          </div>
           <div className="rounded-xl border border-white/[0.08] bg-card p-4 space-y-3">
             <h2 className="font-semibold flex items-center gap-2">
               <Icon name="Key" size={18} />

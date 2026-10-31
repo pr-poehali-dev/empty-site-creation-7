@@ -75,8 +75,22 @@ def apply(cur, d, field, items, settings):
             clean[pid] = price
     if not clean:
         return None, 'Нет цен для записи'
+    skipped_parsed = 0
+    if field == 'price_base':
+        cur.execute("SELECT id FROM products WHERE price_base_parsed AND id IN ("
+                    + ','.join(str(int(p)) for p in clean) + ")")
+        for r in cur.fetchall():
+            clean.pop(r[0], None)
+            skipped_parsed += 1
+        if not clean:
+            return {'written': 0, 'skipped_parsed': skipped_parsed}, None
     did = int(d['id'])
     vals = ','.join(f"({p}, {v})" for p, v in clean.items())
+    if field == 'price_base':
+        cur.execute(
+            f"INSERT INTO price_base_history (product_id, old_price, new_price, source, draft_id) "
+            f"SELECT p.id, p.price_base, v.price, 'catalog_upload', {did} FROM (VALUES {vals}) AS v(id, price) "
+            f"JOIN products p ON p.id = v.id WHERE p.price_base IS DISTINCT FROM v.price")
     cur.execute(
         f"INSERT INTO catalog_price_log (draft_id, product_id, price_field, old_price, new_price) "
         f"SELECT {did}, p.id, '{field}', p.{field}, v.price FROM (VALUES {vals}) AS v(id, price) "
@@ -93,7 +107,7 @@ def apply(cur, d, field, items, settings):
         cur.execute("UPDATE catalog_suppliers SET price_settings = %s WHERE id = %s",
                     (json.dumps(settings, ensure_ascii=False), d['supplier_id']))
     cur.execute("UPDATE catalog_drafts SET expires_at = NOW() + INTERVAL '7 days' WHERE id = %s", (did,))
-    return {'written': written}, None
+    return {'written': written, 'skipped_parsed': skipped_parsed}, None
 
 
 def revert(cur, draft_id):

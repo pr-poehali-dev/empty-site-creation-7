@@ -49,7 +49,7 @@ def preview(cur, draft_id):
     if by_pid:
         cur.execute(
             """SELECT id, name, article, price_purchase, price_base, price_retail, price_wholesale,
-                      created_from_draft_id
+                      created_from_draft_id, price_base_parsed
                FROM products WHERE id = ANY(%s)""", (list(by_pid.keys()),))
         for p in cur.fetchall():
             it = by_pid[p[0]]
@@ -58,6 +58,7 @@ def preview(cur, draft_id):
             it['current'] = {f: float(p[3 + i] or 0) for i, f in enumerate(FIELDS)}
             if p[7] == draft_id:
                 it['created'] = True
+            it['base_parsed'] = bool(p[8])
             it['prices'].sort()
             it['invoice_price'] = it['prices'][-1] if it['prices'] else None
             items.append(it)
@@ -71,7 +72,8 @@ def preview(cur, draft_id):
     return {'items': items, 'price_field': row[2], 'price_mode': row[3], 'applied': applied}
 
 
-def apply(cur, draft_id, field, mode, items):
+def apply(cur, draft_id, field, mode, items, force_parsed=False, uid=None):
+    """Базовую цену с парсинга (ценовой стол) меняем только при force_parsed — «Заменить и цены с парсинга»."""
     if field not in FIELDS:
         return None, 'Неизвестное поле цены'
     if mode not in MODES:
@@ -102,8 +104,24 @@ def apply(cur, draft_id, field, mode, items):
     clean = [(p, pr) for p, pr in clean if p in exist]
     if not clean:
         return None, 'Товары не найдены'
+    skipped_parsed = 0
+    if field == 'price_base' and not force_parsed:
+        cur.execute("SELECT id FROM products WHERE id = ANY(%s) AND price_base_parsed", ([p for p, _ in clean],))
+        locked = {r[0] for r in cur.fetchall()}
+        skipped_parsed = len(locked)
+        clean = [(p, pr) for p, pr in clean if p not in locked]
+        if not clean:
+            return {'written': 0, 'skipped_parsed': skipped_parsed}, None
 
     did = int(draft_id)
+    if field == 'price_base':
+        execute_values(
+            cur,
+            f"""INSERT INTO price_base_history (product_id, old_price, new_price, source, draft_id, user_id)
+                SELECT p.id, p.price_base, v.price, 'invoice', {did}, {int(uid) if uid else 'NULL'}
+                FROM (VALUES %s) AS v(id, price) JOIN products p ON p.id = v.id
+                WHERE p.price_base IS DISTINCT FROM v.price""",
+            clean, template='(%s::int, %s::numeric)', page_size=1000)
     execute_values(
         cur,
         f"""INSERT INTO invoice_price_log (draft_id, product_id, price_field, old_price, new_price)
@@ -122,20 +140,30 @@ def apply(cur, draft_id, field, mode, items):
     execute_values(
         cur,
         f"""UPDATE products p SET {field} = v.price, {field}_changed_at = NOW(), updated_at = NOW()
+            {', price_base_parsed = FALSE' if field == 'price_base' else ''}
             FROM (VALUES %s) AS v(id, price) WHERE p.id = v.id""",
         clean, template='(%s::int, %s::numeric)', page_size=1000)
     written = len(clean)
 
     cur.execute("UPDATE invoice_drafts SET updated_at = NOW(), expires_at = NOW() + INTERVAL '1 hour' "
                 "WHERE id = %s", (draft_id,))
-    return {'written': written}, None
+    return {'written': written, 'skipped_parsed': skipped_parsed}, None
 
 
-def revert(cur, draft_id):
+def revert(cur, draft_id, uid=None):
     cur.execute(
         """SELECT id, product_id, price_field, old_price FROM invoice_price_log
            WHERE draft_id = %s AND reverted_at IS NULL""", (draft_id,))
     logs = cur.fetchall()
+    base = [(pid, old) for _, pid, f, old in logs if f == 'price_base']
+    if base:
+        execute_values(
+            cur,
+            f"""INSERT INTO price_base_history (product_id, old_price, new_price, source, draft_id, user_id)
+                SELECT p.id, p.price_base, v.price, 'invoice_revert', {int(draft_id)}, {int(uid) if uid else 'NULL'}
+                FROM (VALUES %s) AS v(id, price) JOIN products p ON p.id = v.id
+                WHERE p.price_base IS DISTINCT FROM v.price""",
+            base, template='(%s::int, %s::numeric)', page_size=1000)
     for field in FIELDS:
         vals = [(pid, old) for _, pid, f, old in logs if f == field]
         if vals:

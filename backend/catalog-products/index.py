@@ -366,9 +366,10 @@ def handler(event: dict, context) -> dict:
 
         price_purchase_col = "p.price_purchase" if is_owner else "NULL as price_purchase"
         search_cols = (
-            "p.search_group_id, sg.name, p.search_brand_id, sb.name, p.model, p.feature, p.parse_status, p.not_in_1c"
+            "p.search_group_id, sg.name, p.search_brand_id, sb.name, p.model, p.feature, p.parse_status, p.not_in_1c, "
+            "p.price_base_parsed"
             if is_owner else
-            "NULL, NULL, NULL, NULL, NULL, NULL, NULL, p.not_in_1c"
+            "NULL, NULL, NULL, NULL, NULL, NULL, NULL, p.not_in_1c, FALSE"
         )
 
         cur.execute(f"SELECT COUNT(*) FROM products p {where}", values)
@@ -447,6 +448,7 @@ def handler(event: dict, context) -> dict:
                     'search_group_id': r[23], 'search_group_name': r[24],
                     'search_brand_id': r[25], 'search_brand_name': r[26],
                     'model': r[27], 'feature': r[28], 'parse_status': r[29],
+                    'price_base_parsed': bool(r[31]),
                 })
 
         cur.close()
@@ -580,6 +582,19 @@ def handler(event: dict, context) -> dict:
                 cur.execute("INSERT INTO categories (parent_id, name, sort_order) VALUES (NULL, 'Без категории', 9999) RETURNING id")
                 category_id = cur.fetchone()[0]
 
+        cur.execute("SELECT price_base FROM products WHERE id = %s", (product_id,))
+        prev = cur.fetchone()
+        new_base = body.get('price_base')
+        base_changed = bool(prev) and (
+            (prev[0] is None) != (new_base in (None, ''))
+            or (prev[0] is not None and new_base not in (None, '') and float(prev[0]) != float(new_base))
+        )
+        if base_changed:
+            cur.execute(
+                """INSERT INTO price_base_history (product_id, old_price, new_price, source, user_id)
+                   VALUES (%s, %s, %s, 'card', %s)""",
+                (product_id, prev[0], None if new_base in (None, '') else new_base, user[0]))
+            cur.execute("UPDATE products SET price_base_parsed = FALSE WHERE id = %s", (product_id,))
         cur.execute(
             """UPDATE products SET
                    name = %s, category_id = %s,

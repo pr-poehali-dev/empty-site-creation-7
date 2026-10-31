@@ -8,6 +8,8 @@ import MarketSettingsDialog from "@/components/receiving/market/MarketSettingsDi
 import ParseCell from "@/components/price-desk/ParseCell";
 import CalcPanel from "@/components/price-desk/CalcPanel";
 import FinalPriceCell from "@/components/price-desk/FinalPriceCell";
+import NewBaseCell from "@/components/price-desk/NewBaseCell";
+import BasePanel from "@/components/price-desk/BasePanel";
 import { useMarketPrices } from "@/hooks/useMarketPrices";
 import { SITE_COLUMNS, TOTAL_COLUMNS, shortDate } from "@/lib/marketPrices";
 import { money } from "@/lib/receivingCatalog";
@@ -17,6 +19,7 @@ import {
   deskParse,
   deskSaveItem,
   deskSavePrice,
+  deskSaveNewBase,
   type DeskItem,
   type PriceField,
   type DeskSet,
@@ -177,6 +180,17 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
     }
   };
 
+  const saveNewBase = async (it: DeskItem, value: string) => {
+    setError("");
+    try {
+      const d = await deskSaveNewBase(setId, it.id, value);
+      setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, ...d.item } : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка");
+      throw e;
+    }
+  };
+
   const totals = useMemo(() => {
     let ru = 0;
     let by = 0;
@@ -190,7 +204,7 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
     return { ru, by, empty };
   }, [items]);
 
-  const colCount = 6 + (market.allowed ? (market.canEdit ? 1 : 0) + siteCols.length + TOTAL_COLUMNS.length : 0);
+  const colCount = 7 + (market.allowed ? (market.canEdit ? 1 : 0) + siteCols.length + TOTAL_COLUMNS.length : 0);
 
   const renderRow = (it: DeskItem) => {
     const mi = { id: it.id, brand: it.brand, model: it.model };
@@ -215,10 +229,14 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
               {it.price_base_changed_at && (
                 <span className="block text-[10px] text-muted-foreground">{shortDate(it.price_base_changed_at)}</span>
               )}
+              {it.price_base_parsed && <span className="block text-[10px] text-emerald-300">с парсинга</span>}
             </>
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
+        </td>
+        <td className="py-2 px-3 align-top whitespace-nowrap">
+          <NewBaseCell item={it} onSave={(v) => saveNewBase(it, v)} />
         </td>
         <td className="py-2 px-3 align-top whitespace-nowrap">
           <FinalPriceCell
@@ -346,6 +364,7 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
               onError={setError}
             />
           )}
+          {set && <BasePanel set={set} items={items} onApply={apply} onNotice={setNotice} onError={setError} />}
         </div>
       </header>
 
@@ -389,6 +408,7 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
                   <th ref={nameHead} className="py-2 px-3 font-normal">Товар</th>
                   <th className="py-2 px-3 font-normal whitespace-nowrap text-sky-200/80">Бренд и модель</th>
                   <th className="py-2 px-3 font-normal whitespace-nowrap">Базовая сейчас</th>
+                  <th className="py-2 px-3 font-normal whitespace-nowrap text-emerald-200/90">Новая Базовая, BYN</th>
                   <th className="py-2 px-3 font-normal whitespace-nowrap text-amber-200/90">Цена РБ, BYN</th>
                   <th className="py-2 px-3 font-normal whitespace-nowrap text-amber-200/90">Цена РФ, RUB</th>
                   <th className="py-2 px-1" />
@@ -420,7 +440,7 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
               </tbody>
               <tfoot className="sticky bottom-0 z-[2] bg-card shadow-[0_-1px_0_rgba(255,255,255,0.08)]">
                 <tr className="text-xs">
-                  <td className="py-2 px-3 text-muted-foreground" colSpan={3}>
+                  <td className="py-2 px-3 text-muted-foreground" colSpan={4}>
                     Итого с учётом количества
                     {totals.empty > 0 && <span className="text-amber-300"> · без цены: {totals.empty}</span>}
                   </td>
@@ -428,7 +448,7 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
                   <td className="py-2 px-3 whitespace-nowrap tabular-nums font-medium">
                     {Math.round(totals.ru).toLocaleString("ru-RU")}
                   </td>
-                  <td colSpan={Math.max(colCount - 5, 1)} />
+                  <td colSpan={Math.max(colCount - 6, 1)} />
                 </tr>
               </tfoot>
             </table>

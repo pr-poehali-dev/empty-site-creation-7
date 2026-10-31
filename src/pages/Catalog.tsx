@@ -31,6 +31,7 @@ import Icon from "@/components/ui/icon";
 import DebugBadge from "@/components/DebugBadge";
 import compressImage from "@/lib/compressImage";
 import ProductSearchFields from "@/components/search-dicts/ProductSearchFields";
+import BaseHistory from "@/components/catalog/BaseHistory";
 import SearchFilters, { SearchFilterValue } from "@/components/search-dicts/SearchFilters";
 import {
   loadSearchDicts,
@@ -72,6 +73,7 @@ interface Product {
   is_new: boolean;
   not_in_1c?: boolean;
   price_base: number | null;
+  price_base_parsed?: boolean;
   price_retail: number | null;
   price_wholesale: number | null;
   price_purchase: number | null;
@@ -1380,6 +1382,11 @@ const Catalog = () => {
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Цены</label>
+              {isOwner && editingProduct && editingProduct.price_base_parsed && (
+                <p className="text-xs text-emerald-300">
+                  Базовая цена с парсинга — изменение здесь снимет эту метку
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <DebugBadge id="Catalog:form.priceBase">
                   <Input
@@ -1422,6 +1429,7 @@ const Catalog = () => {
                   />
                 )}
               </div>
+              {isOwner && editingProduct && <BaseHistory productId={editingProduct.id} />}
             </div>
 
             {editingProduct && existingImages.length > 0 && (

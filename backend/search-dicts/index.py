@@ -299,9 +299,9 @@ def handler(event: dict, context) -> dict:
             conn.autocommit = False
             if method == 'POST':
                 res, err = prices.apply(cur, did, body.get('price_field'), body.get('price_mode'),
-                                        body.get('items') or [])
+                                        body.get('items') or [], bool(body.get('force_parsed')), uid)
             elif method == 'DELETE':
-                res, err = prices.revert(cur, did)
+                res, err = prices.revert(cur, did, uid)
             else:
                 return resp(400, {'error': 'Неверный запрос'})
             if err:
@@ -381,6 +381,23 @@ def handler(event: dict, context) -> dict:
             if section == 'stats':
                 return resp(200, {'stats': stats(cur)})
             return resp(200, {'brands': list_brands(cur), 'groups': list_groups(cur), 'stats': stats(cur)})
+
+        if section == 'base_history':
+            pid = int_or_none(params.get('id'))
+            if not pid:
+                return resp(400, {'error': 'Укажите товар'})
+            cur.execute(
+                """SELECT h.id, h.old_price, h.new_price, h.source, h.rate_by_per_100_rub, h.price_set_id,
+                          ps.title AS set_title, h.draft_id, h.created_at,
+                          CASE WHEN u.role = 'owner' THEN 'Владелец'
+                               ELSE COALESCE(NULLIF(concat_ws(' ', mg.first_name, mg.last_name), ''), u.phone) END AS who
+                   FROM price_base_history h
+                   LEFT JOIN users u ON u.id = h.user_id
+                   LEFT JOIN managers mg ON mg.phone = u.phone
+                   LEFT JOIN price_sets ps ON ps.id = h.price_set_id
+                   WHERE h.product_id = %s ORDER BY h.created_at DESC, h.id DESC LIMIT 200""", (pid,))
+            cols = [c[0] for c in cur.description]
+            return resp(200, {'history': [dict(zip(cols, r)) for r in cur.fetchall()]})
 
         if section == 'product':
             pid = int_or_none(params.get('id'))

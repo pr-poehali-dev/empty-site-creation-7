@@ -155,7 +155,10 @@ const PriceStep = ({ url, headers, draftId, onFinish }: Props) => {
         items: selected.map((x) => ({ product_id: x.it.product_id, new_price: x.value })),
         settings: { field, mode, file_source: fileSrc, source, steps },
       });
-      toast({ title: `Цены записаны: ${d.written}` });
+      toast({
+        title: `Цены записаны: ${d.written}`,
+        description: d.skipped_parsed ? `Пропущено ${d.skipped_parsed} — цена с парсинга, меняется только вручную или парсингом` : undefined,
+      });
       setManual({});
       setChecked({});
       await load();

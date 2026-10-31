@@ -24,6 +24,24 @@ export interface DeskItem {
   price_ru: number | string | null;
   price_by_manual: boolean;
   price_ru_manual: boolean;
+  new_base: number | string | null;
+  new_base_source: BaseSource | null;
+  price_base_parsed: boolean;
+}
+
+export type BaseSource = "avg_by" | "avg_ru" | "manual";
+
+export const BASE_SOURCE_TEXT: Record<BaseSource, string> = {
+  avg_by: "средняя РБ",
+  avg_ru: "средняя РФ",
+  manual: "вручную",
+};
+
+export interface BasePreview {
+  total: number;
+  replace: number;
+  first: number;
+  big: { name: string; old: number | string; new: number | string }[];
 }
 
 export type PriceField = "by" | "ru";
@@ -83,6 +101,19 @@ export const deskCalc = (setId: number, includeManual: boolean) =>
   call<{ set: DeskSet; items: DeskItem[] }>({ action: "calc", set_id: setId, include_manual: includeManual });
 export const deskSavePrice = (setId: number, itemId: number, field: PriceField, value: string, reset = false) =>
   call<{ item: ItemPrices }>({ action: "price", set_id: setId, item_id: itemId, field, value, reset });
+
+export const deskFillBase = (setId: number, source: "avg_by" | "avg_ru") =>
+  call<{ set: DeskSet; items: DeskItem[]; filled: number }>({ action: "fill_base", set_id: setId, source });
+export const deskSaveNewBase = (setId: number, itemId: number, value: string) =>
+  call<{ item: Pick<DeskItem, "id" | "new_base" | "new_base_source"> }>({
+    action: "new_base",
+    set_id: setId,
+    item_id: itemId,
+    value,
+  });
+export const deskBasePreview = (setId: number) => call<BasePreview>({ action: "base_preview", set_id: setId });
+export const deskWriteBase = (setId: number) =>
+  call<{ set: DeskSet; items: DeskItem[]; written: number }>({ action: "write_base", set_id: setId });
 
 export const PARSE_TEXT: Record<DeskParse, { label: string; cls: string }> = {
   none: { label: "не разобран", cls: "text-muted-foreground" },

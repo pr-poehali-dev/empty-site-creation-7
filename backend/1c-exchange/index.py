@@ -129,6 +129,10 @@ def handle_schema(conn):
     cur.close()
     return resp(200, {"product_fields": product_fields, "price_types": price_types, "categories": categories})
 
+# Загрузка цен из 1С отключена: цены в каталог приходят из парсинга, счетов и ручной правки.
+PRICES_FROM_1C = False
+
+
 def handle_import_products(conn, body):
     products = body.get("products", [])
     if not products:
@@ -204,11 +208,10 @@ def handle_import_products(conn, body):
             "supplier_code": item.get("supplier_code"),
             "product_group": item.get("product_group"),
             "product_group_id": item.get("product_group_id"),
-            "price_base": item.get("price_base"),
-            "price_retail": item.get("price_retail"),
-            "price_wholesale": item.get("price_wholesale"),
-            "price_purchase": item.get("price_purchase"),
         }
+        if PRICES_FROM_1C:
+            for col in ("price_base", "price_retail", "price_wholesale", "price_purchase"):
+                fields[col] = item.get(col)
         fields = {k: v for k, v in fields.items() if v is not None}
         if ext_id in existing_map:
             product_id = existing_map[ext_id]

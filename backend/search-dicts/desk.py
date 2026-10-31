@@ -88,7 +88,8 @@ def get_set(cur, sid):
                   p.price_base, p.price_base_changed_at, p.parse_status, p.model AS p_model,
                   p.feature, b.name AS p_brand, g.name AS search_group, p.brand AS card_brand,
                   i.brand AS t_brand, i.model AS t_model, tp.article AS t_article,
-                  i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual
+                  i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual,
+                  i.new_base, i.new_base_source, p.price_base_parsed
            FROM price_set_items i
            LEFT JOIN products p ON p.id = i.product_id AND i.temp_product_id IS NULL
            LEFT JOIN search_brands b ON b.id = p.search_brand_id
@@ -112,6 +113,8 @@ def get_set(cur, sid):
             'price_base': r['price_base'], 'price_base_changed_at': r['price_base_changed_at'],
             'price_by': r['price_by'], 'price_ru': r['price_ru'],
             'price_by_manual': r['price_by_manual'], 'price_ru_manual': r['price_ru_manual'],
+            'new_base': r['new_base'], 'new_base_source': r['new_base_source'],
+            'price_base_parsed': bool(r['price_base_parsed']),
         })
     return {'set': s, 'items': items}, None
 
@@ -350,7 +353,8 @@ def calc_prices(cur, sid, body):
         return None, 'Сначала введите курс и процент'
     with_manual = bool(body.get('include_manual'))
     cur.execute(
-        """SELECT i.id, i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual, p.price_base
+        """SELECT i.id, i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual,
+                  COALESCE(i.new_base, p.price_base) AS price_base
            FROM price_set_items i
            LEFT JOIN products p ON p.id = i.product_id AND i.temp_product_id IS NULL
            WHERE i.set_id = %s""", (sid,))
@@ -387,7 +391,8 @@ def save_price(cur, sid, body):
     if field not in ('by', 'ru'):
         return None, 'Неизвестная цена'
     cur.execute(
-        """SELECT i.id, i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual, p.price_base
+        """SELECT i.id, i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual,
+                  COALESCE(i.new_base, p.price_base) AS price_base
            FROM price_set_items i
            LEFT JOIN products p ON p.id = i.product_id AND i.temp_product_id IS NULL
            WHERE i.id = %s AND i.set_id = %s""", (body.get('item_id'), sid))
@@ -433,6 +438,136 @@ def save_price(cur, sid, body):
                      'price_by_manual': by_m, 'price_ru_manual': ru_m}}, None
 
 
+# ---------- новая Базовая ----------
+
+SOURCES = ('avg_by', 'avg_ru', 'manual')
+
+
+def _market_avgs(cur, pairs):
+    """{(brand_key, model_key): (total_by, total_ru)} — ключи как в market-prices."""
+    keys = {k for k in pairs.values() if k[1]}
+    if not keys:
+        return {}
+    vals = ', '.join(cur.mogrify('(%s, %s)', k).decode() for k in keys)
+    cur.execute(f"SELECT brand_key, model_key, total_by, total_ru FROM model_market_prices "
+                f"WHERE (brand_key, model_key) IN ({vals})")
+    return {(r['brand_key'], r['model_key']): (r['total_by'], r['total_ru']) for r in cur.fetchall()}
+
+
+KEY_LAT = str.maketrans('авекмнорстху', 'abekmhopctxy')
+
+
+def market_key(brand, model):
+    b = re.sub(r'\s+', ' ', (brand or '').strip())
+    m = (model or '').strip()
+    if b and m.lower().startswith(b.lower() + ' '):
+        m = m[len(b):].strip()
+    return (re.sub(r'\s+', ' ', b.lower().translate(KEY_LAT)), re.sub(r'\s+', ' ', m.lower().translate(KEY_LAT)))
+
+
+def fill_base(cur, sid, body):
+    """Подставить Новую Базовую из средней РБ (как есть) или средней РФ (по курсу) — только в пустые ячейки."""
+    src = body.get('source')
+    if src not in ('avg_by', 'avg_ru'):
+        return None, 'Неизвестный источник'
+    rate, _, err = _set_params(cur, sid)
+    if err:
+        return None, err
+    if src == 'avg_ru' and not rate:
+        return None, 'Сначала введите курс'
+    data, err = get_set(cur, sid)
+    if err:
+        return None, err
+    todo = {it['id']: market_key(it['brand'], it['model']) for it in data['items']
+            if not it['is_new'] and it['new_base'] is None and it['brand'] and it['model']}
+    avgs = _market_avgs(cur, todo)
+    upd = []
+    for iid, k in todo.items():
+        by, ru = avgs.get(k, (None, None))
+        if src == 'avg_by' and by is not None:
+            upd.append((iid, Decimal(by).quantize(Decimal('0.01'), ROUND_HALF_UP), src))
+        elif src == 'avg_ru' and ru is not None:
+            upd.append((iid, _by_from_ru(ru, rate), src))
+    if upd:
+        execute_values(
+            cur,
+            """UPDATE price_set_items i SET new_base = v.p, new_base_source = v.s
+               FROM (VALUES %s) AS v(id, p, s) WHERE i.id = v.id AND i.new_base IS NULL""",
+            upd, template='(%s::int, %s::numeric, %s::text)', page_size=2000)
+    data, err = get_set(cur, sid)
+    if data:
+        data['filled'] = len(upd)
+    return data, err
+
+
+def save_new_base(cur, sid, body):
+    cur.execute("SELECT id, temp_product_id FROM price_set_items WHERE id = %s AND set_id = %s",
+                (body.get('item_id'), sid))
+    it = cur.fetchone()
+    if not it:
+        return None, 'Товар не найден'
+    if it['temp_product_id']:
+        return None, 'Новых товаров нет в каталоге — Базовую им записать нельзя'
+    val, err = _num(body.get('value'), 'Цена')
+    if err:
+        return None, err
+    if val is not None and val < 0:
+        return None, 'Цена не может быть меньше нуля'
+    val = val.quantize(Decimal('0.01'), ROUND_HALF_UP) if val is not None else None
+    cur.execute("UPDATE price_set_items SET new_base = %s, new_base_source = %s WHERE id = %s",
+                (val, 'manual' if val is not None else None, it['id']))
+    return {'item': {'id': it['id'], 'new_base': val, 'new_base_source': 'manual' if val is not None else None}}, None
+
+
+def _base_rows(cur, sid):
+    cur.execute(
+        """SELECT i.id, i.product_id, i.new_base, i.new_base_source, p.price_base, COALESCE(p.name, i.name) AS name
+           FROM price_set_items i JOIN products p ON p.id = i.product_id
+           WHERE i.set_id = %s AND i.temp_product_id IS NULL AND i.new_base IS NOT NULL
+           ORDER BY i.sort_order, i.id""", (sid,))
+    return cur.fetchall()
+
+
+def base_preview(cur, sid):
+    rows = _base_rows(cur, sid)
+    replace = [r for r in rows if r['price_base'] is not None]
+    big = []
+    for r in replace:
+        old = Decimal(r['price_base'])
+        if old > 0 and abs(Decimal(r['new_base']) - old) / old > Decimal('0.3'):
+            big.append({'name': r['name'], 'old': old, 'new': r['new_base']})
+    return {'total': len(rows), 'replace': len(replace), 'first': len(rows) - len(replace), 'big': big}, None
+
+
+def write_base(cur, sid, uid):
+    """Новая Базовая → карточка каталога, метка «цена с парсинга», история."""
+    rows = _base_rows(cur, sid)
+    if not rows:
+        return None, 'Нет строк с Новой Базовой'
+    rate, _, err = _set_params(cur, sid)
+    hist = [(r['product_id'], r['price_base'], r['new_base'], 'desk_' + (r['new_base_source'] or 'manual'),
+             rate if r['new_base_source'] == 'avg_ru' else None, sid, uid) for r in rows]
+    execute_values(
+        cur,
+        """INSERT INTO price_base_history (product_id, old_price, new_price, source, rate_by_per_100_rub,
+                                           price_set_id, user_id) VALUES %s""",
+        hist, page_size=2000)
+    execute_values(
+        cur,
+        """UPDATE products p SET price_base_changed_at = CASE WHEN p.price_base IS DISTINCT FROM v.price
+                                                             THEN NOW() ELSE p.price_base_changed_at END,
+                  price_base = v.price, price_base_parsed = TRUE, updated_at = NOW()
+           FROM (VALUES %s) AS v(id, price) WHERE p.id = v.id""",
+        [(r['product_id'], r['new_base']) for r in rows], template='(%s::int, %s::numeric)', page_size=2000)
+    cur.execute("UPDATE price_set_items SET new_base = NULL, new_base_source = NULL "
+                "WHERE set_id = %s AND temp_product_id IS NULL AND new_base IS NOT NULL", (sid,))
+    cur.execute("UPDATE price_sets SET updated_at = NOW() WHERE id = %s", (sid,))
+    data, err = get_set(cur, sid)
+    if data:
+        data['written'] = len(rows)
+    return data, err
+
+
 def run(conn, uid, params, body):
     """Возвращает (status, data)."""
     action = body.get('action') or params.get('action') or ''
@@ -460,6 +595,14 @@ def run(conn, uid, params, body):
             data, err = calc_prices(cur, sid, body)
         elif action == 'price':
             data, err = save_price(cur, sid, body)
+        elif action == 'fill_base':
+            data, err = fill_base(cur, sid, body)
+        elif action == 'new_base':
+            data, err = save_new_base(cur, sid, body)
+        elif action == 'base_preview':
+            data, err = base_preview(cur, sid)
+        elif action == 'write_base':
+            data, err = write_base(cur, sid, uid)
         else:
             return 400, {'error': 'Неизвестное действие'}
     if err:

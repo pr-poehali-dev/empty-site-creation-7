@@ -20,6 +20,7 @@ interface PriceItem {
   qty: number;
   created: boolean;
   current: Record<string, number>;
+  base_parsed?: boolean;
 }
 
 interface Applied {
@@ -51,6 +52,7 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
   const [checked, setChecked] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<Filter>("all");
   const [ask, setAsk] = useState<"save" | "revert" | null>(null);
+  const [forceParsed, setForceParsed] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -105,6 +107,7 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
     price_purchase: "закупочную", price_base: "базовую", price_retail: "розничную", price_wholesale: "оптовую",
   };
   const fieldAcc = FIELD_ACC[field] || field;
+  const parsedCount = items.filter((x) => x.base_parsed).length;
   const appliedCount = applied.reduce((s, a) => s + a.count, 0);
 
   const save = async () => {
@@ -118,12 +121,16 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
           draft_id: draftId,
           price_field: field,
           price_mode: mode,
+          force_parsed: field === "price_base" && forceParsed,
           items: selected.map((x) => ({ product_id: x.it.product_id, new_price: x.value })),
         }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      toast({ title: `Цены записаны: ${d.written}` });
+      toast({
+        title: `Цены записаны: ${d.written}`,
+        description: d.skipped_parsed ? `Пропущено ${d.skipped_parsed} — цена с парсинга` : undefined,
+      });
       setManual({});
       setChecked({});
       await load();
@@ -249,6 +256,17 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
             <Icon name="CircleDashed" size={14} />
             <span className="ml-2">Только без цены ({noPrice.length})</span>
           </Button>
+          {field === "price_base" && parsedCount > 0 && (
+            <label className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 text-sm text-amber-200">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-[hsl(var(--primary))]"
+                checked={forceParsed}
+                onChange={(e) => setForceParsed(e.target.checked)}
+              />
+              Заменить и цены с парсинга ({parsedCount})
+            </label>
+          )}
         </div>
       )}
 
@@ -280,6 +298,11 @@ const InvoicePrices = ({ draftId, onBack }: Props) => {
                     <p className="text-xs text-muted-foreground">
                       {it.article ? `Арт. ${it.article} · ` : ""}{fmt(it.qty)} шт
                       {it.created && <span className="text-emerald-400"> · новый товар</span>}
+                      {field === "price_base" && it.base_parsed && (
+                        <span className="text-amber-300">
+                          {" "}· цена с парсинга{forceParsed ? " — будет заменена" : " — не заменится"}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-sm items-end">
