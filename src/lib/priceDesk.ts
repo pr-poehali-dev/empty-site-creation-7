@@ -20,7 +20,15 @@ export interface DeskItem {
   card_brand: string | null;
   price_base: number | string | null;
   price_base_changed_at: string | null;
+  price_by: number | string | null;
+  price_ru: number | string | null;
+  price_by_manual: boolean;
+  price_ru_manual: boolean;
 }
+
+export type PriceField = "by" | "ru";
+
+export type ItemPrices = Pick<DeskItem, "id" | "price_by" | "price_ru" | "price_by_manual" | "price_ru_manual">;
 
 export interface DeskSet {
   id: number;
@@ -28,6 +36,7 @@ export interface DeskSet {
   source_type: string;
   source_id: number | null;
   rate_by_per_100_rub: number | string | null;
+  percent_of_base: number | string | null;
   updated_at: string;
 }
 
@@ -67,6 +76,13 @@ export const deskSaveItem = (setId: number, itemId: number, brand: string, model
   call<{ ok: boolean }>({ action: "save_item", set_id: setId, item_id: itemId, brand, model });
 export const deskSaveRate = (setId: number, rate: string) =>
   call<{ rate: number | null }>({ action: "rate", set_id: setId, rate });
+
+export const deskSavePercent = (setId: number, percent: string) =>
+  call<{ percent: number | string | null }>({ action: "percent", set_id: setId, percent });
+export const deskCalc = (setId: number, includeManual: boolean) =>
+  call<{ set: DeskSet; items: DeskItem[] }>({ action: "calc", set_id: setId, include_manual: includeManual });
+export const deskSavePrice = (setId: number, itemId: number, field: PriceField, value: string, reset = false) =>
+  call<{ item: ItemPrices }>({ action: "price", set_id: setId, item_id: itemId, field, value, reset });
 
 export const PARSE_TEXT: Record<DeskParse, { label: string; cls: string }> = {
   none: { label: "не разобран", cls: "text-muted-foreground" },

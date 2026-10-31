@@ -1,6 +1,7 @@
 """Ценовой стол: наборы товаров из заявок, разбор наименований с записью в карточку каталога,
 ручная правка бренда и модели, курс набора."""
 import re
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from psycopg2.extras import RealDictCursor, execute_values
 
@@ -86,7 +87,8 @@ def get_set(cur, sid):
                   COALESCE(p.name, i.name) AS name, p.article, p.product_group,
                   p.price_base, p.price_base_changed_at, p.parse_status, p.model AS p_model,
                   p.feature, b.name AS p_brand, g.name AS search_group, p.brand AS card_brand,
-                  i.brand AS t_brand, i.model AS t_model, tp.article AS t_article
+                  i.brand AS t_brand, i.model AS t_model, tp.article AS t_article,
+                  i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual
            FROM price_set_items i
            LEFT JOIN products p ON p.id = i.product_id AND i.temp_product_id IS NULL
            LEFT JOIN search_brands b ON b.id = p.search_brand_id
@@ -108,6 +110,8 @@ def get_set(cur, sid):
             'parse_status': None if is_new else (r['parse_status'] or 'none'),
             'card_brand': r['card_brand'],
             'price_base': r['price_base'], 'price_base_changed_at': r['price_base_changed_at'],
+            'price_by': r['price_by'], 'price_ru': r['price_ru'],
+            'price_by_manual': r['price_by_manual'], 'price_ru_manual': r['price_ru_manual'],
         })
     return {'set': s, 'items': items}, None
 
@@ -295,6 +299,140 @@ def save_rate(cur, sid, body):
     return {'rate': rate}, None
 
 
+def _num(v, what):
+    raw = str(v if v is not None else '').replace(' ', '').replace('\u00a0', '').replace(',', '.')
+    if not raw:
+        return None, None
+    try:
+        return Decimal(raw), None
+    except InvalidOperation:
+        return None, f'{what} — это число'
+
+
+def save_percent(cur, sid, body):
+    pct, err = _num(body.get('percent'), 'Процент')
+    if err:
+        return None, err
+    if pct is not None and pct <= -100:
+        return None, 'Процент должен быть больше −100'
+    cur.execute("UPDATE price_sets SET percent_of_base = %s, updated_at = NOW() WHERE id = %s", (pct, sid))
+    return {'percent': pct}, None
+
+
+def _by_from_base(base, pct):
+    return (Decimal(base) * (1 + pct / 100)).quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+
+def _ru_from_by(by, rate):
+    return (Decimal(by) * 100 / rate).quantize(Decimal('1'), ROUND_HALF_UP)
+
+
+def _by_from_ru(ru, rate):
+    return (Decimal(ru) * rate / 100).quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+
+def _set_params(cur, sid):
+    cur.execute("SELECT rate_by_per_100_rub AS rate, percent_of_base AS pct FROM price_sets WHERE id = %s", (sid,))
+    s = cur.fetchone()
+    if not s:
+        return None, None, 'Ценовой стол не найден'
+    rate = Decimal(s['rate']) if s['rate'] else None
+    pct = Decimal(s['pct']) if s['pct'] is not None else None
+    return rate, pct, None
+
+
+def calc_prices(cur, sid, body):
+    """Цена РБ = Базовая × (1 + %); Цена РФ = Цена РБ × 100 / курс. Ручные — только если include_manual."""
+    rate, pct, err = _set_params(cur, sid)
+    if err:
+        return None, err
+    if not rate or pct is None:
+        return None, 'Сначала введите курс и процент'
+    with_manual = bool(body.get('include_manual'))
+    cur.execute(
+        """SELECT i.id, i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual, p.price_base
+           FROM price_set_items i
+           LEFT JOIN products p ON p.id = i.product_id AND i.temp_product_id IS NULL
+           WHERE i.set_id = %s""", (sid,))
+    upd = []
+    for r in cur.fetchall():
+        by, ru = r['price_by'], r['price_ru']
+        by_m, ru_m = r['price_by_manual'], r['price_ru_manual']
+        if with_manual:
+            by_m = ru_m = False
+        if not by_m:
+            by = _by_from_base(r['price_base'], pct) if r['price_base'] is not None else None
+        if not ru_m:
+            ru = _ru_from_by(by, rate) if by is not None else None
+        if by_m and not ru_m and by is not None:
+            ru = _ru_from_by(by, rate)
+        if ru_m and not by_m and r['price_base'] is None and ru is not None:
+            by = _by_from_ru(ru, rate)
+        upd.append((r['id'], by, ru, by_m, ru_m))
+    if upd:
+        execute_values(
+            cur,
+            """UPDATE price_set_items i SET price_by = v.by, price_ru = v.ru,
+                      price_by_manual = v.bm, price_ru_manual = v.rm
+               FROM (VALUES %s) AS v(id, by, ru, bm, rm) WHERE i.id = v.id""",
+            upd, template='(%s::int, %s::numeric, %s::numeric, %s::bool, %s::bool)', page_size=2000)
+    cur.execute("UPDATE price_sets SET updated_at = NOW() WHERE id = %s", (sid,))
+    return get_set(cur, sid)
+
+
+def save_price(cur, sid, body):
+    """Ручная правка Цены РБ или РФ. Пустое значение или reset=True — снять «вручную» и вернуть расчёт.
+    Вторая цена, если она не ручная, пересчитывается по курсу."""
+    field = body.get('field')
+    if field not in ('by', 'ru'):
+        return None, 'Неизвестная цена'
+    cur.execute(
+        """SELECT i.id, i.price_by, i.price_ru, i.price_by_manual, i.price_ru_manual, p.price_base
+           FROM price_set_items i
+           LEFT JOIN products p ON p.id = i.product_id AND i.temp_product_id IS NULL
+           WHERE i.id = %s AND i.set_id = %s""", (body.get('item_id'), sid))
+    r = cur.fetchone()
+    if not r:
+        return None, 'Товар не найден'
+    rate, pct, err = _set_params(cur, sid)
+    if err:
+        return None, err
+    val, err = _num(None if body.get('reset') else body.get('value'), 'Цена')
+    if err:
+        return None, err
+    if val is not None and val < 0:
+        return None, 'Цена не может быть меньше нуля'
+    by, ru = r['price_by'], r['price_ru']
+    by_m, ru_m = r['price_by_manual'], r['price_ru_manual']
+    base = r['price_base']
+    if field == 'by':
+        if val is None:
+            by_m = False
+            by = _by_from_base(base, pct) if base is not None and pct is not None else None
+            if by is None and ru_m and ru is not None and rate:
+                by = _by_from_ru(ru, rate)
+        else:
+            by_m, by = True, val.quantize(Decimal('0.01'), ROUND_HALF_UP)
+        if not ru_m:
+            ru = _ru_from_by(by, rate) if by is not None and rate else None
+    else:
+        if val is None:
+            ru_m = False
+            ru = _ru_from_by(by, rate) if by is not None and rate else None
+        else:
+            ru_m, ru = True, val.quantize(Decimal('1'), ROUND_HALF_UP)
+        if not by_m:
+            if base is not None and pct is not None:
+                by = _by_from_base(base, pct)
+            else:
+                by = _by_from_ru(ru, rate) if ru is not None and rate else None
+    cur.execute(
+        """UPDATE price_set_items SET price_by = %s, price_ru = %s, price_by_manual = %s, price_ru_manual = %s
+           WHERE id = %s""", (by, ru, by_m, ru_m, r['id']))
+    return {'item': {'id': r['id'], 'price_by': by, 'price_ru': ru,
+                     'price_by_manual': by_m, 'price_ru_manual': ru_m}}, None
+
+
 def run(conn, uid, params, body):
     """Возвращает (status, data)."""
     action = body.get('action') or params.get('action') or ''
@@ -316,6 +454,12 @@ def run(conn, uid, params, body):
             data, err = save_item(cur, sid, body)
         elif action == 'rate':
             data, err = save_rate(cur, sid, body)
+        elif action == 'percent':
+            data, err = save_percent(cur, sid, body)
+        elif action == 'calc':
+            data, err = calc_prices(cur, sid, body)
+        elif action == 'price':
+            data, err = save_price(cur, sid, body)
         else:
             return 400, {'error': 'Неизвестное действие'}
     if err:

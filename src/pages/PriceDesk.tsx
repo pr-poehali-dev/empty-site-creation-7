@@ -6,6 +6,8 @@ import FloatingNames from "@/components/receiving/FloatingNames";
 import { SiteCell, TotalCell } from "@/components/receiving/MarketPriceCells";
 import MarketSettingsDialog from "@/components/receiving/market/MarketSettingsDialog";
 import ParseCell from "@/components/price-desk/ParseCell";
+import CalcPanel from "@/components/price-desk/CalcPanel";
+import FinalPriceCell from "@/components/price-desk/FinalPriceCell";
 import { useMarketPrices } from "@/hooks/useMarketPrices";
 import { SITE_COLUMNS, TOTAL_COLUMNS, shortDate } from "@/lib/marketPrices";
 import { money } from "@/lib/receivingCatalog";
@@ -14,7 +16,9 @@ import {
   deskList,
   deskParse,
   deskSaveItem,
+  deskSavePrice,
   type DeskItem,
+  type PriceField,
   type DeskSet,
   type DeskSetShort,
 } from "@/lib/priceDesk";
@@ -162,7 +166,31 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
     }
   };
 
-  const colCount = 4 + (market.allowed ? (market.canEdit ? 1 : 0) + siteCols.length + TOTAL_COLUMNS.length : 0);
+  const savePrice = async (it: DeskItem, field: PriceField, value: string, reset = false) => {
+    setError("");
+    try {
+      const d = await deskSavePrice(setId, it.id, field, value, reset);
+      setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, ...d.item } : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка");
+      throw e;
+    }
+  };
+
+  const totals = useMemo(() => {
+    let ru = 0;
+    let by = 0;
+    let empty = 0;
+    items.forEach((it) => {
+      const q = Number(it.quantity ?? 1) || 0;
+      if (it.price_ru == null || it.price_by == null) empty += 1;
+      if (it.price_ru != null) ru += Number(it.price_ru) * q;
+      if (it.price_by != null) by += Number(it.price_by) * q;
+    });
+    return { ru, by, empty };
+  }, [items]);
+
+  const colCount = 6 + (market.allowed ? (market.canEdit ? 1 : 0) + siteCols.length + TOTAL_COLUMNS.length : 0);
 
   const renderRow = (it: DeskItem) => {
     const mi = { id: it.id, brand: it.brand, model: it.model };
@@ -191,6 +219,24 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
+        </td>
+        <td className="py-2 px-3 align-top whitespace-nowrap">
+          <FinalPriceCell
+            value={it.price_by}
+            manual={it.price_by_manual}
+            digits={2}
+            onSave={(v) => savePrice(it, "by", v)}
+            onReset={() => savePrice(it, "by", "", true)}
+          />
+        </td>
+        <td className="py-2 px-3 align-top whitespace-nowrap">
+          <FinalPriceCell
+            value={it.price_ru}
+            manual={it.price_ru_manual}
+            digits={0}
+            onSave={(v) => savePrice(it, "ru", v)}
+            onReset={() => savePrice(it, "ru", "", true)}
+          />
         </td>
         <td className="py-2 px-1" />
         {market.allowed && market.canEdit && (
@@ -291,6 +337,15 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
               Разбор сразу пишется в карточку каталога, ручная правка помечается «вручную» и больше не перезаписывается.
             </span>
           </div>
+          {set && (
+            <CalcPanel
+              set={set}
+              items={items}
+              onApply={apply}
+              onSetChange={(patch) => setSet((prev) => (prev ? { ...prev, ...patch } : prev))}
+              onError={setError}
+            />
+          )}
         </div>
       </header>
 
@@ -334,6 +389,8 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
                   <th ref={nameHead} className="py-2 px-3 font-normal">Товар</th>
                   <th className="py-2 px-3 font-normal whitespace-nowrap text-sky-200/80">Бренд и модель</th>
                   <th className="py-2 px-3 font-normal whitespace-nowrap">Базовая сейчас</th>
+                  <th className="py-2 px-3 font-normal whitespace-nowrap text-amber-200/90">Цена РБ, BYN</th>
+                  <th className="py-2 px-3 font-normal whitespace-nowrap text-amber-200/90">Цена РФ, RUB</th>
                   <th className="py-2 px-1" />
                   {market.allowed && market.canEdit && <th className="py-2 px-3" />}
                   {market.allowed &&
@@ -361,6 +418,19 @@ const PriceDeskSet = ({ setId }: { setId: number }) => {
                 )}
                 {newItems.map(renderRow)}
               </tbody>
+              <tfoot className="sticky bottom-0 z-[2] bg-card shadow-[0_-1px_0_rgba(255,255,255,0.08)]">
+                <tr className="text-xs">
+                  <td className="py-2 px-3 text-muted-foreground" colSpan={3}>
+                    Итого с учётом количества
+                    {totals.empty > 0 && <span className="text-amber-300"> · без цены: {totals.empty}</span>}
+                  </td>
+                  <td className="py-2 px-3 whitespace-nowrap tabular-nums font-medium">{money(totals.by)}</td>
+                  <td className="py-2 px-3 whitespace-nowrap tabular-nums font-medium">
+                    {Math.round(totals.ru).toLocaleString("ru-RU")}
+                  </td>
+                  <td colSpan={Math.max(colCount - 5, 1)} />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
