@@ -2,7 +2,6 @@
 import json
 import os
 import base64
-import hashlib
 import re
 import time
 import uuid
@@ -952,12 +951,12 @@ def tnved_check(cfg, codes):
 
 
 def tnved_create(cfg, codes):
-    """Создаёт коды ТН ВЭД: наименование = код, единица «шт». Существующие не дублирует."""
+    """Создаёт коды ТН ВЭД: наименование = код; единица «шт» (в УНФ без единицы). Существующие не дублирует."""
     codes = sorted({str(c).strip() for c in codes if re.fullmatch(r'\d{10}', str(c).strip())})[:20]
     have, err = tnved_all(cfg)
     if err:
         return {'ok': False, 'error': err}
-    unit = find_unit_pcs(cfg)
+    unit = None if cfg.get('kind') == 'unf' else find_unit_pcs(cfg)
     created, already, errors = {}, {}, []
     for c in codes:
         if c in have:
@@ -2340,14 +2339,6 @@ def handler(event: dict, context) -> dict:
     raw_kinds = body.get('kinds')
     if isinstance(raw_kinds, dict):
         NUMBER_KINDS.update({str(k).strip(): v for k, v in raw_kinds.items() if v in ('td', 'rnpt')})
-
-    if action == 'tmp_read' and hashlib.sha256((params.get('k') or '').encode()).hexdigest() == \
-            '1fbf7b177592c77211d4ae8c0bcd09d450c8fbe15c8ae52044d5792be62e3421':
-        cfg = odata_config(params.get('base') or 'fomkin')
-        path = body.get('path') or ''
-        if not cfg or not path.startswith(('Catalog_', 'InformationRegister_', '$metadata')):
-            return resp(400, {'error': 'bad'})
-        return resp(200, call_odata(cfg, path, raw=path.startswith('$metadata')))
 
     if not check_owner(get_token(event)):
         return resp(401, {'error': 'Доступ только для владельца'})
