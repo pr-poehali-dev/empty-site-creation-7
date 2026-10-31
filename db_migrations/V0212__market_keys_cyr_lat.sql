@@ -1,0 +1,3 @@
+UPDATE model_market_prices SET brand_key = translate(brand_key, 'авекмнорстху', 'abekmhopctxy'), model_key = translate(model_key, 'авекмнорстху', 'abekmhopctxy') WHERE brand_key ~ '[авекмнорстху]' OR model_key ~ '[авекмнорстху]';
+UPDATE market_excluded SET brand_key = translate(brand_key, 'авекмнорстху', 'abekmhopctxy'), model_key = translate(model_key, 'авекмнорстху', 'abekmhopctxy') WHERE brand_key ~ '[авекмнорстху]' OR model_key ~ '[авекмнорстху]';
+UPDATE market_price_history SET brand_key = translate(brand_key, 'авекмнорстху', 'abekmhopctxy'), model_key = translate(model_key, 'авекмнорстху', 'abekmhopctxy') WHERE brand_key ~ '[авекмнорстху]' OR model_key ~ '[авекмнорстху]';

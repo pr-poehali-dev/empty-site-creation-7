@@ -37,9 +37,40 @@ def clean_model(brand, model):
     return m
 
 
+TWINS = {
+    'A': 'AА', 'B': 'BВ', 'C': 'CС', 'E': 'EЕ', 'H': 'HН', 'K': 'KК', 'M': 'MМ', 'O': 'OО',
+    'P': 'PР', 'T': 'TТ', 'X': 'XХ', 'Y': 'YУ',
+}
+CYR2LAT = str.maketrans('АВЕКМНОРСТХУаеорсху', 'ABEKMHOPCTXYaeopcxy')
+LAT2CYR = str.maketrans('ABEKMHOPCTXYaeopcxy', 'АВЕКМНОРСТХУаеорсху')
+
+
+def to_lat(s):
+    return (s or '').translate(CYR2LAT)
+
+
+def other_alphabet(model):
+    """Та же модель другим алфавитом: «КТ-403» ↔ «KT-403». None — если менять нечего."""
+    m = model or ''
+    if re.search(r'[А-Яа-яЁё]', m):
+        alt = m.translate(CYR2LAT)
+        return alt if alt != m and not re.search(r'[А-Яа-яЁё]', alt) else None
+    if re.fullmatch(r'[ABEKMHOPCTXYaeopcxy0-9\s\-_/.]+', m) and re.search(r'[A-Za-z]', m):
+        alt = m.translate(LAT2CYR)
+        return alt if alt != m else None
+    return None
+
+
+def _char_re(ch):
+    twins = TWINS.get(to_lat(ch).upper())
+    if twins:
+        return '[' + ''.join(dict.fromkeys(twins + twins.lower())) + ']'
+    return re.escape(ch)
+
+
 def _token_re(token):
     runs = re.findall(r'[A-Za-zА-Яа-яЁё]+|\d+', token)
-    return r'[\s\-]?'.join(re.escape(r) for r in runs)
+    return r'[\s\-]?'.join(''.join(_char_re(c) for c in r) for r in runs)
 
 
 def model_pattern(model):
@@ -50,7 +81,7 @@ def model_pattern(model):
     body = r'[\s\-_/.]*'.join(_token_re(t) for t in tokens)
     tail = r'\+' if model.strip().endswith('+') else ''
     return re.compile(
-        r'(?<![A-Za-zА-Яа-яЁё0-9])' + body + tail + r'(?![A-Za-z0-9])', re.IGNORECASE
+        r'(?<![A-Za-zА-Яа-яЁё0-9])' + body + tail + r'(?![A-Za-zА-Яа-яЁё0-9])', re.IGNORECASE
     )
 
 
@@ -64,7 +95,7 @@ def patterns_for(model):
     core = [t for t in tokens if re.search(r'\d', t)]
     if len(tokens) > 1 and core and core != tokens:
         core_str = ' '.join(core)
-        if len(re.sub(r'[^A-Za-z0-9]', '', core_str)) >= 5:
+        if len(re.sub(r'[^A-Za-z0-9]', '', to_lat(core_str))) >= 5:
             p = model_pattern(core_str)
             if p:
                 out.append(p)

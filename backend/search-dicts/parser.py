@@ -41,12 +41,22 @@ def split_group(prefix):
 
 
 def is_code(tok):
-    """Код модели: начинается с буквы, есть латиница и цифра, не короче 4 знаков."""
+    """Код модели: начинается с буквы, есть латиница (или кириллица-двойник) и цифра, не короче 4 знаков."""
     t = tok.rstrip(',;')
     return (
         len(t) >= 4 and t[0].isalpha() and '(' not in t and ')' not in t
-        and LAT.search(t) and re.search(r'\d', t)
+        and LAT.search(t.translate(CYR2LAT)) and not CYR.search(t.translate(CYR2LAT))
+        and re.search(r'\d', t)
     )
+
+
+QUOTED = re.compile(r'(?<![0-9])["«“„]([^"«»“”„]{1,60})["»”“]')
+
+
+def cut_quoted(s):
+    """Текст в кавычках («Bubble wave», "2 в 1") — не модель: убираем из строки и отдаём в признак."""
+    parts = [m.group(0) for m in QUOTED.finditer(s)]
+    return clean(QUOTED.sub(' ', s)), parts
 
 
 EN_COLORS = {
@@ -94,11 +104,21 @@ def pick_model(tail):
 
 
 def implied_brand_pos(s):
-    """Куда «встал бы» бренд, если его нет в названии: перед первым словом с латиницей или цифрой."""
+    """Куда «встал бы» бренд, если его нет в названии: перед первым кодом модели,
+    а если кода нет — перед первым словом с латиницей или цифрой."""
+    for m in re.finditer(r'\S+', s):
+        if is_code(m.group()):
+            return m.start()
     for m in re.finditer(r'\S+', s):
         if re.search(r'[0-9A-Za-z]', m.group()):
             return m.start()
     return len(s)
+
+
+def model_status(group, model):
+    if not model or not re.search(r'\d', model) or QUOTED.search(model) or re.search(r'["«»“”]', model):
+        return 'doubtful'
+    return 'parsed' if group else 'doubtful'
 
 
 def parse_name(name, aliases, assume_brand=False):
@@ -106,6 +126,7 @@ def parse_name(name, aliases, assume_brand=False):
     assume_brand=True — бренда в названии нет, но он задан для всего счёта: считаем,
     что он стоит перед моделью, и разбираем остальное по тем же правилам."""
     s = re.sub(r'\s+', ' ', name or '').strip()
+    s, quoted = cut_quoted(s)
     m = find_brand(s, aliases)
     if m:
         b_start, b_end = m.start(), m.end()
@@ -116,6 +137,5 @@ def parse_name(name, aliases, assume_brand=False):
     group, extra = split_group(s[:b_start])
     tail = clean(TAIL_BU.sub('', s[b_end:]))
     model, rest = pick_model(tail)
-    feature = clean(' '.join(x for x in [extra, rest] if x))
-    status = 'parsed' if (group and model) else 'doubtful'
-    return {'group': group, 'model': model, 'feature': feature or None, 'status': status}
+    feature = clean(' '.join(x for x in [extra, *quoted, rest] if x))
+    return {'group': group, 'model': model, 'feature': feature or None, 'status': model_status(group, model)}

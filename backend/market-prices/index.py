@@ -8,7 +8,7 @@ from psycopg2.extras import RealDictCursor
 import filters as F
 import proxymarket as pm
 import vps
-from sources import SITES, Blocked, NoTraffic, clean_model, pick_min, product_url, search
+from sources import SITES, Blocked, NoTraffic, clean_model, other_alphabet, pick_min, product_url, search
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -50,9 +50,13 @@ def _lit(v):
     return 'NULL' if v is None else f"'{_esc(v)}'"
 
 
+KEY_LAT = str.maketrans('авекмнорстху', 'abekmhopctxy')
+
+
 def keys(brand, model):
-    b = re.sub(r'\s+', ' ', (brand or '').strip().lower())
-    m = re.sub(r'\s+', ' ', clean_model(brand, model).lower())
+    """Ключ цены: без регистра, кириллица-двойники → латиница — «КТ-403» и «KT-403» одна модель."""
+    b = re.sub(r'\s+', ' ', (brand or '').strip().lower().translate(KEY_LAT))
+    m = re.sub(r'\s+', ' ', clean_model(brand, model).lower().translate(KEY_LAT))
     return b, m
 
 
@@ -310,30 +314,43 @@ def _skipper(cur, site, brand, model):
     return skip
 
 
+def _search_once(cur, site, method, proxy, brand, model, rules, skip):
+    """Возвращает (status, found, message)."""
+    if method == 'browser':
+        m = clean_model(brand, model)
+        status, cards, msg = vps.search(cur, site, f'{brand} {m}'.strip(), proxy)
+        if status != 'ok':
+            return status, None, msg
+        return 'ok', pick_min(cards, m, rules, skip), ''
+    try:
+        return 'ok', search(site, brand, model, proxy, rules, skip), ''
+    except NoTraffic as e:
+        return 'no_traffic', None, str(e)
+    except Blocked as e:
+        return 'blocked', None, str(e)
+    except Exception as e:
+        print(f'{site} {brand} {model}: {e}')
+        return 'error', None, 'Сайт ответил ошибкой или не успел ответить'
+
+
 def run_search(cur, site, brand, model, group=''):
-    """Возвращает (status, price, title, message, url)."""
+    """Возвращает (status, price, title, message, url). Не нашли — повторяем другим алфавитом
+    («КТ-403» ↔ «KT-403»), если в модели есть буквы-двойники."""
     method = site_method(cur, site)
     proxy, err = proxy_for(cur, site, need=method == 'browser')
     if err:
         return 'no_proxy', None, None, err, None
     rules = F.Rules(F.load(cur), group)
     skip = _skipper(cur, site, brand, model)
-    if method == 'browser':
-        m = clean_model(brand, model)
-        status, cards, msg = vps.search(cur, site, f'{brand} {m}'.strip(), proxy)
-        if status != 'ok':
-            return status, None, None, msg, None
-        found = pick_min(cards, m, rules, skip)
-    else:
-        try:
-            found = search(site, brand, model, proxy, rules, skip)
-        except NoTraffic as e:
-            return 'no_traffic', None, None, str(e), None
-        except Blocked as e:
-            return 'blocked', None, None, str(e), None
-        except Exception as e:
-            print(f'{site} {brand} {model}: {e}')
-            return 'error', None, None, 'Сайт ответил ошибкой или не успел ответить', None
+    status, found, msg = _search_once(cur, site, method, proxy, brand, model, rules, skip)
+    if status != 'ok':
+        return status, None, None, msg, None
+    if not found:
+        alt = other_alphabet(clean_model(brand, model))
+        if alt:
+            status, found, msg = _search_once(cur, site, method, proxy, brand, alt, rules, skip)
+            if status != 'ok':
+                return status, None, None, msg, None
     if not found:
         return 'not_found', None, None, 'Точной модели не найдено', None
     title, price, ref = found

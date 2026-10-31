@@ -4,7 +4,7 @@ import re
 
 from psycopg2.extras import RealDictCursor, execute_values
 
-from parser import CYR2LAT, find_brand, parse_name
+from parser import WORD, clean, cut_quoted, find_brand, model_status, parse_name, split_group
 
 
 # ---------- наборы ----------
@@ -153,32 +153,73 @@ def group_ids(cur, names):
     return {r['n']: r['id'] for r in cur.fetchall()}
 
 
+ART_TAIL = re.compile(r'(\s*\(.*$|(\s+[А-Яа-яЁё][А-Яа-яЁё\-/]*)+\s*$|[А-Яа-яЁё][А-Яа-яЁё\-/]*$)')
+
+
+def article_model(article):
+    """Артикул без пробелов по краям, без хвоста «(…)» и русских слов (цвета) в конце.
+    None — если короче 4 знаков или без цифры: тогда это не модель."""
+    a = (article or '').strip()
+    prev = None
+    while a and a != prev:
+        prev = a
+        a = ART_TAIL.sub('', a).strip(' ,;/-')
+    if len(a) < 4 or not re.search(r'\d', a) or not re.search(r'[A-Za-zА-Яа-яЁё]', a):
+        return None
+    return a
+
+
+def find_article(name, art):
+    """Артикул целым словом: «4211224» внутри «04211224» не считается; «:», «(», «,» — граница."""
+    return re.search(r'(?<![' + WORD + r'])' + re.escape(art) + r'(?![' + WORD + r'])', name or '', re.IGNORECASE)
+
+
+def by_article(name, brand_aliases, art):
+    """Модель — артикул из карточки. Группа — до бренда или модели, признак — после."""
+    s, quoted = cut_quoted(re.sub(r'\s+', ' ', name or '').strip())
+    m = find_article(s, art)
+    if not m:
+        return None
+    brand_match = find_brand(s, brand_aliases)
+    cut = brand_match.start() if brand_match and brand_match.start() < m.start() else m.start()
+    group, extra = split_group(s[:cut])
+    mid = s[brand_match.end():m.start()] if brand_match and brand_match.end() <= m.start() else ''
+    tail = re.sub(r'[\s,]*б/у?\.?\s*$', '', s[m.end():], flags=re.IGNORECASE)
+    if brand_match and brand_match.start() > m.end():
+        tail = tail.replace(brand_match.group(), ' ')
+    feature = clean(' '.join(x for x in [extra, *quoted, mid, tail] if clean(x)))
+    feature = clean(feature.lstrip(':,; ')) if feature else ''
+    model = m.group()
+    return {'group': group, 'model': model, 'feature': feature or None, 'status': model_status(group, model)}
+
+
 def parse_one(brands, name, card_brand, group, article):
-    """Бренд ищем в наименовании по справочнику; не нашли — бренд карточки или папка каталога,
-    если она встречается в наименовании. Модели нет — берём артикул, если он есть в наименовании."""
+    """Бренд: в наименовании по справочнику → бренд карточки → папка каталога, если она есть в наименовании.
+    Модель: артикул карточки, если он есть в наименовании целым словом; иначе артикул — код учёта,
+    и модель достаём из наименования."""
     best, best_pos = None, None
     for b in brands:
         m = find_brand(name or '', b['aliases'])
         if m and (best_pos is None or m.start() < best_pos):
             best, best_pos = b, m.start()
-    res = None
-    if best:
-        res = parse_name(name, best['aliases'])
-    else:
+    implied = False
+    if not best:
         for cand in (card_brand, group):
             if cand and (cand == card_brand or find_brand(name or '', [cand])):
                 best = brand_by_name(brands, cand)
                 if best:
-                    res = parse_name(name, best['aliases'], assume_brand=cand != group)
+                    implied = True
                     break
-    if not best or not res:
+    if not best:
         return None, None
-    art = (article or '').strip()
-    if not res['model'] and art and art.lower() in (name or '').lower():
-        res['model'] = art.translate(CYR2LAT) if not re.search(r'[^АВЕКМНОРСТХаеорсху\W\d]', art) else art
-        feat = re.sub(re.escape(art), '', res['feature'] or '', flags=re.IGNORECASE)
-        res['feature'] = re.sub(r'\s+', ' ', feat).strip(' ,;') or None
-        res['status'] = 'parsed' if res['group'] else 'doubtful'
+    art = article_model(article)
+    if art:
+        res = by_article(name, best['aliases'], art)
+        if res:
+            return best, res
+    res = parse_name(name, best['aliases'], assume_brand=implied)
+    if not res:
+        return None, None
     return best, res
 
 

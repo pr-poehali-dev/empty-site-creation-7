@@ -32,7 +32,11 @@ const cleanModel = (brand: string, model: string) => {
   return m;
 };
 
-const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+const CYR = "авекмнорстху";
+const LAT = "abekmhopctxy";
+const toLat = (s: string) => s.replace(/[авекмнорстху]/g, (c) => LAT[CYR.indexOf(c)]);
+
+const norm = (s: string) => toLat(s.trim().toLowerCase()).replace(/\s+/g, " ");
 
 export const modelKey = (brand: unknown, model: unknown) => {
   const b = String(brand ?? "");
