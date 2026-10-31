@@ -433,6 +433,7 @@ export interface NewItem {
   tnvedSrc?: "file" | "similar";
   fileTnved?: string;
   tnvedMissing?: boolean;
+  tnvedUnchecked?: boolean;
   countrySrc?: "site" | "file";
   fileCountry?: string;
   siteUrl?: string;
@@ -461,6 +462,7 @@ export const newItemProblems = (x: NewItem): string[] => {
   if (!(toNumber(x.weight) > 0)) p.push("вес");
   if (!/^\d{10}$/.test(x.tnved.trim())) p.push("ТНВЭД");
   else if (x.tnvedMissing) p.push("ТНВЭД нет в 1С");
+  else if (x.tnvedUnchecked) p.push("ТНВЭД проверяется в 1С");
   return p;
 };
 

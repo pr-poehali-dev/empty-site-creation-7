@@ -116,15 +116,15 @@ const NomenTnvedSteps = (p: Props) => {
         )}
       </Row>
 
-      {p.fileCodes.length > 0 && (
+      {(p.fileCodes.length > 0 || p.missing.length > 0) && (
         <Row n={2} title="Коды ТН ВЭД, которых нет в 1С">
-          {!allChecked ? (
+          {p.fileCodes.length > 0 && !allChecked && p.missing.length === 0 ? (
             <p>Сначала сверьте коды.</p>
           ) : p.missing.length === 0 ? (
             <p className="text-emerald-400">Все коды из файла есть в 1С.</p>
           ) : (
             <>
-              <p>Создаются как вручную: наименование = код, единица «шт». Повторно не создаются.</p>
+              <p>Из файла и введённые вручную. Создаются как вручную: наименование = код, единица «шт». Повторно не создаются. Пока код не создан, товар с ним не создаётся.</p>
               <div className="flex flex-wrap gap-1.5">
                 {p.missing.map((m) => (
                   <span key={m.code} className="rounded-md bg-white/[0.06] px-2 py-1 tabular-nums text-foreground">
@@ -166,7 +166,7 @@ const NomenTnvedSteps = (p: Props) => {
         </Row>
       )}
 
-      <Row n={p.fileCodes.length ? 4 : 2} title="Подбор по похожим в 1С">
+      <Row n={p.fileCodes.length ? 4 : p.missing.length ? 3 : 2} title="Подбор по похожим в 1С">
         <p>
           Только для товаров без кода или веса в файле: {p.similarItems} товаров, {p.similarTotal} типов · подобрано{" "}
           {p.similarDone} из {p.similarTotal}

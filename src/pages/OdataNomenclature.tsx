@@ -365,10 +365,13 @@ const OdataNomenclature = () => {
       let changed = false;
       const next = prev.map((x) => {
         const c = x.tnved.trim();
-        const miss = /^\d{10}$/.test(c) && tnvedMissing.includes(c);
+        const valid = /^\d{10}$/.test(c);
+        const miss = valid && tnvedMissing.includes(c);
         const key = tnvedFound[c];
+        const unchecked = valid && !miss && !key && !x.tnvedKey;
         const patch: Partial<NewItem> = {};
         if (!!x.tnvedMissing !== miss) patch.tnvedMissing = miss;
+        if (!!x.tnvedUnchecked !== unchecked) patch.tnvedUnchecked = unchecked;
         if (key && x.tnvedKey !== key) patch.tnvedKey = key;
         if (!Object.keys(patch).length) return x;
         changed = true;
@@ -419,6 +422,27 @@ const OdataNomenclature = () => {
     setTnvedFailed(failed);
     setStep((s) => ({ ...s, stage: "" }));
   };
+
+  const manualCheckingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const todo = tnvedCodesKey
+      .split(",")
+      .filter((c) => c && !tnvedFound[c] && !tnvedMissing.includes(c) && !manualCheckingRef.current.has(c));
+    if (!todo.length) return;
+    const t = setTimeout(async () => {
+      todo.forEach((c) => manualCheckingRef.current.add(c));
+      try {
+        const r = await checkTnvedCodes(base, todo);
+        setTnvedFound((p) => ({ ...p, ...r.found }));
+        setTnvedMissing((p) => Array.from(new Set([...p.filter((c) => !r.found[c]), ...r.missing])));
+      } catch {
+        /* повторим при следующем изменении */
+      } finally {
+        todo.forEach((c) => manualCheckingRef.current.delete(c));
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [tnvedCodesKey, tnvedFound, tnvedMissing, base]);
 
   const applyFileCodes = () =>
     setNewItems((prev) =>
